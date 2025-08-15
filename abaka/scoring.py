@@ -30,10 +30,10 @@ def score_category(dice, category, first_roll=False):
                 score = 0
         elif cat == Category.SMALL_STRAIGHT:
             s = set(values)
-            score = total if any(seq.issubset(s) for seq in ({1,2,3,4},{2,3,4,5},{3,4,5,6})) else 0
+            score = 15 if any(seq.issubset(s) for seq in ({1,2,3,4},{2,3,4,5},{3,4,5,6})) else 0
         elif cat == Category.LARGE_STRAIGHT:
             s = set(values)
-            score = total if (s == {1,2,3,4,5} or s == {2,3,4,5,6}) else 0
+            score = 20 if (s == {1,2,3,4,5} or s == {2,3,4,5,6}) else 0
         elif cat == Category.KARE:
             ks = [v for v, c in cnt.items() if c >= 4]
             score, bonus = (ks[0]*4, 20) if ks else (0, 0)

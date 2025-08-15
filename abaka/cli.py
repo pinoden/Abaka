@@ -1,5 +1,13 @@
 from .engine import GameEngine
 from .models import Category
+import re
+from typing import List  # <-- add this
+
+def _parse_indices(raw: str, n: int) -> List[int]:  # <-- List[int], not list[int]
+    # accept digits anywhere; e.g. "012", "0 1,2", "0;1:2"
+    idxs = sorted({int(ch) for ch in re.findall(r"[0-9]", raw)})
+    idxs = [i for i in idxs if 0 <= i < n]
+    return idxs
 
 def _parse_category(s: str) -> Category:
     s = s.strip().lower()
@@ -43,9 +51,20 @@ def main():
             action = input("Action: (r)eroll, (s)core, (x)cross: ").strip().lower()
             if action == 'r':
                 if g.rolls_left <= 0:
-                    print("No rerolls left"); continue
-                raw = input("Indices to reroll (e.g. 0 2 4), or empty: ").strip()
-                if raw: g.reroll([int(t) for t in raw.split()])
+                    print("No rerolls left")
+                    continue
+                while True:
+                    raw = input("Indices to reroll (e.g. 0 2 4), or empty to skip: ").strip()
+                    if not raw:
+                        break
+                    try:
+                        idxs = _parse_indices(raw, n=len(g.dice))
+                        if not idxs:
+                            raise ValueError("No valid indices 0..4 found")
+                        g.reroll(idxs)
+                        break  # success -> exit the inner while, continue the turn
+                    except Exception as e:
+                        print("Invalid indices. Try again (examples: 0 1 2  |  012  |  0,1,2).")
                 continue
             elif action == 'x':
                 try:
