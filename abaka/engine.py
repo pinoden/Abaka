@@ -37,6 +37,8 @@ class GameEngine:
         self.row_bonus_claimed: Dict[Category, bool] = {cat: False for cat in Category}
         self.col_bonus_claimed: List[bool] = [False, False, False]  # for columns 0..2
 
+        self.school_minus_used = {}
+
     # ----- turn flow -----
     def next_player(self) -> None:
         self.current = (self.current + 1) % len(self.players)
@@ -67,8 +69,16 @@ class GameEngine:
         self._after_record(category, slot_index)
         self.next_player()
 
-    def record_cross(self, category: Category, slot_index: int) -> None:
+    def record_cross(self, category, slot_index):
+        # School cannot be crossed manually
+        if category.name.startswith("SCHOOL_"):
+            raise ValueError("You can't cross out school directly. Use 'school n' scoring; school crosses only on exactly three.")
+        # Lower part can be crossed; this cancels row & column bonus for this player
         self.players[self.current].cross(category, slot_index)
+        # Mark row-bonus blocked for this player/row
+        if not hasattr(self, "row_bonus_blocked"):
+            self.row_bonus_blocked = {}
+        self.row_bonus_blocked[(self.current, category)] = True
         self._after_record(category, slot_index)
         self.next_player()
 
@@ -153,76 +163,119 @@ class GameEngine:
         if slot_index in (0, 1, 2):
             self._check_col_bonus(self.current, slot_index)
 
-    def _check_row_bonus(self, player_idx: int, category: Category) -> None:
+    def _check_row_bonus(self, player_idx: int, category) -> None:
         if self.row_bonus_claimed.get(category):
             return
         p = self.players[player_idx]
-        if all(v is not None for v in p.table[category][:3]):
-            self.row_bonus_claimed[category] = True
-            row = p.table[category][:3]
-            if any(v == 'X' for v in row):
-                val = 'X'
-            elif category.name.startswith("SCHOOL_"):
-                num = int(category.name.split('_')[1])
-                val = num * 3
-            else:
-                vals = [v for v in row if isinstance(v, int)]
-                val = max(vals) if vals else 'X'
+        # only when first three cells are filled/crossed
+        if not all(v is not None for v in p.table[category][:3]):
+            return
 
-            # award to owner, cross for others
+        self.row_bonus_claimed[category] = True
+
+        if category.name.startswith("SCHOOL_"):
+            num = int(category.name.split('_')[1])
+            # If player ever used a 'minus' in this school row -> no bonus
+            if self.school_minus_used.get((player_idx, category), False):
+                val = 'X'
+            else:
+                # school bonus allowed even with X’s (per your rule #1)
+                val = num * 3
+            if p.table[category][3] is None:
+                p.table[category][3] = val
+        else:
+            # lower part: any cross cancels bonus OR if we recorded a manual cross before
+            blocked = getattr(self, "row_bonus_blocked", {}).get((player_idx, category), False)
+            row = p.table[category][:3]
+            if blocked or any(v == 'X' for v in row):
+                val = 'X'
+            else:
+                nums = [v for v in row if isinstance(v, int)]
+                val = max(nums) if nums else 'X'
             p.table[category][3] = val
-            for i, other in enumerate(self.players):
-                if i != player_idx and other.table[category][3] is None:
-                    other.table[category][3] = 'X'
+
+        # Others in this row get X
+        for i, other in enumerate(self.players):
+            if i != player_idx and other.table[category][3] is None:
+                other.table[category][3] = 'X'
+
 
     def _check_col_bonus(self, player_idx: int, col: int) -> None:
-        if self.col_bonus_claimed[col]:
-            return
         p = self.players[player_idx]
         col_vals = [p.table[cat][col] for cat in Category]
+
+        # Final column: everyone can get it individually
+        if col == 2:
+            if p.column_bonus[col] is not None:
+                return
+            if not all(v is not None for v in col_vals):
+                return
+            if any(v == 'X' for v in col_vals):
+                val = 'X'
+            else:
+                nums = [v for v in col_vals if isinstance(v, int)]
+                val = max(nums) if nums else 'X'
+            p.column_bonus[col] = val
+            return
+
+        # Columns 0 and 1: first-come, others X
+        if self.col_bonus_claimed[col]:
+            return
         if all(v is not None for v in col_vals):
             self.col_bonus_claimed[col] = True
             if any(v == 'X' for v in col_vals):
                 val = 'X'
             else:
-                vals = [v for v in col_vals if isinstance(v, int)]
-                val = max(vals) if vals else 'X'
+                nums = [v for v in col_vals if isinstance(v, int)]
+                val = max(nums) if nums else 'X'
             p.column_bonus[col] = val
             for i, other in enumerate(self.players):
                 if i != player_idx and other.column_bonus[col] is None:
                     other.column_bonus[col] = 'X'
 
-    # ----- school balance -----
-    def _record_school(self, category: Category, slot_index: int) -> None:
-        """
-        Implements school balance rules:
+        # Columns 0 and 1: first-come, others X
+        if self.col_bonus_claimed[col]:
+            return
+        if all(v is not None for v in col_vals):
+            self.col_bonus_claimed[col] = True
+            if any(v == 'X' for v in col_vals):
+                val = 'X'
+            else:
+                nums = [v for v in col_vals if isinstance(v, int)]
+                val = max(nums) if nums else 'X'
+            p.column_bonus[col] = val
+            for i, other in enumerate(self.players):
+                if i != player_idx and other.column_bonus[col] is None:
+                    other.column_bonus[col] = 'X'
 
-        - Let k = count of dice showing denom right now.
-          * All dice with face == denom count (+1 each).
-          * Joker showing 2..6 counts as that face (already included above).
-          * Joker showing 1 is wild: add +1 for any denom except denom=1
-            (for denom=1 it's already counted by face==denom).
-        - k == 3  -> cross 'X' (exactly three; no add/subtract).
-        - k > 3   -> add (k-3)*denom to balance (move/cross previous balance cell).
-        - k < 3   -> need to pay (3-k)*denom from balance; special case k==0: max(required, 2*denom).
-        - First-roll rule: written numeric value is doubled.
+
+    # ----- school balance -----
+    def _record_school(self, category, slot_index):
+        """
+        School balance rules:
+        - k = count of dice showing denom; joker(1) adds +1 for any denom != 1.
+        - k == 3 -> cross 'X' (exactly three, no balance change).
+        - k > 3  -> add (k-3)*denom to balance.
+        - k < 3  -> may pay (3-k)*denom from balance ONLY IF k >= 1 (must show at least one die of denom).
+        - First-roll doubling applies to the numeric value written.
+        - If this write is a 'minus' (k < 3), the school row bonus for this player is crossed ('X') immediately and
+            remembered so it can't be granted later.
         """
         p = self.players[self.current]
         denom = int(category.name.split('_')[1])
 
-        # count k
+        # Count k
         k = sum(1 for d in self.dice if d.value == denom)
         if denom != 1 and any(d.is_joker and d.value == 1 for d in self.dice):
-            # joker(1) can stand in for any denom != 1
             k += 1
 
-        # exactly three: cross out
+        # Exactly three -> cross
         if k == 3:
             p.cross(category, slot_index)
             return
 
         def move_balance(new_value: int) -> None:
-            # cross previous balance cell (if any), then write new value here
+            # Cross previous balance cell (if any), then write new value here
             if p.school_balance_loc is not None:
                 pc, ps = p.school_balance_loc
                 p.table[pc][ps] = 'X'
@@ -236,12 +289,18 @@ class GameEngine:
             move_balance(p.school_balance + delta)
             return
 
-        # k < 3: need to pay from balance
-        required = (3 - k) * denom
+        # k < 3: must have at least one die of this denom to pay
         if k == 0:
-            required = max(required, 2 * denom)  # special case you specified
+            raise ValueError("Cannot write this school row: need at least one die of that denomination")
+
+        required = (3 - k) * denom
         if p.school_balance >= required:
+            # 'Minus' move: pay from balance and mark this player's school row bonus as X immediately
             move_balance(p.school_balance - required)
+            self.school_minus_used[(self.current, category)] = True
+            # Visual immediate cross-out of school row bonus (do not claim globally yet)
+            if p.table[category][3] is None:
+                p.table[category][3] = 'X'
             return
 
         raise ValueError(f"Not enough school balance to write this row (need {required}, have {p.school_balance})")
