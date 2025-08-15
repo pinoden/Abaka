@@ -133,9 +133,13 @@ def score_category(dice, category, first_roll=False):
 class PlayerState:
     def __init__(self, name):
         self.name = name
-        self.table = {cat: [None, None, None] for cat in Category}
+        self.table = {cat: [None, None, None, None] for cat in Category}  # 3 score slots + 1 bonus slot
+        self.column_bonus = [None, None, None]  # bonuses for columns 0..2
+        self.school_balance = 0
+        self.school_balance_loc = None  # (Category, slot_index) where current balance is stored
 
     def record(self, category, slot_index, score):
+        # only slots 0..2 are player-editable; slot 3 is row bonus and managed by engine
         if slot_index not in (0, 1, 2):
             raise ValueError("Slot index must be 0,1,2")
         if any(v is None for v in self.table[category][:slot_index]):
@@ -154,42 +158,29 @@ class PlayerState:
         self.table[category][slot_index] = 'X'
 
     def is_complete(self):
-        return all(all(v is not None for v in slots) for slots in self.table.values())
+        # game is complete when all players filled the first three slots of every row
+        return all(all(v is not None for v in slots[:3]) for slots in self.table.values())
 
     def non_school_complete(self):
         for cat, slots in self.table.items():
             if cat not in (Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
                            Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6):
-                if not all(v is not None for v in slots):
+                if not all(v is not None for v in slots[:3]):
                     return False
         return True
 
     def calculate_score(self):
         total = 0
-        school_bonus = 0
-        school_penalty = 0
-
-        # Sum all numeric cells
+        # sum all numeric cells including bonus slot (slot 3)
         for cat, slots in self.table.items():
             for val in slots:
                 if isinstance(val, int):
                     total += val
-
-        # School x3 bonuses (everyone may get it in the last column)
-        for cat in (Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
-                    Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6):
-            if self.table[cat][2] is not None:  # third column filled by this player
-                num = int(cat.name.split('_')[1])
-                school_bonus += num * 3
-
-        # School penalties: -100 for each negative point in a row's total
-        for cat in (Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
-                    Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6):
-            row_sum = sum(v for v in self.table[cat] if isinstance(v, int))
-            if row_sum < 0:
-                school_penalty += (-row_sum) * 100
-
-        return total + school_bonus - school_penalty
+        # add column bonuses
+        for v in self.column_bonus:
+            if isinstance(v, int):
+                total += v
+        return total
 
 
 
@@ -200,6 +191,9 @@ class GameEngine:
         self.dice = []
         self.rolls_left = 0
         self.first_roll = True
+        # global bonus claims (first-completion wins)
+        self.row_bonus_claimed = {cat: False for cat in Category}
+        self.col_bonus_claimed = [False, False, False]  # for columns 0..2
 
     def next_player(self):
         self.current = (self.current + 1) % len(self.players)
@@ -221,22 +215,21 @@ class GameEngine:
             self.first_roll = False
 
     def record_score(self, category, slot_index):
-        # compute score first
-        score = score_category(self.dice, category, first_roll=self.first_roll)
-        # enforce school top-up constraint (need at least one matching die unless non-school complete)
+        # school rows use balance logic, others use category scoring
         if category in (Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
                         Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6):
-            denom = int(category.name.split('_')[1])
-            player = self.players[self.current]
-            if score < 0:
-                raw_has = any((not d.is_joker and d.value == denom) or (d.is_joker and d.value == denom) for d in self.dice)
-                if not raw_has and not player.non_school_complete():
-                    raise ValueError("Cannot top-up school without at least one die of that denomination (unless all non-school rows are complete)")
-        self.players[self.current].record(category, slot_index, score)
+            self._record_school(category, slot_index)
+        else:
+            score = score_category(self.dice, category, first_roll=self.first_roll)
+            self.players[self.current].record(category, slot_index, score)
+        # after any record, check bonuses
+        self._after_record(category, slot_index)
         self.next_player()
 
     def record_cross(self, category, slot_index):
         self.players[self.current].cross(category, slot_index)
+        # crossing may complete row/column and still claim (as X) and block others
+        self._after_record(category, slot_index)
         self.next_player()
 
     def is_game_over(self):
@@ -273,7 +266,7 @@ class GameEngine:
     def print_scoreboard(self):
         # Fixed-width pretty table with short labels and a divider after school
         ROW_W = 6
-        COL_W = 11
+        COL_W = 15  # 4 cells (3 chars each) + 3 spaces between = 15
 
         school_rows = [
             Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
@@ -309,20 +302,14 @@ class GameEngine:
         for cat in combo_rows:
             print_row(cat)
 
-        # extra row: school bonus per player (P)
-        print_row_label = 'P'
-        line = f"{print_row_label:>{ROW_W}} "
-        def compute_school_bonus(p):
-            bonus = 0
-            for cat in school_rows:
-                if p.table[cat][2] is not None:
-                    num = int(cat.name.split('_')[1])
-                    bonus += num * 3
-            return bonus
+        # column bonuses row (B)
+        label = 'B'
+        line = f"{label:>{ROW_W}} "
         for p in self.players:
-            b = compute_school_bonus(p)
-            cell = f"{b:>3}  .  ."  # show bonus number in first cell for visibility
-            line += f"| {cell:<{COL_W}} "
+            cells3 = ' '.join(self._fmt_cell(v) for v in p.column_bonus)
+            # add a filler cell to align with 4 cells
+            cells = f"{cells3} {' . ':>3}"
+            line += f"| {cells:<{COL_W}} "
         print(line)
 
         # totals at the end
@@ -333,11 +320,107 @@ class GameEngine:
         print(total_line)
 
     def _leftmost_slot(self, player, category):
-        slots = player.table[category]
+        slots = player.table[category][:3]  # only first three are editable
         for i, v in enumerate(slots):
             if v is None:
                 return i
         raise ValueError("Row already complete")
+
+    # ===== Bonus logic =====
+    def _after_record(self, category, slot_index):
+        # row bonus
+        self._check_row_bonus(self.current, category)
+        # column bonus (only for columns 0..2)
+        if slot_index in (0, 1, 2):
+            self._check_col_bonus(self.current, slot_index)
+
+    def _check_row_bonus(self, player_idx, category):
+        if self.row_bonus_claimed.get(category):
+            return
+        player = self.players[player_idx]
+        # row completed for this player?
+        if all(v is not None for v in player.table[category][:3]):
+            self.row_bonus_claimed[category] = True
+            # compute value for this player
+            row = player.table[category][:3]
+            if any(v == 'X' for v in row):
+                val = 'X'
+            else:
+                if category in (Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
+                                Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6):
+                    num = int(category.name.split('_')[1])
+                    val = num * 3
+                else:
+                    vals = [v for v in row if isinstance(v, int)]
+                    val = max(vals) if vals else 'X'
+            # assign to owner
+            player.table[category][3] = val
+            # others get X if not already set
+            for i, other in enumerate(self.players):
+                if i == player_idx:
+                    continue
+                if other.table[category][3] is None:
+                    other.table[category][3] = 'X'
+
+    def _check_col_bonus(self, player_idx, col):
+        if self.col_bonus_claimed[col]:
+            return
+        player = self.players[player_idx]
+        # column complete for this player across all categories?
+        col_vals = [player.table[cat][col] for cat in Category]
+        if all(v is not None for v in col_vals):
+            self.col_bonus_claimed[col] = True
+            if any(v == 'X' for v in col_vals):
+                val = 'X'
+            else:
+                vals = [v for v in col_vals if isinstance(v, int)]
+                val = max(vals) if vals else 'X'
+            player.column_bonus[col] = val
+            # others get X
+            for i, other in enumerate(self.players):
+                if i == player_idx:
+                    continue
+                if other.column_bonus[col] is None:
+                    other.column_bonus[col] = 'X'
+
+    # ===== School logic with balance =====
+    def _record_school(self, category, slot_index):
+        player = self.players[self.current]
+        denom = int(category.name.split('_')[1])
+        # count of denom in dice; joker counts as +1 if face is 1 (wild)
+        k = sum(1 for d in self.dice if (not d.is_joker and d.value == denom))
+        if any(d.is_joker and d.value == 1 for d in self.dice):
+            k += 1
+        # Case: exactly 3 -> cross
+        if k == 3:
+            player.cross(category, slot_index)
+            return
+        # move existing balance from previous cell if we will write a number
+        def move_balance(new_value):
+            # cross previous balance cell if exists
+            if player.school_balance_loc is not None:
+                pc, ps = player.school_balance_loc
+                player.table[pc][ps] = 'X'
+            # write new value into current leftmost slot
+            val = new_value * (2 if self.first_roll else 1)
+            player.record(category, slot_index, val)
+            player.school_balance = val
+            player.school_balance_loc = (category, slot_index)
+
+        if k > 3:
+            delta = (k - 3) * denom
+            move_balance(player.school_balance + delta)
+            return
+        # k < 3
+        required = (3 - k) * denom
+        if k == 0:
+            # special rule: allow with cost 2*n if no dice of denom
+            required = max(required, 2 * denom)
+        if player.school_balance >= required:
+            move_balance(player.school_balance - required)
+            return
+        # not enough balance
+        raise ValueError("Not enough school balance to write this row")
 
     def _parse_category(self, s):
         s = s.strip().lower()
@@ -366,7 +449,7 @@ class GameEngine:
     def _available_rows(self, player):
         avail = []
         for cat, slots in player.table.items():
-            if any(v is None for v in slots):
+            if any(v is None for v in slots[:3]):
                 avail.append(cat)
         return avail
 
