@@ -121,13 +121,13 @@ def score_category(dice, category, first_roll=False):
         for v in range(1, 7):
             vals = [v if d.is_joker else d.value for d in dice]
             base, bonus = _calc(vals, category)
-            total_score = base + (bonus * (2 if first_roll else 1))
+            total_score = (base + bonus) * (2 if first_roll else 1)
             best = max(best, total_score)
         return best
     else:
         vals = [d.value for d in dice]
         base, bonus = _calc(vals, category)
-        return base + (bonus * (2 if first_roll else 1))
+        return (base + bonus) * (2 if first_roll else 1)
 
 
 class PlayerState:
@@ -245,6 +245,93 @@ class GameEngine:
     def calculate_final_scores(self):
         return {p.name: p.calculate_score() for p in self.players}
 
+    # ==== Scoreboard rendering ====
+    def _category_label(self, cat: Category) -> str:
+        if cat in (Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
+                   Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6):
+            return cat.name.split('_')[1]  # '1'..'6'
+        mapping = {
+            Category.PAIR: 'D',        # pair
+            Category.TWO_PAIRS: 'DD',  # two pairs
+            Category.TRIPS: 'T',       # trips
+            Category.SMALL_STRAIGHT: 'LS',  # little straight
+            Category.LARGE_STRAIGHT: 'BS',  # big straight
+            Category.FULL: 'F',
+            Category.KARE: 'C',
+            Category.ABAKA: 'A',
+            Category.SUM: 'Σ',
+        }
+        return mapping.get(cat, cat.name)
+
+    def _fmt_cell(self, v) -> str:
+        if v is None:
+            return ' . '
+        if v == 'X':
+            return ' X '
+        return f"{int(v):>3}"
+
+    def print_scoreboard(self):
+        # Fixed-width pretty table with short labels and a divider after school
+        ROW_W = 6
+        COL_W = 11
+
+        school_rows = [
+            Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
+            Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6,
+        ]
+        combo_rows = [
+            Category.PAIR, Category.TWO_PAIRS, Category.TRIPS,
+            Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT,
+            Category.FULL, Category.KARE, Category.ABAKA,
+            Category.SUM,
+        ]
+
+        header = f"{'Row':>{ROW_W}} " + ''.join(f"| {p.name:^{COL_W}} " for p in self.players)
+        print("\n" + header)
+        sep = '-' * len(header)
+        print(sep)
+
+        def print_row(cat):
+            label = self._category_label(cat)
+            line = f"{label:>{ROW_W}} "
+            for p in self.players:
+                cells = ' '.join(self._fmt_cell(v) for v in p.table[cat])
+                line += f"| {cells:<{COL_W}} "
+            print(line)
+
+        # school section
+        for cat in school_rows:
+            print_row(cat)
+
+        # divider between school and combos
+        print(sep)
+
+        for cat in combo_rows:
+            print_row(cat)
+
+        # extra row: school bonus per player (P)
+        print_row_label = 'P'
+        line = f"{print_row_label:>{ROW_W}} "
+        def compute_school_bonus(p):
+            bonus = 0
+            for cat in school_rows:
+                if p.table[cat][2] is not None:
+                    num = int(cat.name.split('_')[1])
+                    bonus += num * 3
+            return bonus
+        for p in self.players:
+            b = compute_school_bonus(p)
+            cell = f"{b:>3}  .  ."  # show bonus number in first cell for visibility
+            line += f"| {cell:<{COL_W}} "
+        print(line)
+
+        # totals at the end
+        print(sep)
+        total_line = f"{'TOT':>{ROW_W}} " + ''.join(
+            f"| {p.calculate_score():>{COL_W}} " for p in self.players
+        )
+        print(total_line)
+
     def _leftmost_slot(self, player, category):
         slots = player.table[category]
         for i, v in enumerate(slots):
@@ -255,15 +342,15 @@ class GameEngine:
     def _parse_category(self, s):
         s = s.strip().lower()
         aliases = {
-            'pair': Category.PAIR, 'пара': Category.PAIR,
-            'two_pairs': Category.TWO_PAIRS, 'две пары': Category.TWO_PAIRS, '2pair': Category.TWO_PAIRS,
-            'trips': Category.TRIPS, 'трипс': Category.TRIPS, 'set': Category.TRIPS,
-            'small': Category.SMALL_STRAIGHT, 'малый': Category.SMALL_STRAIGHT, 'mstraight': Category.SMALL_STRAIGHT,
-            'large': Category.LARGE_STRAIGHT, 'большой': Category.LARGE_STRAIGHT, 'lstraight': Category.LARGE_STRAIGHT,
-            'full': Category.FULL, 'фулл': Category.FULL,
-            'kare': Category.KARE, 'каре': Category.KARE,
-            'abaka': Category.ABAKA, 'абака': Category.ABAKA,
-            'sum': Category.SUM, 'сумма': Category.SUM,
+            'd': Category.PAIR, 'pair': Category.PAIR, 'пара': Category.PAIR,
+            'dd': Category.TWO_PAIRS, 'two_pairs': Category.TWO_PAIRS, '2pair': Category.TWO_PAIRS,
+            't': Category.TRIPS, 'trips': Category.TRIPS, 'set': Category.TRIPS,
+            'ls': Category.SMALL_STRAIGHT, 'small': Category.SMALL_STRAIGHT,
+            'bs': Category.LARGE_STRAIGHT, 'large': Category.LARGE_STRAIGHT,
+            'f': Category.FULL, 'full': Category.FULL,
+            'c': Category.KARE, 'kare': Category.KARE,
+            'a': Category.ABAKA, 'abaka': Category.ABAKA,
+            'sum': Category.SUM, 'σ': Category.SUM, 'sigma': Category.SUM,
         }
         if s in aliases:
             return aliases[s]
@@ -271,7 +358,6 @@ class GameEngine:
             num = ''.join(ch for ch in s if ch.isdigit())
             if num and num in '123456':
                 return getattr(Category, f'SCHOOL_{num}')
-        # Also allow exact enum name
         try:
             return Category[s.upper()]
         except Exception:
@@ -286,20 +372,20 @@ class GameEngine:
 
     def run_cli(self):
         print("=== Abaka CLI ===")
-        print("Rules: leftmost slot fills automatically; first roll bonuses doubled.")
+        print("Rules: leftmost slot fills automatically; first roll doubles base+bonus.")
         while not self.is_game_over():
             player = self.players[self.current]
             self.start_turn()
-            print(f"{player.name}'s turn --")
+            print(f"-- {player.name}'s turn --")
             while True:
                 # Show dice
                 faces = ' '.join(f"[{i}:{repr(d)}]" for i, d in enumerate(self.dice))
                 print(f"Dice: {faces}")
                 if self.first_roll:
-                    print("(First roll: bonuses doubled if you score now)")
+                    print("(First roll: everything doubles if you score now)")
                 # Show available rows
                 avail = self._available_rows(player)
-                print("Available rows:", ', '.join(c.name for c in avail))
+                print("Available rows:", ', '.join(self._category_label(c) for c in avail))
                 # Action
                 action = input("Action: (r)eroll, (s)core, (x)cross: ").strip().lower()
                 if action == 'r':
@@ -317,20 +403,22 @@ class GameEngine:
                     continue
                 elif action == 'x':
                     try:
-                        cat_in = input("Row to cross (e.g. pair, full, school 3): ")
+                        cat_in = input("Row to cross (e.g. d, dd, t, ls, bs, f, c, a, or school 3): ")
                         cat = self._parse_category(cat_in)
                         slot = self._leftmost_slot(player, cat)
                         self.record_cross(cat, slot)
+                        self.print_scoreboard()
                         break
                     except Exception as e:
                         print("Error:", e)
                         continue
                 elif action == 's':
                     try:
-                        cat_in = input("Row to score (e.g. sum, kare, school 1): ")
+                        cat_in = input("Row to score (e.g. sum, d, dd, t, ls, bs, f, c, a, or school 1): ")
                         cat = self._parse_category(cat_in)
                         slot = self._leftmost_slot(player, cat)
                         self.record_score(cat, slot)
+                        self.print_scoreboard()
                         break
                     except Exception as e:
                         print("Error:", e)
