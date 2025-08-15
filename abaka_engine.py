@@ -40,18 +40,23 @@ def roll_dice():
     return dice
 
 
+from collections import Counter
+
 def score_category(dice, category, first_roll=False):
     """
-    Compute best score for given category and dice (list of Die).
-    Joker die is wild only if it shows 1: can count as any value 1..6.
+    Joker is wild ONLY if its face is 1 (then try 1..6).
+    Bonuses: KARE +20, ABAKA +50, Royal Full (1,1,1,2,2) +50.
+    On first roll, bonuses are doubled.
     """
     def _calc(values, cat):
         cnt = Counter(values)
         total = sum(values)
         bonus = 0
+
         if cat == Category.PAIR:
             pairs = [v for v, c in cnt.items() if c >= 2]
             score = max((v * 2 for v in pairs), default=0)
+
         elif cat == Category.TWO_PAIRS:
             pairs = [v for v, c in cnt.items() if c >= 2]
             if len(pairs) >= 2:
@@ -59,18 +64,30 @@ def score_category(dice, category, first_roll=False):
                 score = sum(v * 2 for v in top2)
             else:
                 score = 0
+
         elif cat == Category.TRIPS:
             trips = [v for v, c in cnt.items() if c >= 3]
             score = trips[0] * 3 if trips else 0
+
         elif cat == Category.FULL:
-            if any(c >= 3 for c in cnt.values()) and any(c >= 2 for c in cnt.values()):
+            # строго 3+2 разных рангов
+            if sorted(cnt.values()) == [2, 3]:
                 score = total
+                # Королевский фулл: 1,1,1,2,2
+                if cnt.get(1, 0) == 3 and cnt.get(2, 0) == 2:
+                    bonus = 50
             else:
                 score = 0
+
         elif cat == Category.SMALL_STRAIGHT:
-            score = total if set([1, 2, 3, 4]).issubset(values) else 0
+            s = set(values)
+            smalls = [{1,2,3,4}, {2,3,4,5}, {3,4,5,6}]
+            score = total if any(seq.issubset(s) for seq in smalls) else 0
+
         elif cat == Category.LARGE_STRAIGHT:
-            score = total if set([2, 3, 4, 5, 6]).issubset(values) else 0
+            s = set(values)
+            score = total if (s == {1,2,3,4,5} or s == {2,3,4,5,6}) else 0
+
         elif cat == Category.KARE:
             kare = [v for v, c in cnt.items() if c >= 4]
             if kare:
@@ -78,43 +95,40 @@ def score_category(dice, category, first_roll=False):
                 bonus = 20
             else:
                 score = 0
+
         elif cat == Category.ABAKA:
             if any(c == 5 for c in cnt.values()):
                 score = total
                 bonus = 50
             else:
                 score = 0
+
         elif cat == Category.SUM:
             score = total
+
         elif cat in (Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
                      Category.SCHOOL_4, Category.SCHOOL_5, Category.SCHOOL_6):
             denom = int(cat.name.split('_')[1])
-            count = cnt.get(denom, 0)
-            score = count
+            score = cnt.get(denom, 0)
+
         else:
             score = 0
+
         return score, bonus
 
-    # Determine if joker is wild (only if its face is 1)
     joker = next((d for d in dice if d.is_joker), None)
     if joker and joker.value == 1:
         best = 0
         for v in range(1, 7):
             vals = [v if d.is_joker else d.value for d in dice]
             base, bonus = _calc(vals, category)
-            total_score = base + bonus
-            if first_roll:
-                total_score += bonus  # double bonus
+            total_score = base + (bonus * (2 if first_roll else 1))
             best = max(best, total_score)
         return best
     else:
-        # No wild joker case
         vals = [d.value for d in dice]
         base, bonus = _calc(vals, category)
-        total_score = base + bonus
-        if first_roll:
-            total_score += bonus
-        return total_score
+        return base + (bonus * (2 if first_roll else 1))
 
 
 class PlayerState:
@@ -123,11 +137,20 @@ class PlayerState:
         self.table = {cat: [None, None, None] for cat in Category}
 
     def record(self, category, slot_index, score):
+        if slot_index not in (0, 1, 2):
+            raise ValueError("Slot index must be 0,1,2")
+        # должны быть заполнены ВСЕ слоты слева от выбранного
+        if any(v is None for v in self.table[category][:slot_index]):
+            raise ValueError("Must fill the leftmost free slot in this row")
         if self.table[category][slot_index] is not None:
             raise ValueError("Slot already filled")
         self.table[category][slot_index] = score
 
     def cross(self, category, slot_index):
+        if slot_index not in (0, 1, 2):
+            raise ValueError("Slot index must be 0,1,2")
+        if any(v is None for v in self.table[category][:slot_index]):
+            raise ValueError("Must fill the leftmost free slot in this row")
         if self.table[category][slot_index] is not None:
             raise ValueError("Slot already filled")
         self.table[category][slot_index] = 'X'
