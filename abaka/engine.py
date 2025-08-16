@@ -7,7 +7,7 @@ from collections import Counter  # <-- for helpful mismatch messages
 from .models import Category, roll_dice
 from .scoring import score_category
 from .player import PlayerState
-from .constants import ROW_W, COL_W, SCHOOL_CATS, COMBO_CATS
+# from .constants import ROW_W, COL_W, SCHOOL_CATS, COMBO_CATS
 from .render import render_scoreboard, label_for
 from .school import record_school
 from .bonus import after_record as _after_record_bonus
