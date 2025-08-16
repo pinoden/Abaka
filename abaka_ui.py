@@ -3,6 +3,9 @@ import io
 from contextlib import redirect_stdout
 
 import streamlit as st
+import re
+from PIL import Image, ImageDraw
+
 
 from abaka.engine import GameEngine
 from abaka.models import Category
@@ -32,6 +35,48 @@ def render_scoreboard(engine: GameEngine) -> str:
     with redirect_stdout(buf):
         engine.print_scoreboard()
     return buf.getvalue()
+
+def _parse_die(d) -> tuple[int, bool]:
+    """Return (face 1..6, is_joker) from whatever GameEngine puts in g.dice."""
+    # Try attributes first
+    v = getattr(d, "value", None)
+    is_joker = bool(getattr(d, "is_joker", getattr(d, "joker", False)))
+    if v is None:
+        s = repr(d)
+        m = re.match(r"J\((\d)\)", s)
+        if m:
+            v = int(m.group(1)); is_joker = True
+        else:
+            m2 = re.match(r"(\d)", s)
+            v = int(m2.group(1)) if m2 else 1
+    return int(v), bool(is_joker)
+
+def _make_die_image(value: int, is_joker: bool, size: int = 96) -> Image.Image:
+    """Create a single die image with pips; gold outline if it's a joker."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+
+    # Body
+    outline = (246, 191, 38, 255) if is_joker else (30, 30, 30, 255)
+    d.rounded_rectangle((6, 6, size - 6, size - 6), radius=16, fill=(255, 255, 255, 255), outline=outline, width=6)
+
+    # Pips (3x3 grid)
+    grid = [
+        (size * 0.25, size * 0.25), (size * 0.5, size * 0.25), (size * 0.75, size * 0.25),
+        (size * 0.25, size * 0.5),  (size * 0.5, size * 0.5),  (size * 0.75, size * 0.5),
+        (size * 0.25, size * 0.75), (size * 0.5, size * 0.75), (size * 0.75, size * 0.75),
+    ]
+    faces = {1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8]}
+    r = int(size * 0.09)
+    for idx in faces[int(value)]:
+        cx, cy = grid[idx]
+        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(20, 20, 20, 255))
+
+    # Small corner J marker for jokers
+    if is_joker:
+        d.rounded_rectangle((10, 10, 30, 30), radius=6, fill=(246, 191, 38, 230))
+        d.text((16, 12), "J", fill=(0, 0, 0, 255))
+    return img
 
 # ---------- session boot ----------
 if "engine" not in st.session_state:
@@ -81,9 +126,14 @@ if st.session_state.awaiting_turn:
         st.session_state.awaiting_turn = False
         st.rerun()
 else:
-    # Show dice & turn state
-    dice_str = " ".join(f"[{i}:{repr(d)}]" for i, d in enumerate(g.dice))
-    st.write(dice_str)
+    # Show dice (images) & turn state
+    dice_cols = st.columns(len(g.dice))
+    for i, c in enumerate(dice_cols):
+        with c:
+            face, is_joker = _parse_die(g.dice[i])
+            img = _make_die_image(face, is_joker, size=96)
+            st.image(img, width=96, caption=f"{i}:{repr(g.dice[i])}")
+
     cols = st.columns(3)
     cols[0].write(f"Rolls left: **{g.rolls_left}**")
     cols[1].write(f"First roll: **{g.first_roll}**")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from typing import Dict, List
+from collections import Counter  # <-- for helpful mismatch messages
 
 from .models import Category, roll_dice
 from .scoring import score_category
@@ -10,6 +11,15 @@ from .constants import ROW_W, COL_W, SCHOOL_CATS, COMBO_CATS
 from .render import render_scoreboard, label_for
 from .school import record_school
 from .bonus import after_record as _after_record_bonus
+
+
+# Categories where writing a zero should be rejected (must meet the combo)
+NON_SCHOOL_STRICT = {
+    Category.PAIR, Category.TWO_PAIRS, Category.TRIPS,
+    Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT,
+    Category.FULL, Category.KARE, Category.ABAKA,
+}
+
 
 class GameEngine:
     """Turn flow + thin facades to school/bonus/rendering."""
@@ -46,12 +56,45 @@ class GameEngine:
         if self.rolls_left < 2:
             self.first_roll = False
 
+    # ----- scoring -----
+    def _explain_mismatch(self, category: Category) -> str:
+        """Human-friendly hint when a strict row would otherwise record a zero."""
+        vals = [d.value for d in self.dice]
+        cnt = Counter(vals)
+        joker_wild = any(d.is_joker and d.value == 1 for d in self.dice)
+
+        if category == Category.ABAKA:
+            v, c = max(cnt.items(), key=lambda kv: kv[1])
+            extra = " + wild(1)" if joker_wild else ""
+            return (f"Abaka needs five of a kind. You have {c}×{v}{extra}. "
+                    f"Joker is wild only when it shows 1.")
+        if category == Category.KARE:
+            v, c = max(cnt.items(), key=lambda kv: kv[1])
+            extra = " + wild(1)" if joker_wild else ""
+            return f"Kare needs four of a kind. You have {c}×{v}{extra}."
+        if category == Category.FULL:
+            return "Full needs 3+2 of different ranks (strict)."
+        if category in (Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT):
+            return ("Straights need the exact pattern (LS any 4-in-a-row; "
+                    "BS 1–5 or 2–6). Joker is wild only when it shows 1.")
+        if category == Category.TRIPS:
+            return "Trips needs three of a kind."
+        if category == Category.TWO_PAIRS:
+            return "Two Pairs needs two different pairs."
+        if category == Category.PAIR:
+            return "Pair needs at least one pair."
+        return f"{category.name} conditions not met for this roll."
+
     def record_score(self, category: Category, slot_index: int) -> None:
         if category.name.startswith("SCHOOL_"):
             record_school(self, category, slot_index)
         else:
             score = score_category(self.dice, category, first_roll=self.first_roll)
+            # Disallow accidental zero on strict rows (forces player to cross instead)
+            if category in NON_SCHOOL_STRICT and score == 0:
+                raise ValueError(self._explain_mismatch(category))
             self.players[self.current].record(category, slot_index, score)
+
         self._after_record(category, slot_index)
         self.next_player()
 
