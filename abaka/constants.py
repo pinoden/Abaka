@@ -2,8 +2,9 @@ from __future__ import annotations
 from typing import List
 from .models import Category
 
-ROW_W = 6           # label column width
-COL_W = 15          # 4 cells * 3 chars + 3 spaces
+ROW_W = 6
+# 3 cells (3*3) + 2 spaces between = 11, plus " | " (3) + bonus (3) = 17
+COL_W = 17
 
 SCHOOL_CATS: List[Category] = [
     Category.SCHOOL_1, Category.SCHOOL_2, Category.SCHOOL_3,
