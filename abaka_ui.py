@@ -5,10 +5,13 @@ from contextlib import redirect_stdout
 import streamlit as st
 import re
 from PIL import Image, ImageDraw
-
+from PIL import ImageOps
+from streamlit_image_select import image_select
 
 from abaka.engine import GameEngine
 from abaka.models import Category
+
+GOLD = (255, 215, 0, 255)
 
 # ---------- helpers ----------
 def label_for(cat: Category) -> str:
@@ -105,10 +108,26 @@ def _make_die_image(value: int, is_joker: bool, size: int = 96, style: str = "fi
 
     return img
 
+def _with_gold_border(img: Image.Image, selected: bool, thickness: int = 6) -> Image.Image:
+    if not selected:
+        return img
+    # add transparent pad, then draw a rounded gold frame
+    pad = thickness + 2
+    canvas = Image.new("RGBA", (img.width + pad*2, img.height + pad*2), (0,0,0,0))
+    canvas.paste(img, (pad, pad))
+    # simple square frame (rounded rect is more code; this is clean & clear)
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle([2, 2, canvas.width-3, canvas.height-3], outline=GOLD, width=thickness)
+    return canvas
+
 # ---------- session boot ----------
 if "engine" not in st.session_state:
     st.session_state.engine = None
     st.session_state.awaiting_turn = True  # waiting to start the current player's turn
+
+if "selected_dice" not in st.session_state:
+    st.session_state.selected_dice = set()
+
 
 # ---------- first-run: ask for player names ----------
 if st.session_state.engine is None:
@@ -153,12 +172,25 @@ if st.session_state.awaiting_turn:
         st.session_state.awaiting_turn = False
         st.rerun()
 else:
-    # Show dice (images) & turn state
     dice_cols = st.columns(len(g.dice))
     for i, c in enumerate(dice_cols):
         with c:
             face, is_joker = _parse_die(g.dice[i])
-            img = _make_die_image(face, is_joker, size=96, style="fill")  # try 'outline' or 'band'
+            img = _make_die_image(face, is_joker, size=96, style="fill")
+
+            selected = i in st.session_state.selected_dice
+            # add a gold border if selected
+            border = (255, 215, 0, 255) if selected else (200, 200, 200, 255)
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([2, 2, img.width-3, img.height-3], outline=border, width=6)
+
+            if st.button(f"🎲", key=f"die_btn_{i}"):
+                if selected:
+                    st.session_state.selected_dice.remove(i)
+                else:
+                    st.session_state.selected_dice.add(i)
+                st.rerun()
+
             st.image(img, width=96, caption=f"{i}:{repr(g.dice[i])}")
 
     cols = st.columns(3)
@@ -168,17 +200,12 @@ else:
 
     st.divider()
 
-    # Reroll block
-    st.markdown("**Reroll**")
-    options = list(range(len(g.dice)))
-    show_opt = [f"{i}:{repr(g.dice[i])}" for i in options]
-    idxs = st.multiselect("Select dice to reroll", options, default=[], format_func=lambda i: show_opt[i])
-    if st.button("Reroll selected", disabled=(g.rolls_left <= 0)):
-        try:
-            g.reroll(idxs)
-            st.rerun()
-        except Exception as e:
-            st.error(str(e))
+    # --- Reroll button uses selected dice ---
+    if st.button("Reroll selected", disabled=(g.rolls_left <= 0 or not st.session_state.selected_dice)):
+        g.reroll(sorted(st.session_state.selected_dice))
+        st.session_state.selected_dice.clear()
+        st.rerun()
+
 
     st.divider()
 
