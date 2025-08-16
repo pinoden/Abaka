@@ -8,54 +8,105 @@ from abaka.engine import GameEngine
 from abaka.models import Category
 
 
-def render_move_selection(engine: GameEngine) -> None:
+def render_move_selection(engine: GameEngine):
     """Render the move selection interface."""
-    st.divider()
+    st.markdown('<div style="font-size: 1.5em;">Select move category:</div>', unsafe_allow_html=True)
     
-    # Score / Cross - Radio button selection
+    # Add custom CSS for radio button styling
+    st.markdown("""
+    <style>
+    /* Custom styling for radio buttons */
+    .stRadio > div {
+        background-color: #2c3e50;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 10px 0;
+    }
+    .stRadio > div > label {
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 1.1em !important;
+    }
+    .stRadio > div > div > label {
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 1.1em !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Add action selection radio buttons
+    action = st.radio(
+        "Action:",
+        ["Score", "Cross"],
+        horizontal=True,
+        key="action_radio"
+    )
+    
+    # Store the selected action in session state
+    st.session_state.action = action
+    
+    # Add spacing
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Get available rows for the current player
     avail = _get_available_rows(engine, engine.players[engine.current])
     
     if avail:
-        st.markdown("**Choose your move:**", help="Select your action and move category")
-        
-        # First radio button group: Score or Cross
-        st.markdown('<div style="font-size: 1.5em;">Action:</div>', unsafe_allow_html=True)
-        action = st.radio("Action:", ["Score", "Cross"], horizontal=True, label_visibility="collapsed")
-        
-        # Initialize selected_move in session state if not exists
-        if "selected_move" not in st.session_state:
-            st.session_state.selected_move = None
-        
-        # Second radio button group: Available move categories in 3x5 grid
-        st.markdown('<div style="font-size: 1.5em;">Select move category:</div>', unsafe_allow_html=True)
-        
-        # Create descriptive labels for each category
-        labels = [_get_descriptive_label(c) for c in avail]
+        # Create a mapping from descriptive labels to categories
         label_to_cat = {_get_descriptive_label(c): c for c in avail}
         
-        # Organize in 3x5 grid layout
-        num_cols = 3
-        num_rows = (len(labels) + num_cols - 1) // num_cols  # Ceiling division
+        # Get current action from session state
+        action = st.session_state.get('action', 'Score')
         
-        # Create grid columns
-        grid_cols = st.columns(num_cols)
+        # Apply CSS for selected button styling (blue)
+        st.markdown("""
+        <style>
+        /* Make selected move category buttons navy blue */
+        /* Use a simpler selector that should work */
+        div[data-testid="stButton"] button[kind="primary"] {
+            background-color: #2c3e50 !important;
+            color: white !important;
+        }
+        div[data-testid="stButton"] button[kind="primary"]:hover {
+            background-color: #1a252f !important;
+        }
+        /* But keep the execute button green */
+        div[data-testid="stButton"] button[kind="primary"]:last-child {
+            background-color: #27ae60 !important;
+        }
+        div[data-testid="stButton"] button[kind="primary"]:last-child:hover {
+            background-color: #229954 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
         
-        # Place options in grid
-        for i, label in enumerate(labels):
-            col_idx = i % num_cols
-            row_idx = i // num_cols
+        # Create a 3x5 grid for move selection
+        cols = st.columns(3)
+        
+        for i, cat in enumerate(avail):
+            label = _get_descriptive_label(cat)
+            col_idx = i % 3
             
-            with grid_cols[col_idx]:
-                # Use radio button to select the move
-                if st.radio(f"Move {i+1}:", [label], key=f"move_{i}", 
-                           label_visibility="collapsed", 
-                           index=0 if st.session_state.selected_move == label else None):
-                    st.session_state.selected_move = label
+            with cols[col_idx]:
+                button_key = f"move_btn_{i}"
+                is_selected = st.session_state.get('selected_move') == label
+                
+                if is_selected:
+                    # Blue button for selected action
+                    if st.button(label, key=button_key, type="primary"):
+                        st.session_state.selected_move = label
+                        st.rerun()
+                else:
+                    # Dark button for unselected
+                    if st.button(label, key=button_key, type="secondary"):
+                        st.session_state.selected_move = label
+                        st.rerun()
         
         # Action button with green color and larger font
         st.markdown('<div style="font-size: 1.5em;">Execute Move:</div>', unsafe_allow_html=True)
         
-        # Custom CSS for calming green button - target the specific button
+        # Custom CSS for calming green button
         st.markdown("""
         <style>
         div[data-testid="stButton"] button[kind="primary"] {
