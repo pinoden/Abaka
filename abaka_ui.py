@@ -264,17 +264,21 @@ else:
         def get_descriptive_label(cat: Category) -> str:
             if cat.name.startswith("SCHOOL_"):
                 return f"School {cat.name.split('_')[1]}"
-            return {
-                Category.PAIR: "Pair",
-                Category.TWO_PAIRS: "Two Pairs", 
-                Category.TRIPS: "Three of a Kind",
-                Category.SMALL_STRAIGHT: "Small Straight",
-                Category.LARGE_STRAIGHT: "Large Straight",
-                Category.FULL: "Full House",
-                Category.KARE: "Kare",
-                Category.ABAKA: "Abaka",
-                Category.SUM: "Sum",
-            }[cat]
+            
+            # Use a more robust lookup that handles enum values properly
+            category_labels = {
+                "PAIR": "Pair",
+                "TWO_PAIRS": "Two Pairs", 
+                "TRIPS": "Three of a Kind",
+                "SMALL_STRAIGHT": "Small Straight",
+                "LARGE_STRAIGHT": "Large Straight",
+                "FULL": "Full House",
+                "KARE": "Kare",
+                "ABAKA": "Abaka",
+                "SUM": "Sum",
+            }
+            
+            return category_labels.get(cat.name, str(cat))
         
         labels = [get_descriptive_label(c) for c in avail]
         label_to_cat = {get_descriptive_label(c): c for c in avail}
