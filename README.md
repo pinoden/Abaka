@@ -33,9 +33,9 @@ pip install -r requirements.txt -->
 
 ```bash
 # if src/abaka/__main__.py exists:
-python -m abaka
-*OR*
 streamlit run abaka_ui.py
+*OR*
+python -m abaka
 
 # or via the helper script:
 python scripts/abaka_cli.py
