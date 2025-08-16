@@ -147,6 +147,21 @@ if st.session_state.engine is None:
 with st.sidebar:
     st.header("New game")
     names = st.text_input("Players (comma-separated)", "P1,P2")
+    
+    # Custom CSS for blue start new game button
+    st.markdown("""
+    <style>
+    .sidebar div[data-testid="stButton"] button {
+        background-color: #4a90e2 !important;
+        color: white !important;
+        border: none !important;
+    }
+    .sidebar div[data-testid="stButton"] button:hover {
+        background-color: #357abd !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     if st.button("Start new game"):
         players = [n.strip() for n in names.split(",") if n.strip()] or ["P1", "P2"]
         st.session_state.engine = GameEngine(players)
@@ -179,8 +194,8 @@ else:
             img = _make_die_image(face, is_joker, size=96, style="fill")
 
             selected = i in st.session_state.selected_dice
-            # add a gold border if selected
-            border = (255, 215, 0, 255) if selected else (200, 200, 200, 255)
+            # add a calming yellow border if selected, soft gray if not
+            border = (255, 223, 0, 255) if selected else (180, 180, 180, 255)
             draw = ImageDraw.Draw(img)
             draw.rectangle([2, 2, img.width-3, img.height-3], outline=border, width=6)
 
@@ -201,7 +216,26 @@ else:
     st.divider()
 
     # --- Reroll button uses selected dice ---
-    if st.button("Reroll selected", disabled=(g.rolls_left <= 0 or not st.session_state.selected_dice)):
+    # Custom CSS for yellow reroll button
+    st.markdown("""
+    <style>
+    div[data-testid="stButton"] button[kind="secondary"] {
+        background-color: #f4d03f !important;
+        color: #2c3e50 !important;
+        border: none !important;
+        font-weight: 500 !important;
+    }
+    div[data-testid="stButton"] button[kind="secondary"]:hover {
+        background-color: #f1c40f !important;
+    }
+    div[data-testid="stButton"] button[kind="secondary"]:disabled {
+        background-color: #bdc3c7 !important;
+        color: #7f8c8d !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    if st.button("Reroll selected", disabled=(g.rolls_left <= 0 or not st.session_state.selected_dice), key="reroll_btn", type="secondary"):
         g.reroll(sorted(st.session_state.selected_dice))
         st.session_state.selected_dice.clear()
         st.rerun()
@@ -209,41 +243,95 @@ else:
 
     st.divider()
 
-    # Score / Cross
+    # Score / Cross - Radio button selection
     avail = available_rows(g, player)
-    labels = [label_for(c) for c in avail]
-    label_to_cat = {label_for(c): c for c in avail}
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        st.markdown("**Score row**")
-        pick = st.selectbox("Choose a row to score", ["—"] + labels, index=0)
-        if st.button("Score selected", type="primary"):
-            if pick != "—":
-                cat = label_to_cat[pick]
+    
+    if avail:
+        st.markdown("**Choose your move:**", help="Select your action and move category")
+        
+        # First radio button group: Score or Cross
+        st.markdown('<div style="font-size: 1.5em;">Action:</div>', unsafe_allow_html=True)
+        action = st.radio("Action:", ["Score", "Cross"], horizontal=True, label_visibility="collapsed")
+        
+        # Initialize selected_move in session state if not exists
+        if "selected_move" not in st.session_state:
+            st.session_state.selected_move = None
+        
+        # Second radio button group: Available move categories in 3x5 grid
+        st.markdown('<div style="font-size: 1.5em;">Select move category:</div>', unsafe_allow_html=True)
+        
+        # Create descriptive labels for each category
+        def get_descriptive_label(cat: Category) -> str:
+            if cat.name.startswith("SCHOOL_"):
+                return f"School {cat.name.split('_')[1]}"
+            return {
+                Category.PAIR: "Pair",
+                Category.TWO_PAIRS: "Two Pairs", 
+                Category.TRIPS: "Three of a Kind",
+                Category.SMALL_STRAIGHT: "Small Straight",
+                Category.LARGE_STRAIGHT: "Large Straight",
+                Category.FULL: "Full House",
+                Category.KARE: "Kare",
+                Category.ABAKA: "Abaka",
+                Category.SUM: "Sum",
+            }[cat]
+        
+        labels = [get_descriptive_label(c) for c in avail]
+        label_to_cat = {get_descriptive_label(c): c for c in avail}
+        
+        # Organize in 3x5 grid layout
+        num_cols = 3
+        num_rows = (len(labels) + num_cols - 1) // num_cols  # Ceiling division
+        
+        # Create grid columns
+        grid_cols = st.columns(num_cols)
+        
+        # Place options in grid
+        for i, label in enumerate(labels):
+            col_idx = i % num_cols
+            row_idx = i // num_cols
+            
+            with grid_cols[col_idx]:
+                # Use radio button to select the move
+                if st.radio(f"Move {i+1}:", [label], key=f"move_{i}", label_visibility="collapsed", index=0 if st.session_state.selected_move == label else None):
+                    st.session_state.selected_move = label
+        
+        # Action button with green color and larger font
+        st.markdown('<div style="font-size: 1.5em;">Execute Move:</div>', unsafe_allow_html=True)
+        
+        # Custom CSS for calming green button - target the specific button
+        st.markdown("""
+        <style>
+        div[data-testid="stButton"] button[kind="primary"] {
+            background-color: #27ae60 !important;
+            color: white !important;
+            font-size: 1.5em !important;
+            padding: 10px 20px !important;
+            border: none !important;
+            border-radius: 8px !important;
+        }
+        div[data-testid="stButton"] button[kind="primary"]:hover {
+            background-color: #229954 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        if st.button(f"{action} selected move", type="primary"):
+            if st.session_state.selected_move:
+                cat = label_to_cat[st.session_state.selected_move]
                 try:
                     slot = g.leftmost_slot(player, cat)
-                    g.record_score(cat, slot)
+                    if action == "Score":
+                        g.record_score(cat, slot)
+                    else:
+                        g.record_cross(cat, slot)
+                    # Reset the selected move after successful execution
+                    st.session_state.selected_move = None
                     st.session_state.awaiting_turn = True  # next player's turn
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
             else:
-                st.info("Pick a row to score.")
-
-    with c2:
-        st.markdown("**Cross row**")
-        pickx = st.selectbox("Choose a row to cross", ["—"] + labels, index=0, key="cross_sel")
-        if st.button("Cross selected"):
-            if pickx != "—":
-                cat = label_to_cat[pickx]
-                try:
-                    slot = g.leftmost_slot(player, cat)
-                    g.record_cross(cat, slot)
-                    st.session_state.awaiting_turn = True
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
-            else:
-                st.info("Pick a row to cross.")
+                st.info("Please select a move category.")
+    else:
+        st.info("No available moves - all rows are filled!")
