@@ -175,7 +175,204 @@ st.title("Abaka")
 
 # Scoreboard
 st.subheader("Scoreboard")
-st.code(render_scoreboard(g), language="text")
+
+# Create a clean, professional scoreboard with proper table structure
+def render_clean_scoreboard(engine: GameEngine):
+    # Custom CSS for the scoreboard table
+    st.markdown("""
+    <style>
+    .scoreboard-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-family: monospace;
+        font-size: 14px;
+        margin-left: 0;
+    }
+    .scoreboard-table th, .scoreboard-table td {
+        border: 1px solid #444;
+        padding: 6px 8px;
+        text-align: center;
+        min-width: 45px;
+    }
+    .scoreboard-table th {
+        background-color: #2c3e50;
+        color: white;
+        font-weight: bold;
+    }
+    .scoreboard-table td {
+        background-color: #34495e;
+        color: white;
+    }
+    .scoreboard-table .row-header {
+        background-color: #2c3e50;
+        font-weight: bold;
+        text-align: left;
+        min-width: 50px;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+    .scoreboard-table .current-player {
+        background-color: #e74c3c;
+        color: white;
+        font-weight: bold;
+    }
+    .scoreboard-table .section-divider {
+        background-color: #7f8c8d;
+        height: 3px;
+    }
+    .scoreboard-table .empty-slot {
+        color: #95a5a6;
+    }
+    .scoreboard-table .crossed-slot {
+        color: #e74c3c;
+        font-weight: bold;
+    }
+    .scoreboard-table .score-slot {
+        color: #2ecc71;
+        font-weight: bold;
+    }
+    .scoreboard-table .bonus-slot {
+        color: #f39c12;
+        font-weight: bold;
+    }
+    .scoreboard-table .bonus-column {
+        border-left: 3px solid #f39c12;
+        background-color: #2d3748;
+    }
+    .scoreboard-table .player-separator {
+        border-left: 4px solid #7f8c8d;
+        background-color: #2d3748;
+    }
+    .scoreboard-table .bonus-header {
+        background-color: #f39c12;
+        color: #2d3748;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create the scoreboard HTML
+    html_table = """
+    <table class="scoreboard-table">
+        <thead>
+            <tr>
+                <th class="row-header">Row</th>
+    """
+    
+    # Add player headers with 4 columns each (3 score + 1 bonus)
+    for i, player in enumerate(engine.players):
+        if player == engine.players[engine.current]:
+            html_table += f'<th colspan="4" class="current-player">→ {player.name} 🎯</th>'
+        else:
+            html_table += f'<th colspan="4">{player.name}</th>'
+    
+    html_table += "</tr><tr><th class='row-header'></th>"
+    
+    # Add sub-headers for score slots
+    for player in engine.players:
+        html_table += '<th>S1</th><th>S2</th><th>S3</th><th class="bonus-header">B</th>'
+    
+    html_table += "</tr></thead><tbody>"
+    
+    # School categories (rows 1-6)
+    for i in range(1, 7):
+        html_table += f"<tr><td class='row-header'>{i}</td>"
+        for player_idx, player in enumerate(engine.players):
+            slots = player.table[getattr(Category, f'SCHOOL_{i}')]
+            # 3 score slots
+            for j in range(3):
+                if slots[j] is None:
+                    html_table += '<td class="empty-slot">—</td>'
+                elif slots[j] == "X":
+                    html_table += '<td class="crossed-slot">❌</td>'
+                else:
+                    html_table += f'<td class="score-slot">{slots[j]}</td>'
+            # 1 bonus slot with special styling
+            bonus_class = "bonus-column"
+            if player_idx == 0:  # First player
+                bonus_class += " player-separator"
+            
+            if slots[3] is None:
+                html_table += f'<td class="{bonus_class} empty-slot">—</td>'
+            elif slots[3] == "X":
+                html_table += f'<td class="{bonus_class} crossed-slot">❌</td>'
+            else:
+                html_table += f'<td class="{bonus_class} bonus-slot">{slots[3]}</td>'
+        html_table += "</tr>"
+    
+    # Section divider
+    html_table += '<tr><td colspan="' + str(len(engine.players) * 4 + 1) + '" class="section-divider"></td></tr>'
+    
+    # Combo categories (rows D, DD, T, LS, BS, F, C, A, Σ)
+    combo_labels = ["D", "DD", "T", "LS", "BS", "F", "C", "A", "Σ"]
+    combo_cats = [Category.PAIR, Category.TWO_PAIRS, Category.TRIPS, 
+                  Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT, 
+                  Category.FULL, Category.KARE, Category.ABAKA, Category.SUM]
+    
+    for i, (label, cat) in enumerate(zip(combo_labels, combo_cats)):
+        html_table += f"<tr><td class='row-header'>{label}</td>"
+        for player_idx, player in enumerate(engine.players):
+            slots = player.table[cat]
+            # 3 score slots
+            for j in range(3):
+                if slots[j] is None:
+                    html_table += '<td class="empty-slot">—</td>'
+                elif slots[j] == "X":
+                    html_table += '<td class="crossed-slot">❌</td>'
+                else:
+                    html_table += f'<td class="score-slot">{slots[j]}</td>'
+            # 1 bonus slot with special styling
+            bonus_class = "bonus-column"
+            if player_idx == 0:  # First player
+                bonus_class += " player-separator"
+            
+            if slots[3] is None:
+                html_table += f'<td class="{bonus_class} empty-slot">—</td>'
+            elif slots[3] == "X":
+                html_table += f'<td class="{bonus_class} crossed-slot">❌</td>'
+            else:
+                html_table += f'<td class="{bonus_class} bonus-slot">{slots[3]}</td>'
+        html_table += "</tr>"
+    
+    # Section divider
+    html_table += '<tr><td colspan="' + str(len(engine.players) * 4 + 1) + '" class="section-divider"></td></tr>'
+    
+    # Column bonuses row (B)
+    html_table += "<tr><td class='row-header'>B</td>"
+    for player_idx, player in enumerate(engine.players):
+        col_bonuses = player.column_bonus
+        # 3 column bonuses
+        for bonus in col_bonuses:
+            if bonus is None:
+                html_table += '<td class="empty-slot">—</td>'
+            elif bonus == "X":
+                html_table += '<td class="crossed-slot">❌</td>'
+            else:
+                html_table += f'<td class="score-slot">{bonus}</td>'
+        # 1 filler cell with special styling
+        bonus_class = "bonus-column"
+        if player_idx == 0:  # First player
+            bonus_class += " player-separator"
+        html_table += f'<td class="{bonus_class} empty-slot">—</td>'
+    html_table += "</tr>"
+    
+    # Section divider
+    html_table += '<tr><td colspan="' + str(len(engine.players) * 4 + 1) + '" class="section-divider"></td></tr>'
+    
+    # Totals row
+    html_table += "<tr><td class='row-header'>TOT</td>"
+    for player in engine.players:
+        total_score = player.calculate_score()
+        html_table += f'<td colspan="4" class="score-slot"><strong>{total_score}</strong></td>'
+    html_table += "</tr>"
+    
+    html_table += "</tbody></table>"
+    
+    # Display the HTML table
+    st.markdown(html_table, unsafe_allow_html=True)
+
+# Display the clean scoreboard
+render_clean_scoreboard(g)
 
 # Current player / turn controls
 player = g.players[g.current]
