@@ -51,10 +51,10 @@ def _parse_die(d) -> tuple[int, bool]:
             v = int(m2.group(1)) if m2 else 1
     return int(v), bool(is_joker)
 # --- configurable joker colors ---
-JOKER_FILL_COLOR   = (237, 233, 254, 255)  # lavender body
-JOKER_OUTLINE_COLOR= (139,  92, 246, 255)  # violet outline
-JOKER_BAND_COLOR   = (250, 204,  21, 220)  # amber stripe
-PIP_COLOR          = (20, 20, 20, 255)
+JOKER_FILL_COLOR    = (59, 130, 128, 255)
+JOKER_OUTLINE_COLOR = (96, 165, 250, 255)
+JOKER_BAND_COLOR    = (250, 204,  21, 220)  # amber stripe
+PIP_COLOR           = (20, 20, 20, 255)
 
 def _make_die_image(value: int, is_joker: bool, size: int = 96, style: str = "fill") -> Image.Image:
     """
