@@ -24,9 +24,9 @@ Python game engine for Abaka (dice/slots logic).
 
 ## Quick start
 ```bash
-python3 -m venv .venv
+<!-- python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.txt -->
 ````
 
 ### Run
@@ -34,6 +34,8 @@ pip install -r requirements.txt
 ```bash
 # if src/abaka/__main__.py exists:
 python -m abaka
+*OR*
+streamlit run abaka_ui.py
 
 # or via the helper script:
 python scripts/abaka_cli.py
