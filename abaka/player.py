@@ -40,11 +40,18 @@ class PlayerState:
 
     def calculate_score(self):
         total = 0
+        # sum all numeric cells including row-bonus cells
         for _, slots in self.table.items():
             for v in slots:
                 if isinstance(v, int):
                     total += v
+        # add column bonuses
         for v in self.column_bonus:
             if isinstance(v, int):
                 total += v
+
+        # endgame penalty: -100 per negative point of school balance
+        if isinstance(self.school_balance, int) and self.school_balance < 0:
+            total += self.school_balance * 100  # e.g., -8 -> -800
+
         return total
