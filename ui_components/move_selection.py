@@ -171,7 +171,7 @@ def _filter_available_categories(engine: GameEngine, available_categories: list,
                 # Show all categories for scoring when dice haven't been rolled
                 filtered.append(cat)
             else:
-                # For scoring with dice
+                # For scoring with dice, check if the category can actually be scored
                 if cat.name.startswith("SCHOOL_"):
                     # For school categories, check if the current dice can score in this category
                     try:
