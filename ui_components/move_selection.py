@@ -173,8 +173,17 @@ def _filter_available_categories(engine: GameEngine, available_categories: list,
             else:
                 # For scoring with dice
                 if cat.name.startswith("SCHOOL_"):
-                    # School categories are always available for scoring
-                    filtered.append(cat)
+                    # For school categories, check if the current dice can score in this category
+                    try:
+                        # Extract the school number from category name (e.g., SCHOOL_1 -> 1)
+                        school_number = int(cat.name.split('_')[1])
+                        # Check if any die shows this number
+                        can_score = any(d.value == school_number for d in engine.dice)
+                        if can_score:
+                            filtered.append(cat)
+                    except:
+                        # If we can't determine, don't include this category
+                        continue
                 else:
                     # For non-school categories, only include if they would score > 0
                     try:
