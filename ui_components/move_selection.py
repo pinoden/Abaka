@@ -135,6 +135,7 @@ def render_move_selection(engine: GameEngine):
                     # Reset the selected move after successful execution
                     st.session_state.selected_move = None
                     st.session_state.awaiting_turn = True  # next player's turn
+                    st.session_state.dice_rolled = False  # reset dice state for next player
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))
