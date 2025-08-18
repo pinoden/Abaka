@@ -31,4 +31,5 @@ def render_sidebar() -> None:
             players = [n.strip() for n in names.split(",") if n.strip()] or ["P1", "P2"]
             st.session_state.engine = GameEngine(players)
             st.session_state.awaiting_turn = True
+            st.session_state.dice_rolled = False
             st.rerun()
