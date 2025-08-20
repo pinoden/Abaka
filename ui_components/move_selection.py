@@ -6,6 +6,7 @@ Handles the move selection interface with radio buttons and execution.
 import streamlit as st
 from abaka.engine import GameEngine
 from abaka.models import Category
+from abaka.scoring import score_category
 
 
 def render_move_selection(engine: GameEngine):
@@ -53,8 +54,18 @@ def render_move_selection(engine: GameEngine):
     avail = _get_available_rows(engine, engine.players[engine.current])
     
     if avail:
+        # Filter available categories based on action and current dice
+        filtered_cats = _filter_available_categories(engine, avail, action)
+        
+        if not filtered_cats:
+            if action == "Score":
+                st.info("No valid scoring options available with current dice. Consider crossing out a category instead.")
+            else:
+                st.info("No categories available to cross out.")
+            return
+        
         # Create a mapping from descriptive labels to categories
-        label_to_cat = {_get_descriptive_label(c): c for c in avail}
+        label_to_cat = {_get_descriptive_label(c): c for c in filtered_cats}
         
         # Get current action from session state
         action = st.session_state.get('action', 'Score')
@@ -84,7 +95,7 @@ def render_move_selection(engine: GameEngine):
         # Create a 3x5 grid for move selection
         cols = st.columns(3)
         
-        for i, cat in enumerate(avail):
+        for i, cat in enumerate(filtered_cats):
             label = _get_descriptive_label(cat)
             col_idx = i % 3
             
@@ -143,6 +154,47 @@ def render_move_selection(engine: GameEngine):
                 st.info("Please select a move category.")
     else:
         st.info("No available moves - all rows are filled!")
+
+
+def _filter_available_categories(engine: GameEngine, available_categories: list, action: str) -> list:
+    """Filter available categories based on action and current dice."""
+    filtered = []
+    
+    for cat in available_categories:
+        if action == "Cross":
+            # For crossing out, exclude school categories
+            if cat.name.startswith("SCHOOL_"):
+                continue
+            filtered.append(cat)
+        else:  # Score action
+            if not engine.dice:  # No dice rolled yet
+                # Show all categories for scoring when dice haven't been rolled
+                filtered.append(cat)
+            else:
+                # For scoring with dice, check if the category can actually be scored
+                if cat.name.startswith("SCHOOL_"):
+                    # For school categories, check if the current dice can score in this category
+                    try:
+                        # Extract the school number from category name (e.g., SCHOOL_1 -> 1)
+                        school_number = int(cat.name.split('_')[1])
+                        # Check if any die shows this number
+                        can_score = any(d.value == school_number for d in engine.dice)
+                        if can_score:
+                            filtered.append(cat)
+                    except:
+                        # If we can't determine, don't include this category
+                        continue
+                else:
+                    # For non-school categories, only include if they would score > 0
+                    try:
+                        score = score_category(engine.dice, cat, first_roll=engine.first_roll)
+                        if score > 0:
+                            filtered.append(cat)
+                    except:
+                        # If scoring fails, don't include this category
+                        continue
+    
+    return filtered
 
 
 def _get_available_rows(engine: GameEngine, player) -> list:

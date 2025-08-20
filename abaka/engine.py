@@ -75,9 +75,8 @@ class GameEngine:
         if category == Category.FULL:
             return "Full needs 3+2 of different ranks (strict)."
         if category in (Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT):
-            return ("Straights need the exact pattern: "
-                    "LS = 1–2–3–4–5, BS = 2–3–4–5–6. "
-                    "Joker is wild only when it shows 1.")
+            return ("Straights need the exact pattern (LS any 4-in-a-row; " 
+                    "BS 1–5 or 2–6). Joker is wild only when it shows 1.")
         if category == Category.TRIPS:
             return "Trips needs three of a kind."
         if category == Category.TWO_PAIRS:
