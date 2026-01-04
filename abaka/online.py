@@ -12,9 +12,12 @@ from .player import PlayerState
 
 def serialize_game_state(engine: GameEngine) -> Dict[str, Any]:
     """Convert the entire GameEngine state to a JSON-serializable dictionary."""
+    # Handle both direct attribute and property access for dice
+    dice_list = engine.dice if hasattr(engine, "dice") else []
+    
     return {
         "current": engine.current,
-        "dice": [{"v": d.value, "j": d.is_joker} for d in engine.dice],
+        "dice": [{"v": d.value, "j": d.is_joker} for d in dice_list],
         "rolls_left": engine.rolls_left,
         "first_roll": engine.first_roll,
         "row_bonus_claimed": {k.name: v for k, v in engine.row_bonus_claimed.items()},
@@ -156,6 +159,13 @@ class OnlineGameEngine(GameEngine):
         self.__dict__.update(wrapped_engine.__dict__)
         self.client = client
         self.game_id = game_id
+        
+        # Initialize _dice backing field from wrapped engine's dice if present
+        # GameEngine uses 'dice' attribute, but OnlineGameEngine uses 'dice' property that reads '_dice'
+        if 'dice' in self.__dict__:
+            self._dice = self.__dict__['dice']
+        else:
+            self._dice = getattr(wrapped_engine, 'dice', [])
 
     def save(self):
         """Push current state to cloud/mock."""
@@ -165,7 +175,17 @@ class OnlineGameEngine(GameEngine):
         """Pull latest state from cloud/mock."""
         remote_engine = self.client.get_game(self.game_id)
         if remote_engine:
-            self.__dict__.update(remote_engine.__dict__)
+            # We need to be careful not to overwrite the methods/properties of OnlineGameEngine
+            # with the raw attributes of GameEngine
+            new_state = remote_engine.__dict__
+            
+            # If the remote state has 'dice', we must move it to '_dice' because we are an OnlineGameEngine
+            if 'dice' in new_state:
+                self._dice = new_state.pop('dice') # Update local backing field
+            elif hasattr(remote_engine, 'dice'): # fallback
+                self._dice = remote_engine.dice
+            
+            self.__dict__.update(new_state)
 
     # --- Overrides to trigger saves ---
 
