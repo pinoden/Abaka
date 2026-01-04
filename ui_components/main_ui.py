@@ -87,7 +87,11 @@ def render_main_ui(engine: GameEngine, read_only: bool = False) -> None:
             else:
                 st.info(f"Waiting for {player.name} to start their turn...")
             
-    elif not st.session_state.get("dice_rolled", False) and not engine.dice:
+    # Check if we should show the "Roll Dice" button or the Dice Section.
+    # We show the "Pre-Roll" state if:
+    # 1. There are no dice in the engine AND
+    # 2. EITHER we are read-only OR we haven't rolled locally yet.
+    elif not engine.dice and (read_only or not st.session_state.get("dice_rolled", False)):
         # Show "Roll Dice" button for first roll
         if st.button("Roll Dice", type="primary", disabled=read_only):
             # Actually roll the dice now
