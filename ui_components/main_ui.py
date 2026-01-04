@@ -19,6 +19,17 @@ def render_main_ui(engine: GameEngine, read_only: bool = False) -> None:
         engine: The GameEngine instance.
         read_only: If True, all interactive controls will be disabled.
     """
+    # Detect turn change to reset local state for the passive player becoming active
+    # This ensures that when a player who was watching becomes the active player,
+    # their UI resets to the "Start Turn" state.
+    if st.session_state.get("last_active_player") != engine.current:
+        st.session_state.last_active_player = engine.current
+        st.session_state.awaiting_turn = True
+        st.session_state.dice_rolled = False
+        st.session_state.selected_dice.clear()
+        st.session_state.selected_move = None
+        st.rerun()
+
     # Game title
     st.title("Abaka")
     
@@ -39,6 +50,7 @@ def render_main_ui(engine: GameEngine, read_only: bool = False) -> None:
             st.session_state.dice_rolled = False
             st.session_state.selected_dice.clear()
             st.session_state.selected_move = None
+            st.session_state.last_active_player = -1
             st.rerun()
         return
     
@@ -116,18 +128,5 @@ def initialize_session_state() -> None:
     if "selected_move" not in st.session_state:
         st.session_state.selected_move = None
 
-
-def render_new_game_setup() -> None:
-    """Render the new game setup form."""
-    st.title("Abaka — New game")
-    with st.form("name_setup"):
-        p1 = st.text_input("Player 1 name", "P1")
-        p2 = st.text_input("Player 2 name", "P2")
-        submitted = st.form_submit_button("Start game")
-        if submitted:
-            players = [p1.strip() or "P1", p2.strip() or "P2"]
-            st.session_state.engine = GameEngine(players)
-            st.session_state.awaiting_turn = True
-            st.session_state.dice_rolled = False
-            st.rerun()
-    st.stop()
+    if "last_active_player" not in st.session_state:
+        st.session_state.last_active_player = -1
