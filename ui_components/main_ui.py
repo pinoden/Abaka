@@ -11,8 +11,14 @@ from ui_components.dice import render_dice_section
 from ui_components.move_selection import render_move_selection
 
 
-def render_main_ui(engine: GameEngine) -> None:
-    """Render the main game interface."""
+def render_main_ui(engine: GameEngine, read_only: bool = False) -> None:
+    """
+    Render the main game interface.
+    
+    Args:
+        engine: The GameEngine instance.
+        read_only: If True, all interactive controls will be disabled.
+    """
     # Game title
     st.title("Abaka")
     
@@ -42,32 +48,51 @@ def render_main_ui(engine: GameEngine) -> None:
 
     if st.session_state.awaiting_turn:
         # Automatically start the turn and load everything except dice
-        engine.start_turn()
-        # Don't roll dice yet - just set up the turn
-        engine.dice = []  # Clear dice so they're not shown
-        engine.rolls_left = 2
-        engine.first_roll = True
-        st.session_state.awaiting_turn = False
-        st.session_state.dice_rolled = False
-        st.rerun()
+        
+        # If we are the active player (not read_only), we trigger the start turn logic
+        if not read_only:
+            engine.start_turn()
+            # Explicitly set turn defaults
+            engine.dice = []  # Clear dice so they're not shown
+            engine.rolls_left = 2
+            engine.first_roll = True
+            
+            # CRITICAL FIX: Save these manual state changes to the cloud!
+            # The OnlineGameEngine wrapper only auto-saves on method calls, not attribute assignments.
+            if hasattr(engine, 'save'):
+                engine.save()
+                
+            st.session_state.awaiting_turn = False
+            st.session_state.dice_rolled = False
+            st.rerun()
+        else:
+            # If read_only, we just show "Waiting for [Player] to start turn..."
+            st.info(f"Waiting for {player.name} to start their turn...")
+            
     elif not st.session_state.get("dice_rolled", False):
         # Show "Roll Dice" button for first roll
-        if st.button("Roll Dice", type="primary"):
+        if st.button("Roll Dice", type="primary", disabled=read_only):
             # Actually roll the dice now
             engine.dice = roll_dice()
+            # Note: assigning to engine.dice triggers a save in OnlineGameEngine because I added a property setter for it.
+            
             st.session_state.dice_rolled = True
             st.rerun()
         else:
-            # Show placeholder for dice area
-            st.info("Click 'Roll Dice' to start your turn")
-            # Show move selection even before dice are rolled
-            render_move_selection(engine)
+            if read_only:
+                st.info(f"{player.name} is about to roll...")
+            else:
+                # Show placeholder for dice area
+                st.info("Click 'Roll Dice' to start your turn")
+            
+            # Show move selection even before dice are rolled (but disabled if read_only)
+            render_move_selection(engine, read_only=read_only)
     else:
         # Dice section
-        render_dice_section(engine)
+        render_dice_section(engine, read_only=read_only)
         
         # Move selection
-        render_move_selection(engine)
+        render_move_selection(engine, read_only=read_only)
 
 
 def initialize_session_state() -> None:
