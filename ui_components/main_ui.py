@@ -67,9 +67,15 @@ def render_main_ui(engine: GameEngine, read_only: bool = False) -> None:
             st.rerun()
         else:
             # If read_only, we just show "Waiting for [Player] to start turn..."
-            st.info(f"Waiting for {player.name} to start their turn...")
+            # Check if the active player has already rolled (remote state update)
+            if engine.dice:
+                st.session_state.awaiting_turn = False
+                st.session_state.dice_rolled = True # Ensure local state matches
+                st.rerun()
+            else:
+                st.info(f"Waiting for {player.name} to start their turn...")
             
-    elif not st.session_state.get("dice_rolled", False):
+    elif not st.session_state.get("dice_rolled", False) and not engine.dice:
         # Show "Roll Dice" button for first roll
         if st.button("Roll Dice", type="primary", disabled=read_only):
             # Actually roll the dice now

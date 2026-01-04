@@ -16,12 +16,19 @@ def render_move_selection(engine: GameEngine, read_only: bool = False):
     # CSS for Visibility and Contrast
     st.markdown("""
     <style>
-    /* Radio Button Style */
+    /* Radio Button Style - High Contrast */
     .stRadio > div {
-        background-color: #34495e;
+        background-color: #e8f6f3; /* Light background */
         border-radius: 8px;
-        padding: 10px;
-        color: white;
+        padding: 15px;
+        border: 2px solid #1abc9c; /* Distinct border */
+    }
+    
+    /* Target the text labels inside the radio button */
+    .stRadio div[data-testid="stMarkdownContainer"] p {
+        color: #2c3e50 !important; /* Dark text for contrast */
+        font-weight: bold !important;
+        font-size: 1.2em !important;
     }
     
     /* Primary Buttons (Selected Options & Action) */
