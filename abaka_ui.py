@@ -65,7 +65,6 @@ class RestrictedOnlineGameEngine(OnlineGameEngine):
         super().record_cross(category, slot_index)
 
     def next_player(self):
-        # Even ending the turn should be restricted, though UI usually handles this flow
         if not self._is_my_turn():
             st.toast(f"🚫 Not your turn!", icon="🛑")
             return
@@ -84,9 +83,7 @@ def main():
         st.session_state.local_player_idx = None # 0 for Host, 1 for Guest
     
     # --- Deep Linking Logic ---
-    # Check for game_id in URL query parameters on first load
     if "qp_checked" not in st.session_state:
-        # Use st.query_params (Streamlit >= 1.28)
         qp = st.query_params
         if "game_id" in qp:
             st.session_state.online_mode = True
@@ -104,10 +101,8 @@ def main():
     with st.sidebar:
         st.header("Game Mode")
         
-        # Determine default index for radio button
         radio_index = 0
         if st.session_state.get("online_mode"):
-            # Default to Mock if just entering, unless we have real credentials saved
             radio_index = 1 
 
         mode = st.radio(
@@ -118,7 +113,7 @@ def main():
         
         if mode == "Local Hotseat":
             st.session_state.online_mode = False
-            render_sidebar() # Standard local new game setup
+            render_sidebar()
         
         elif mode == "Online Demo (Mock)":
             st.session_state.online_mode = True
@@ -126,7 +121,6 @@ def main():
             st.subheader("Mock Online Setup")
             st.info("Simulates online play in-memory. \n\n**To play with a friend:**\nEnsure you are on the same WiFi/Network.")
             
-            # Use Mock Client
             client = MockFirestoreClient()
             _render_online_lobby(client)
             
@@ -135,7 +129,6 @@ def main():
             st.divider()
             st.subheader("Firebase Setup")
             
-            # Credentials
             project_id = st.text_input("Firebase Project ID", key="fb_pid")
             api_key = st.text_input("Firebase Web API Key", type="password", key="fb_key")
             
@@ -148,20 +141,18 @@ def main():
     # --- Main Game Logic ---
     
     # 1. Check for Online Sync (BEFORE Rendering)
-    # We want to pull the latest state so we render the most up-to-date board.
     if st.session_state.online_mode and st.session_state.engine:
         if hasattr(st.session_state.engine, 'sync'):
             try:
                 st.session_state.engine.sync()
             except Exception as e:
-                pass # Silent fail
+                pass
 
     # 2. Render UI
     if st.session_state.engine is None:
         if st.session_state.online_mode:
             st.title("Abaka Online Lobby")
             
-            # If we came from a URL, show a big JOIN button in the main area too
             if st.session_state.get("url_game_id") and not st.session_state.game_id:
                 st.info(f"You have been invited to join Game ID: **{st.session_state.url_game_id}**")
                 st.write("Go to the sidebar to set your name and join!")
@@ -172,13 +163,15 @@ def main():
     else:
         # --- GAME ACTIVE UI ---
         
-        # Turn Status Banner
+        # Turn Status Banner & Read-Only Logic
         engine = st.session_state.engine
         local_idx = st.session_state.local_player_idx
         current_idx = engine.current
         
+        read_only = False
         if st.session_state.online_mode and local_idx is not None:
             is_my_turn = (current_idx == local_idx)
+            read_only = not is_my_turn
             current_player_name = engine.players[current_idx].name
             
             if is_my_turn:
@@ -186,26 +179,22 @@ def main():
             else:
                 st.error(f"🔴 **WAITING FOR OPPONENT...** ({current_player_name}'s turn)")
         else:
-            is_my_turn = True # Local hotseat, always allow interaction
+            is_my_turn = True 
 
-        # Render main game interface
-        render_main_ui(st.session_state.engine)
+        # Render main game interface with read_only flag
+        render_main_ui(st.session_state.engine, read_only=read_only)
         
         # 3. Smart Auto-refresh loop (AFTER Rendering)
         if st.session_state.online_mode:
-            # ONLY auto-refresh if it is NOT my turn.
-            # If it IS my turn, we must NOT refresh, or we will reset the UI (checkboxes, etc) while the user is clicking.
             if not is_my_turn:
                 with st.empty():
                     st.caption(f"Waiting for {current_player_name} to move...")
-                    time.sleep(2) # Poll every 2 seconds
+                    time.sleep(2)
                 st.rerun()
 
 
 def _render_online_lobby(client):
     """Render the Create/Join UI for any compatible client (Mock or Real)."""
-    
-    # Pre-fill join ID if from URL
     default_join_id = st.session_state.get("url_game_id", "")
     
     tab1, tab2 = st.tabs(["Create Game", "Join Game"])
@@ -221,14 +210,10 @@ def _render_online_lobby(client):
                     gid = client.create_game(base_engine)
                     st.session_state.game_id = gid
                     
-                    # Set Identity: Creator is Player 0
                     st.session_state.local_player_idx = 0
-                    
-                    # Initialize Restricted Engine
                     st.session_state.engine = RestrictedOnlineGameEngine(base_engine, client, gid, 0)
                     st.session_state.awaiting_turn = True
                     
-                    # Set URL param for easy sharing
                     st.query_params["game_id"] = gid
                     
                     st.success(f"Created! ID: {gid}")
@@ -245,13 +230,9 @@ def _render_online_lobby(client):
                     if base_engine:
                         st.session_state.game_id = join_id
                         
-                        # Set Identity: Joiner is Player 1
                         st.session_state.local_player_idx = 1
-                        
-                        # Initialize Restricted Engine
                         st.session_state.engine = RestrictedOnlineGameEngine(base_engine, client, join_id, 1)
                         
-                        # Set URL param
                         st.query_params["game_id"] = join_id
                         
                         st.success("Joined successfully!")
@@ -261,37 +242,27 @@ def _render_online_lobby(client):
                 except Exception as e:
                     st.error(f"Error: {e}")
                 
-    # Active Game Info
     if st.session_state.game_id:
         st.divider()
         st.subheader("Game Active")
         st.markdown(f"**Game ID:** `{st.session_state.game_id}`")
         
-        # --- Context-Aware Sharing Instructions ---
         if isinstance(client, MockFirestoreClient):
             local_ip = get_local_ip()
             game_url = f"http://{local_ip}:8501/?game_id={st.session_state.game_id}"
             
             st.warning(f"""
             **How to invite a friend (Mock Mode):**
-            
             1.  Ensure your friend is on the **same WiFi network**.
             2.  Share this specific URL with them (not localhost):
-            
             **`{game_url}`**
             """)
         else:
-            st.info("""
+            st.info(f"""
             **How to invite a friend (Real Mode):**
-            
-            * **If your friend ALSO runs the app on their computer:**
-                Share the Game ID: `{}` 
-                
-            * **If you deployed to the web (Streamlit Cloud):**
-                Copy the URL from your browser address bar.
-            """.format(st.session_state.game_id))
+            * Share the Game ID: `{st.session_state.game_id}` 
+            """)
         
-        # Manual Refresh Button (Always available just in case)
         st.divider()
         if st.button("Manual Sync"):
             if st.session_state.engine and hasattr(st.session_state.engine, 'sync'):

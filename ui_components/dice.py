@@ -9,7 +9,7 @@ from abaka.engine import GameEngine
 from abaka.models import Category
 
 
-def render_dice_section(engine: GameEngine) -> None:
+def render_dice_section(engine: GameEngine, read_only: bool = False) -> None:
     """Render the dice section with selection and reroll functionality."""
     # Dice display
     dice_cols = st.columns(len(engine.dice))
@@ -24,7 +24,8 @@ def render_dice_section(engine: GameEngine) -> None:
             draw = ImageDraw.Draw(img)
             draw.rectangle([2, 2, img.width-3, img.height-3], outline=border, width=6)
 
-            if st.button(f"🎲", key=f"die_btn_{i}"):
+            # Disable dice clicking if read_only
+            if st.button(f"🎲", key=f"die_btn_{i}", disabled=read_only):
                 if selected:
                     st.session_state.selected_dice.remove(i)
                 else:
@@ -35,7 +36,7 @@ def render_dice_section(engine: GameEngine) -> None:
 
     # Game info and reroll
     _render_game_info(engine)
-    _render_reroll_section(engine)
+    _render_reroll_section(engine, read_only)
 
 
 def _render_game_info(engine: GameEngine) -> None:
@@ -46,31 +47,32 @@ def _render_game_info(engine: GameEngine) -> None:
     cols[2].write(f"Player: **{engine.players[engine.current].name}**")
 
 
-def _render_reroll_section(engine: GameEngine) -> None:
+def _render_reroll_section(engine: GameEngine, read_only: bool) -> None:
     """Render the reroll button section."""
     st.divider()
     
-    # Custom CSS for yellow reroll button
+    # Updated CSS for visibility without aggressive overrides
     st.markdown("""
     <style>
     div[data-testid="stButton"] button[kind="secondary"] {
-        background-color: #f4d03f !important;
-        color: #2c3e50 !important;
-        border: none !important;
-        font-weight: 500 !important;
+        border: 2px solid #ccc !important;
     }
     div[data-testid="stButton"] button[kind="secondary"]:hover {
-        background-color: #f1c40f !important;
-    }
-    div[data-testid="stButton"] button[kind="secondary"]:disabled {
-        background-color: #bdc3c7 !important;
-        color: #7f8c8d !important;
+        border-color: #f1c40f !important;
+        background-color: #fef9e7 !important;
     }
     </style>
     """, unsafe_allow_html=True)
     
+    # Disable reroll if read_only, no rolls left, or no dice selected
+    should_disable = (
+        read_only or 
+        engine.rolls_left <= 0 or 
+        not st.session_state.selected_dice
+    )
+    
     if st.button("Reroll selected", 
-                 disabled=(engine.rolls_left <= 0 or not st.session_state.selected_dice), 
+                 disabled=should_disable, 
                  key="reroll_btn", 
                  type="secondary"):
         engine.reroll(sorted(st.session_state.selected_dice))
@@ -80,7 +82,6 @@ def _render_reroll_section(engine: GameEngine) -> None:
 
 def _parse_die(d) -> tuple[int, bool]:
     """Return (face 1..6, is_joker) from whatever GameEngine puts in g.dice."""
-    # Try attributes first
     v = getattr(d, "value", None)
     is_joker = bool(getattr(d, "is_joker", getattr(d, "joker", False)))
     if v is None:
@@ -97,16 +98,14 @@ def _parse_die(d) -> tuple[int, bool]:
 
 def _make_die_image(value: int, is_joker: bool, size: int = 96, style: str = "fill") -> Image.Image:
     """Create a die image with the specified value and joker status."""
-    # Joker colors
     JOKER_FILL_COLOR = (59, 130, 128, 255)
     JOKER_OUTLINE_COLOR = (96, 165, 250, 255)
-    JOKER_BAND_COLOR = (250, 204, 21, 220)  # amber stripe
+    JOKER_BAND_COLOR = (250, 204, 21, 220)
     PIP_COLOR = (20, 20, 20, 255)
     
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
-    # base visuals
     fill = (255, 255, 255, 255)
     outline = (30, 30, 30, 255)
 
@@ -115,15 +114,10 @@ def _make_die_image(value: int, is_joker: bool, size: int = 96, style: str = "fi
             fill, outline = JOKER_FILL_COLOR, JOKER_OUTLINE_COLOR
         elif style == "outline":
             outline = JOKER_OUTLINE_COLOR
-        elif style == "band":
-            # draw base first; band later
-            pass
 
-    # body
     rect = (6, 6, size - 6, size - 6)
     d.rounded_rectangle(rect, radius=16, fill=fill, outline=outline, width=6)
 
-    # optional diagonal band for joker
     if is_joker and style == "band":
         pad = 10
         band = [
@@ -134,7 +128,6 @@ def _make_die_image(value: int, is_joker: bool, size: int = 96, style: str = "fi
         ]
         d.polygon(band, fill=JOKER_BAND_COLOR)
 
-    # pips
     grid = [
         (size*0.25, size*0.25), (size*0.5, size*0.25), (size*0.75, size*0.25),
         (size*0.25, size*0.5 ), (size*0.5, size*0.5 ), (size*0.75, size*0.5 ),
