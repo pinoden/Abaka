@@ -13,7 +13,11 @@ from .player import PlayerState
 def serialize_game_state(engine: GameEngine) -> Dict[str, Any]:
     """Convert the entire GameEngine state to a JSON-serializable dictionary."""
     # Handle both direct attribute and property access for dice
-    dice_list = engine.dice if hasattr(engine, "dice") else []
+    dice_list = []
+    if hasattr(engine, "dice"):
+        val = engine.dice
+        if val is not None:
+            dice_list = val
     
     return {
         "current": engine.current,
@@ -160,12 +164,14 @@ class OnlineGameEngine(GameEngine):
         self.client = client
         self.game_id = game_id
         
-        # Initialize _dice backing field from wrapped engine's dice if present
-        # GameEngine uses 'dice' attribute, but OnlineGameEngine uses 'dice' property that reads '_dice'
+        # Initialize _dice backing field
+        # We pop 'dice' from __dict__ so it doesn't shadow/confuse the property mechanism
         if 'dice' in self.__dict__:
-            self._dice = self.__dict__['dice']
+            val = self.__dict__.pop('dice')
+            self._dice = val if val is not None else []
         else:
-            self._dice = getattr(wrapped_engine, 'dice', [])
+            val = getattr(wrapped_engine, 'dice', [])
+            self._dice = val if val is not None else []
 
     def save(self):
         """Push current state to cloud/mock."""
@@ -179,12 +185,18 @@ class OnlineGameEngine(GameEngine):
             # with the raw attributes of GameEngine
             new_state = remote_engine.__dict__
             
-            # If the remote state has 'dice', we must move it to '_dice' because we are an OnlineGameEngine
+            # Extract dice specifically to update _dice backing field
+            # and remove from dict so it doesn't shadow property
+            new_dice = []
             if 'dice' in new_state:
-                self._dice = new_state.pop('dice') # Update local backing field
-            elif hasattr(remote_engine, 'dice'): # fallback
-                self._dice = remote_engine.dice
+                new_dice = new_state.pop('dice')
+            elif hasattr(remote_engine, 'dice'):
+                new_dice = remote_engine.dice
             
+            if new_dice is None:
+                new_dice = []
+            
+            self._dice = new_dice
             self.__dict__.update(new_state)
 
     # --- Overrides to trigger saves ---
