@@ -4,6 +4,7 @@ Clean, modular Abaka UI application with Online Multiplayer support and Deep Lin
 
 import streamlit as st
 import time
+import socket
 from abaka.engine import GameEngine
 from abaka.online import FirestoreClient, MockFirestoreClient, OnlineGameEngine, deserialize_game_state
 from ui_components.main_ui import (
@@ -13,12 +14,74 @@ from ui_components.main_ui import (
 )
 from ui_components.sidebar import render_sidebar
 
+# --- Helper: Local IP ---
+def get_local_ip():
+    """Try to determine the local IP address of the machine."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Doesn't actually connect to Google, just determines the route/interface
+        s.connect(("8.8.8.8", 80)) 
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "YOUR_IP_ADDRESS"
+
+# --- Helper: Restricted Engine ---
+class RestrictedOnlineGameEngine(OnlineGameEngine):
+    """
+    An OnlineGameEngine that enforces turn-based restrictions locally.
+    It prevents state-changing methods from executing if it's not the local player's turn.
+    """
+    def __init__(self, base_engine, client, game_id, local_player_idx):
+        super().__init__(base_engine, client, game_id)
+        self.local_player_idx = local_player_idx
+
+    def _is_my_turn(self):
+        return self.current == self.local_player_idx
+
+    def start_turn(self):
+        if not self._is_my_turn():
+            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
+            return
+        super().start_turn()
+
+    def reroll(self, indices):
+        if not self._is_my_turn():
+            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
+            return
+        super().reroll(indices)
+
+    def record_score(self, category, slot_index):
+        if not self._is_my_turn():
+            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
+            return
+        super().record_score(category, slot_index)
+
+    def record_cross(self, category, slot_index):
+        if not self._is_my_turn():
+            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
+            return
+        super().record_cross(category, slot_index)
+
+    def next_player(self):
+        # Even ending the turn should be restricted, though UI usually handles this flow
+        if not self._is_my_turn():
+            st.toast(f"🚫 Not your turn!", icon="🛑")
+            return
+        super().next_player()
+
+
+# --- Main App ---
 def main():
     """Main application entry point."""
     st.set_page_config(page_title="Abaka", page_icon="🎲", layout="wide")
     
     # Initialize session state
     initialize_session_state()
+    
+    if "local_player_idx" not in st.session_state:
+        st.session_state.local_player_idx = None # 0 for Host, 1 for Guest
     
     # --- Deep Linking Logic ---
     # Check for game_id in URL query parameters on first load
@@ -44,7 +107,7 @@ def main():
         # Determine default index for radio button
         radio_index = 0
         if st.session_state.get("online_mode"):
-            # Default to Mock if just entering, unless we have real credentials saved (not impl here)
+            # Default to Mock if just entering, unless we have real credentials saved
             radio_index = 1 
 
         mode = st.radio(
@@ -61,7 +124,7 @@ def main():
             st.session_state.online_mode = True
             st.divider()
             st.subheader("Mock Online Setup")
-            st.info("Simulates online play in-memory. \n\n**To play with a friend:**\n1. Ensure you are on the same WiFi/Network.\n2. Use your computer's IP address instead of 'localhost' in the URL.")
+            st.info("Simulates online play in-memory. \n\n**To play with a friend:**\nEnsure you are on the same WiFi/Network.")
             
             # Use Mock Client
             client = MockFirestoreClient()
@@ -84,22 +147,16 @@ def main():
 
     # --- Main Game Logic ---
     
-    # Check for Online Sync
+    # 1. Check for Online Sync (BEFORE Rendering)
+    # We want to pull the latest state so we render the most up-to-date board.
     if st.session_state.online_mode and st.session_state.engine:
-        # If we have an engine and are online, try to sync before rendering
         if hasattr(st.session_state.engine, 'sync'):
             try:
                 st.session_state.engine.sync()
             except Exception as e:
-                # Silent fail for sync to avoid UI clutter, or small warning
-                pass
-                
-        # Auto-refresh loop
-        if st.session_state.auto_refresh:
-            time.sleep(2)
-            st.rerun()
+                pass # Silent fail
 
-    # If no engine, show setup (Local only, Online is handled in sidebar)
+    # 2. Render UI
     if st.session_state.engine is None:
         if st.session_state.online_mode:
             st.title("Abaka Online Lobby")
@@ -113,8 +170,36 @@ def main():
         else:
             render_new_game_setup()
     else:
+        # --- GAME ACTIVE UI ---
+        
+        # Turn Status Banner
+        engine = st.session_state.engine
+        local_idx = st.session_state.local_player_idx
+        current_idx = engine.current
+        
+        if st.session_state.online_mode and local_idx is not None:
+            is_my_turn = (current_idx == local_idx)
+            current_player_name = engine.players[current_idx].name
+            
+            if is_my_turn:
+                st.success(f"🟢 **YOUR TURN!** ({current_player_name})")
+            else:
+                st.error(f"🔴 **WAITING FOR OPPONENT...** ({current_player_name}'s turn)")
+        else:
+            is_my_turn = True # Local hotseat, always allow interaction
+
         # Render main game interface
         render_main_ui(st.session_state.engine)
+        
+        # 3. Smart Auto-refresh loop (AFTER Rendering)
+        if st.session_state.online_mode:
+            # ONLY auto-refresh if it is NOT my turn.
+            # If it IS my turn, we must NOT refresh, or we will reset the UI (checkboxes, etc) while the user is clicking.
+            if not is_my_turn:
+                with st.empty():
+                    st.caption(f"Waiting for {current_player_name} to move...")
+                    time.sleep(2) # Poll every 2 seconds
+                st.rerun()
 
 
 def _render_online_lobby(client):
@@ -135,8 +220,12 @@ def _render_online_lobby(client):
                     base_engine = GameEngine([p1_name, p2_name])
                     gid = client.create_game(base_engine)
                     st.session_state.game_id = gid
-                    # Initialize OnlineEngine
-                    st.session_state.engine = OnlineGameEngine(base_engine, client, gid)
+                    
+                    # Set Identity: Creator is Player 0
+                    st.session_state.local_player_idx = 0
+                    
+                    # Initialize Restricted Engine
+                    st.session_state.engine = RestrictedOnlineGameEngine(base_engine, client, gid, 0)
                     st.session_state.awaiting_turn = True
                     
                     # Set URL param for easy sharing
@@ -155,7 +244,12 @@ def _render_online_lobby(client):
                     base_engine = client.get_game(join_id)
                     if base_engine:
                         st.session_state.game_id = join_id
-                        st.session_state.engine = OnlineGameEngine(base_engine, client, join_id)
+                        
+                        # Set Identity: Joiner is Player 1
+                        st.session_state.local_player_idx = 1
+                        
+                        # Initialize Restricted Engine
+                        st.session_state.engine = RestrictedOnlineGameEngine(base_engine, client, join_id, 1)
                         
                         # Set URL param
                         st.query_params["game_id"] = join_id
@@ -175,35 +269,31 @@ def _render_online_lobby(client):
         
         # --- Context-Aware Sharing Instructions ---
         if isinstance(client, MockFirestoreClient):
-            st.warning("""
+            local_ip = get_local_ip()
+            game_url = f"http://{local_ip}:8501/?game_id={st.session_state.game_id}"
+            
+            st.warning(f"""
             **How to invite a friend (Mock Mode):**
             
-            This mode runs locally on your network.
-            1.  Find your computer's **Local IP Address** (e.g., `192.168.1.5`).
-            2.  Share this link with your friend on the **same WiFi**:
-                `http://<YOUR_IP_ADDRESS>:8501/?game_id={}`
+            1.  Ensure your friend is on the **same WiFi network**.
+            2.  Share this specific URL with them (not localhost):
             
-            *(Do not use 'localhost' - that only works on your own machine.)*
-            """.format(st.session_state.game_id))
+            **`{game_url}`**
+            """)
         else:
             st.info("""
             **How to invite a friend (Real Mode):**
             
-            The game state is synced via the cloud (Firebase), but the app is running on your computer.
-            
             * **If your friend ALSO runs the app on their computer:**
                 Share the Game ID: `{}` 
-                *(Or send the localhost link if they have the app setup locally.)*
                 
-            * **If your friend does NOT have the app:**
-                You must **Deploy** this app (e.g., to Streamlit Community Cloud) so they can access it via a public URL.
+            * **If you deployed to the web (Streamlit Cloud):**
+                Copy the URL from your browser address bar.
             """.format(st.session_state.game_id))
         
-        # Auto-refresh toggle
+        # Manual Refresh Button (Always available just in case)
         st.divider()
-        st.caption("Game Sync")
-        st.session_state.auto_refresh = st.checkbox("Auto-refresh Game State", value=False)
-        if st.button("Manual Refresh"):
+        if st.button("Manual Sync"):
             if st.session_state.engine and hasattr(st.session_state.engine, 'sync'):
                 st.session_state.engine.sync()
                 st.rerun()
