@@ -107,6 +107,9 @@ def initialize_session_state() -> None:
     if "dice_rolled" not in st.session_state:
         st.session_state.dice_rolled = False
 
+    if "selected_move" not in st.session_state:
+        st.session_state.selected_move = None
+
 
 def render_new_game_setup() -> None:
     """Render the new game setup form."""
