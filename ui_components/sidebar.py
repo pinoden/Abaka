@@ -5,6 +5,7 @@ Handles new game functionality and sidebar styling.
 
 import streamlit as st
 from abaka.engine import GameEngine
+from ui_components.main_ui import reset_turn_selection
 
 
 def render_sidebar() -> None:
@@ -30,6 +31,5 @@ def render_sidebar() -> None:
         if st.button("Start new game"):
             players = [n.strip() for n in names.split(",") if n.strip()] or ["P1", "P2"]
             st.session_state.engine = GameEngine(players)
-            st.session_state.awaiting_turn = True
-            st.session_state.dice_rolled = False
+            reset_turn_selection()
             st.rerun()

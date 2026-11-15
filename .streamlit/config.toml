@@ -1,0 +1,5 @@
+[server]
+# Allows the server to listen on all network interfaces, not just localhost.
+# This is required for other devices on the WiFi to connect.
+address = "0.0.0.0"
+port = 8501
