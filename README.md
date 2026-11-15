@@ -16,6 +16,7 @@ Abaka/
 │   ├── bonus.py             # Bonus calculation
 │   ├── constants.py         # Game constants
 │   ├── render.py            # Text-based scoreboard
+│   ├── rooms.py             # Shared rooms for online 2-player games
 │   └── __main__.py          # CLI entry point
 ├── ui_components/            # Modular UI components
 │   ├── __init__.py          # Package initialization
@@ -27,7 +28,8 @@ Abaka/
 │   ├── requirements.txt     # UI dependencies
 │   └── README.md            # UI component documentation
 ├── tests/                    # Test suite
-│   └── test_abaka_engine.py
+│   ├── test_rooms.py        # Online room tests
+│   └── ...
 ├── abaka_ui.py              # Main Streamlit application
 ├── main.py                  # Alternative entry point
 ├── requirements.txt          # Core dependencies
@@ -42,6 +44,7 @@ Abaka/
 - **Interactive Dice**: Click to select, visual feedback, joker support
 - **Smart Move Selection**: Radio button interface with descriptive labels
 - **Real-time Updates**: Live scoreboard and turn management
+- **Online Play**: Two players, each in their own browser, joined by an invite link (see `README_MULTIPLAYER.md`)
 
 ## Quick Start
 
@@ -54,7 +57,6 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 ### Install Dependencies
 ```bash
 pip install -r requirements.txt
-pip install -r ui_components/requirements.txt
 ```
 
 ### Run the Game
@@ -141,7 +143,7 @@ from ui_components.move_selection import render_move_selection
 - See `requirements.txt` for full list
 
 ### UI Dependencies
-- Streamlit >= 1.28.0
+- Streamlit >= 1.37 (1.45+ recommended, for automatic invite links)
 - Pillow >= 9.0.0
 - See `ui_components/requirements.txt` for full list
 

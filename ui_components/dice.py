@@ -18,7 +18,8 @@ def render_dice_section(engine: GameEngine, read_only: bool = False) -> None:
             face, is_joker = _parse_die(engine.dice[i])
             img = _make_die_image(face, is_joker, size=96, style="fill")
 
-            selected = i in st.session_state.selected_dice
+            # Picks are private to the player whose turn it is.
+            selected = (not read_only) and i in st.session_state.selected_dice
             # add a calming yellow border if selected, soft gray if not
             border = (255, 223, 0, 255) if selected else (180, 180, 180, 255)
             draw = ImageDraw.Draw(img)
@@ -75,9 +76,13 @@ def _render_reroll_section(engine: GameEngine, read_only: bool) -> None:
                  disabled=should_disable, 
                  key="reroll_btn", 
                  type="secondary"):
-        engine.reroll(sorted(st.session_state.selected_dice))
-        st.session_state.selected_dice.clear()
-        st.rerun()
+        try:
+            engine.reroll(sorted(st.session_state.selected_dice))
+        except (ValueError, RuntimeError, IndexError) as e:
+            st.error(str(e))
+        else:
+            st.session_state.selected_dice.clear()
+            st.rerun()
 
 
 def _parse_die(d) -> tuple[int, bool]:

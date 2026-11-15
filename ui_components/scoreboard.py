@@ -3,6 +3,8 @@ Scoreboard component for Abaka game interface.
 Handles rendering of the game scoreboard with proper styling and layout.
 """
 
+from html import escape
+
 import streamlit as st
 from abaka.engine import GameEngine
 from abaka.models import Category
@@ -107,9 +109,9 @@ def _build_scoreboard_html(engine: GameEngine) -> str:
     # Add player headers with 4 columns each (3 score + 1 bonus)
     for i, player in enumerate(engine.players):
         if player == engine.players[engine.current]:
-            html_table += f'<th colspan="4" class="current-player">→ {player.name} 🎯</th>'
+            html_table += f'<th colspan="4" class="current-player">→ {escape(player.name)} 🎯</th>'
         else:
-            html_table += f'<th colspan="4">{player.name}</th>'
+            html_table += f'<th colspan="4">{escape(player.name)}</th>'
     
     html_table += "</tr><tr><th class='row-header'></th>"
     

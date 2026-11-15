@@ -45,6 +45,13 @@ class GameEngine:
         self.rolls_left = 2
         self.first_roll = True
 
+    def _end_turn(self) -> None:
+        """Pass the turn. Dice are cleared, so `not self.dice` means "not rolled yet"."""
+        self.dice = []
+        self.rolls_left = 0
+        self.first_roll = True
+        self.next_player()
+
     def reroll(self, indices: List[int]) -> None:
         if self.rolls_left <= 0:
             raise RuntimeError("No rerolls left")
@@ -97,7 +104,7 @@ class GameEngine:
             self.players[self.current].record(category, slot_index, score)
 
         self._after_record(category, slot_index)
-        self.next_player()
+        self._end_turn()
 
     def record_cross(self, category: Category, slot_index: int) -> None:
         if category.name.startswith("SCHOOL_"):
@@ -110,7 +117,7 @@ class GameEngine:
         if self.players[self.current].column_bonus[slot_index] is None:
             self.players[self.current].column_bonus[slot_index] = 'X'
         self._after_record(category, slot_index)
-        self.next_player()
+        self._end_turn()
 
     def is_game_over(self) -> bool:
         return all(p.is_complete() for p in self.players)

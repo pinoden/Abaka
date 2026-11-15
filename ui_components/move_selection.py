@@ -88,6 +88,9 @@ def render_move_selection(engine: GameEngine, read_only: bool = False):
             return
         
         label_to_cat = {_get_descriptive_label(c): c for c in filtered_cats}
+        # A pick made before a reroll (or under the other action) may no longer be on offer.
+        if st.session_state.get('selected_move') not in label_to_cat:
+            st.session_state.selected_move = None
         
         # Grid for move selection
         cols = st.columns(3)
@@ -131,8 +134,7 @@ def render_move_selection(engine: GameEngine, read_only: bool = False):
                                 engine.record_cross(cat, slot)
                             
                             st.session_state.selected_move = None
-                            st.session_state.awaiting_turn = True
-                            st.session_state.dice_rolled = False
+                            st.session_state.selected_dice = set()
                             st.rerun()
                         except Exception as e:
                             st.error(str(e))

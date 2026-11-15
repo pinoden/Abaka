@@ -1,273 +1,291 @@
 """
-Clean, modular Abaka UI application with Online Multiplayer support and Deep Linking.
+Abaka — Streamlit app.
+
+Two ways to play:
+  * Same screen: two players share one browser (hotseat).
+  * Online: each player uses their own browser. The game lives in a shared
+    room inside this server process (see abaka/rooms.py); browsers send moves
+    to it and poll it, so both players see every roll and score as it happens.
 """
 
-import streamlit as st
-import time
 import socket
-from abaka.engine import GameEngine
-from abaka.online import FirestoreClient, MockFirestoreClient, OnlineGameEngine, deserialize_game_state
+from urllib.parse import urlsplit
+
+import streamlit as st
+
+from abaka.rooms import RoomEngine, RoomError, RoomStore, normalize_code
 from ui_components.main_ui import (
-    render_main_ui, 
-    initialize_session_state, 
-    render_new_game_setup
+    initialize_session_state,
+    render_main_ui,
+    render_new_game_setup,
+    reset_turn_selection,
 )
 from ui_components.sidebar import render_sidebar
 
-# --- Helper: Local IP ---
-def get_local_ip():
-    """Try to determine the local IP address of the machine."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # Doesn't actually connect to Google, just determines the route/interface
-        s.connect(("8.8.8.8", 80)) 
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "YOUR_IP_ADDRESS"
-
-# --- Helper: Restricted Engine ---
-class RestrictedOnlineGameEngine(OnlineGameEngine):
-    """
-    An OnlineGameEngine that enforces turn-based restrictions locally.
-    It prevents state-changing methods from executing if it's not the local player's turn.
-    """
-    def __init__(self, base_engine, client, game_id, local_player_idx):
-        super().__init__(base_engine, client, game_id)
-        self.local_player_idx = local_player_idx
-
-    def _is_my_turn(self):
-        return self.current == self.local_player_idx
-
-    def start_turn(self):
-        if not self._is_my_turn():
-            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
-            return
-        super().start_turn()
-
-    def reroll(self, indices):
-        if not self._is_my_turn():
-            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
-            return
-        super().reroll(indices)
-
-    def record_score(self, category, slot_index):
-        if not self._is_my_turn():
-            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
-            return
-        super().record_score(category, slot_index)
-
-    def record_cross(self, category, slot_index):
-        if not self._is_my_turn():
-            st.toast(f"🚫 Not your turn! Waiting for {self.players[self.current].name}.", icon="🛑")
-            return
-        super().record_cross(category, slot_index)
-
-    def next_player(self):
-        if not self._is_my_turn():
-            st.toast(f"🚫 Not your turn!", icon="🛑")
-            return
-        super().next_player()
+MODE_LOCAL = "Same screen"
+MODE_ONLINE = "Online (2 players)"
+POLL_SECONDS = 1.0  # how often a browser checks the room for the other player's moves
 
 
-# --- Main App ---
+@st.cache_resource
+def get_store() -> RoomStore:
+    """The one RoomStore shared by every browser session of this server."""
+    return RoomStore()
+
+
 def main():
     """Main application entry point."""
     st.set_page_config(page_title="Abaka", page_icon="🎲", layout="wide")
-    
-    # Initialize session state
+
     initialize_session_state()
-    
-    if "local_player_idx" not in st.session_state:
-        st.session_state.local_player_idx = None # 0 for Host, 1 for Guest
-    
-    # --- Deep Linking Logic ---
-    if "qp_checked" not in st.session_state:
-        qp = st.query_params
-        if "game_id" in qp:
-            st.session_state.online_mode = True
-            st.session_state.url_game_id = qp["game_id"]
-        st.session_state.qp_checked = True
+    ss = st.session_state
+    ss.setdefault("room_code", None)   # online room this browser is seated in
+    ss.setdefault("seat_token", None)  # proves which seat this browser controls
+    ss.setdefault("lobby_notice", None)
 
-    if "online_mode" not in st.session_state:
-        st.session_state.online_mode = False
-    if "game_id" not in st.session_state:
-        st.session_state.game_id = None
-    if "auto_refresh" not in st.session_state:
-        st.session_state.auto_refresh = False
+    invited_code = normalize_code(st.query_params.get("room", ""))
 
-    # --- Sidebar & Online Setup ---
     with st.sidebar:
         st.header("Game Mode")
-        
-        radio_index = 0
-        if st.session_state.get("online_mode"):
-            radio_index = 1 
-
+        # An invite link (?room=CODE) opens straight into online mode.
         mode = st.radio(
-            "Select Mode", 
-            ["Local Hotseat", "Online Demo (Mock)", "Online Multiplayer (Real)"],
-            index=radio_index
+            "Select Mode",
+            [MODE_LOCAL, MODE_ONLINE],
+            index=1 if (invited_code or ss.room_code) else 0,
+            key="game_mode",
         )
-        
-        if mode == "Local Hotseat":
-            st.session_state.online_mode = False
+        if mode == MODE_LOCAL:
             render_sidebar()
-        
-        elif mode == "Online Demo (Mock)":
-            st.session_state.online_mode = True
-            st.divider()
-            st.subheader("Mock Online Setup")
-            st.info("Simulates online play in-memory. \n\n**To play with a friend:**\nEnsure you are on the same WiFi/Network.")
-            
-            client = MockFirestoreClient()
-            _render_online_lobby(client)
-            
-        else: # Real Online
-            st.session_state.online_mode = True
-            st.divider()
-            st.subheader("Firebase Setup")
-            
-            project_id = st.text_input("Firebase Project ID", key="fb_pid")
-            api_key = st.text_input("Firebase Web API Key", type="password", key="fb_key")
-            
-            if project_id and api_key:
-                client = FirestoreClient(project_id, api_key)
-                _render_online_lobby(client)
-            else:
-                st.warning("Enter credentials to connect.")
 
-    # --- Main Game Logic ---
-    
-    # 1. Check for Online Sync (BEFORE Rendering)
-    if st.session_state.online_mode and st.session_state.engine:
-        if hasattr(st.session_state.engine, 'sync'):
-            try:
-                st.session_state.engine.sync()
-            except Exception as e:
-                pass
-
-    # 2. Render UI
-    if st.session_state.engine is None:
-        if st.session_state.online_mode:
-            st.title("Abaka Online Lobby")
-            
-            if st.session_state.get("url_game_id") and not st.session_state.game_id:
-                st.info(f"You have been invited to join Game ID: **{st.session_state.url_game_id}**")
-                st.write("Go to the sidebar to set your name and join!")
-            else:
-                st.info("👈 Please Create or Join a game in the sidebar.")
-        else:
+    if mode == MODE_LOCAL:
+        if ss.engine is None:
             render_new_game_setup()
+        else:
+            render_main_ui(ss.engine, on_new_game=_end_local_game)
     else:
-        # --- GAME ACTIVE UI ---
-        
-        # Turn Status Banner & Read-Only Logic
-        engine = st.session_state.engine
-        local_idx = st.session_state.local_player_idx
-        current_idx = engine.current
-        
-        read_only = False
-        if st.session_state.online_mode and local_idx is not None:
-            is_my_turn = (current_idx == local_idx)
-            read_only = not is_my_turn
-            current_player_name = engine.players[current_idx].name
-            
-            if is_my_turn:
-                st.success(f"🟢 **YOUR TURN!** ({current_player_name})")
+        try:
+            _render_online(get_store(), invited_code)
+        except RoomError as e:
+            # The room vanished mid-render (expired, or the server restarted).
+            _leave_room(notice=str(e))
+            st.rerun()
+
+
+def _end_local_game() -> None:
+    st.session_state.engine = None
+
+
+# ---------------------------------------------------------------- online ----
+
+def _render_online(store: RoomStore, invited_code: str) -> None:
+    ss = st.session_state
+
+    if ss.room_code and store.seat_of(ss.room_code, ss.seat_token) is None:
+        if store.exists(ss.room_code):
+            notice = ("This game was opened in another tab or device, "
+                      "so this tab no longer controls it.")
+        else:
+            notice = "That game is no longer available."
+        _leave_room(notice=notice, keep_link=store.exists(ss.room_code))
+
+    if not ss.room_code:
+        _render_lobby(store, invited_code)
+        return
+
+    code, token = ss.room_code, ss.seat_token
+    view = store.view(code)
+    seat = store.seat_of(code, token)
+
+    with st.sidebar:
+        st.divider()
+        st.subheader("Online game")
+        st.markdown(f"Game code: **`{code}`**")
+        for i, name in enumerate(view.names):
+            st.write(f"{'🟢' if i == seat else '⚪'} {name}{' (you)' if i == seat else ''}")
+        if st.button("Leave game"):
+            _leave_room()
+            st.rerun()
+
+    if not view.started:
+        _render_waiting_room(code)
+    else:
+        engine = RoomEngine(store, code, token, view.engine)
+        game_over = view.engine.is_game_over()
+        my_turn = (not game_over) and view.engine.current == seat
+        if not game_over:
+            current_name = view.engine.players[view.engine.current].name
+            if my_turn:
+                st.success(f"🟢 **YOUR TURN!** ({current_name})")
             else:
-                st.error(f"🔴 **WAITING FOR OPPONENT...** ({current_player_name}'s turn)")
+                st.error(f"🔴 **WAITING FOR OPPONENT...** ({current_name}'s turn)")
+
+        def rematch() -> None:
+            try:
+                store.rematch(code, token)
+            except RoomError:
+                pass  # the other player already started the next game
+
+        render_main_ui(engine, read_only=not my_turn, on_new_game=rematch)
+
+    _watch_room(code, view.version)
+
+
+@st.fragment(run_every=POLL_SECONDS)
+def _watch_room(code: str, seen_version: int) -> None:
+    """Re-draw the page as soon as the shared room changes (the other player moved)."""
+    if get_store().version(code) != seen_version:
+        st.rerun()
+
+
+def _render_waiting_room(code: str) -> None:
+    st.title("Abaka Online")
+    st.subheader("Waiting for the second player…")
+    st.markdown(f"Game code: **`{code}`**")
+
+    link, same_network_only = _invite_link(code)
+    if link:
+        st.write("Send this link to your friend:")
+        st.code(link, language=None)
+        if same_network_only:
+            st.caption(
+                "You opened the app as localhost, so this link uses your computer's "
+                "network address and only works for someone on the same Wi-Fi/network. "
+                "To play over the internet, deploy the app (see DEPLOYMENT_GUIDE.md)."
+            )
+    else:
+        st.write("Ask your friend to open this app, choose **Online (2 players)** "
+                 "and enter the game code.")
+    st.caption("The game starts automatically when they join.")
+
+
+def _render_lobby(store: RoomStore, invited_code: str) -> None:
+    ss = st.session_state
+    st.title("Abaka Online")
+
+    if ss.lobby_notice:
+        st.warning(ss.lobby_notice)
+        ss.lobby_notice = None
+
+    container = st.container()
+    if invited_code:
+        if store.exists(invited_code):
+            _render_invite(store, invited_code)
+            # Keep the invite front and centre; other options stay out of the way.
+            container = st.expander("Start or find a different game instead")
         else:
-            is_my_turn = True 
+            st.warning(
+                f"Game **{invited_code}** was not found. It may have ended, "
+                "or the server may have restarted. Start a new one below."
+            )
 
-        # Render main game interface with read_only flag
-        render_main_ui(st.session_state.engine, read_only=read_only)
-        
-        # 3. Smart Auto-refresh loop (AFTER Rendering)
-        if st.session_state.online_mode:
-            if not is_my_turn:
-                with st.empty():
-                    st.caption(f"Waiting for {current_player_name} to move...")
-                    time.sleep(2)
+    create_col, join_col = container.columns(2)
+    with create_col:
+        with st.form("create_game"):
+            st.markdown("**Create a game**")
+            name = st.text_input("Your name", key="create_name", max_chars=20)
+            if st.form_submit_button("Create game", type="primary"):
+                code, token = store.create(name)
+                _enter_room(code, token)
                 st.rerun()
-
-
-def _render_online_lobby(client):
-    """Render the Create/Join UI for any compatible client (Mock or Real)."""
-    default_join_id = st.session_state.get("url_game_id", "")
-    
-    tab1, tab2 = st.tabs(["Create Game", "Join Game"])
-    
-    with tab1:
-        p1_name = st.text_input("Player 1 Name (You)", "Host", key="create_p1")
-        p2_name = st.text_input("Player 2 Name (Opponent)", "Guest", key="create_p2")
-        
-        if st.button("Create Online Game"):
-            with st.spinner("Creating game..."):
-                try:
-                    base_engine = GameEngine([p1_name, p2_name])
-                    gid = client.create_game(base_engine)
-                    st.session_state.game_id = gid
-                    
-                    st.session_state.local_player_idx = 0
-                    st.session_state.engine = RestrictedOnlineGameEngine(base_engine, client, gid, 0)
-                    st.session_state.awaiting_turn = True
-                    
-                    st.query_params["game_id"] = gid
-                    
-                    st.success(f"Created! ID: {gid}")
+    with join_col:
+        with st.form("find_game"):
+            st.markdown("**Have a game code?**")
+            typed = st.text_input("Game code", key="find_code", max_chars=8)
+            if st.form_submit_button("Find game"):
+                typed_code = normalize_code(typed)
+                if store.exists(typed_code):
+                    st.query_params["room"] = typed_code
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                else:
+                    st.error("Game not found. Check the code and try again.")
 
-    with tab2:
-        join_id = st.text_input("Enter Game ID", value=default_join_id, key="join_input")
-        if st.button("Join Game"):
-            with st.spinner("Joining..."):
+
+def _render_invite(store: RoomStore, code: str) -> None:
+    """Join (or rejoin) the game named in the invite link."""
+    view = store.view(code)
+
+    if not view.started:
+        st.subheader(f"{view.names[0]} invited you to play")
+        with st.form("join_game"):
+            name = st.text_input("Your name", key="join_name", max_chars=20)
+            if st.form_submit_button("Join game", type="primary"):
                 try:
-                    base_engine = client.get_game(join_id)
-                    if base_engine:
-                        st.session_state.game_id = join_id
-                        
-                        st.session_state.local_player_idx = 1
-                        st.session_state.engine = RestrictedOnlineGameEngine(base_engine, client, join_id, 1)
-                        
-                        st.query_params["game_id"] = join_id
-                        
-                        st.success("Joined successfully!")
-                        st.rerun()
-                    else:
-                        st.error("Game not found.")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                
-    if st.session_state.game_id:
-        st.divider()
-        st.subheader("Game Active")
-        st.markdown(f"**Game ID:** `{st.session_state.game_id}`")
-        
-        if isinstance(client, MockFirestoreClient):
-            local_ip = get_local_ip()
-            game_url = f"http://{local_ip}:8501/?game_id={st.session_state.game_id}"
-            
-            st.warning(f"""
-            **How to invite a friend (Mock Mode):**
-            1.  Ensure your friend is on the **same WiFi network**.
-            2.  Share this specific URL with them (not localhost):
-            **`{game_url}`**
-            """)
-        else:
-            st.info(f"""
-            **How to invite a friend (Real Mode):**
-            * Share the Game ID: `{st.session_state.game_id}` 
-            """)
-        
-        st.divider()
-        if st.button("Manual Sync"):
-            if st.session_state.engine and hasattr(st.session_state.engine, 'sync'):
-                st.session_state.engine.sync()
+                    token = store.join(code, name)
+                except RoomError as e:
+                    st.error(str(e))
+                else:
+                    _enter_room(code, token)
+                    st.rerun()
+        rejoin_label = "Created this game and lost the page? Rejoin as:"
+    else:
+        st.subheader(f"Game {code}: {view.names[0]} vs {view.names[1]}")
+        st.write("This game already has two players.")
+        rejoin_label = "If you are one of them (page refreshed, new device), rejoin as:"
+
+    st.caption(rejoin_label)
+    cols = st.columns(len(view.names) + 2)
+    for i, name in enumerate(view.names):
+        if cols[i].button(name, key=f"rejoin_{i}"):
+            try:
+                token = store.reclaim(code, i)
+            except RoomError as e:
+                st.error(str(e))
+            else:
+                _enter_room(code, token)
                 st.rerun()
+
+
+def _enter_room(code: str, token: str) -> None:
+    ss = st.session_state
+    ss.room_code = code
+    ss.seat_token = token
+    reset_turn_selection()
+    # Only the room code goes in the URL, so it is always safe to share.
+    st.query_params["room"] = code
+
+
+def _leave_room(notice: str = None, keep_link: bool = False) -> None:
+    ss = st.session_state
+    ss.room_code = None
+    ss.seat_token = None
+    ss.lobby_notice = notice
+    reset_turn_selection()
+    if not keep_link and "room" in st.query_params:
+        del st.query_params["room"]
+
+
+def _invite_link(code: str):
+    """Returns (link or None, True if the link only works on the local network)."""
+    try:
+        parts = urlsplit(st.context.url)  # Streamlit 1.45+
+    except Exception:
+        return None, False
+    if not parts.scheme or not parts.netloc:
+        return None, False
+
+    netloc = parts.netloc
+    same_network_only = False
+    if parts.hostname in ("localhost", "127.0.0.1", "0.0.0.0"):
+        ip = _local_ip()
+        if ip is None:
+            return None, False
+        netloc = f"{ip}:{parts.port}" if parts.port else ip
+        same_network_only = True
+    path = parts.path if parts.path.endswith("/") else parts.path + "/"
+    return f"{parts.scheme}://{netloc}{path}?room={code}", same_network_only
+
+
+def _local_ip():
+    """This machine's address on the local network, if it can be determined."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))  # no packet is sent; this only picks the route
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":
