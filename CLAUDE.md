@@ -9,7 +9,7 @@ goes there.
 ## Commands
 
 ```bash
-pip install -r requirements.txt                       # streamlit, Pillow
+pip install -r requirements.txt                       # streamlit >= 1.48
 streamlit run abaka_ui.py                             # the app (port 8501, all interfaces)
 python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # tests
@@ -17,9 +17,13 @@ python -m unittest tests.test_rooms -v                # one test module
 ```
 
 Notes for this machine: the base `python3` is Anaconda 3.8 without Streamlit.
-The conda env at `~/opt/anaconda3/envs/Python39` has Streamlit 1.48 and
-Pillow; use `~/opt/anaconda3/envs/Python39/bin/python -m streamlit run abaka_ui.py`.
-`gh` is not installed.
+The conda env at `~/opt/anaconda3/envs/Python39` has Streamlit 1.48; use
+`~/opt/anaconda3/envs/Python39/bin/python -m streamlit run abaka_ui.py`.
+`gh` is not installed; PRs were created through the GitHub REST API with the
+credential git already stores in the macOS keychain (`git credential fill`).
+Headless Chromium for browser checks is cached in `~/Library/Caches/ms-playwright`
+(use it via `playwright-core` installed in a scratch folder, not in the repo).
+`main` on GitHub is protected: changes go in through pull requests.
 
 ## Architecture
 
@@ -32,8 +36,11 @@ School 1-6 and nine combinations). Python + Streamlit.
 | `abaka/player.py` | `PlayerState`: score table, school balance, final score |
 | `abaka/scoring.py`, `school.py`, `bonus.py` | Scoring rules, school balance, row/column bonuses |
 | `abaka/rooms.py` | Online play: `RoomStore` (shared rooms) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
-| `abaka_ui.py` | Streamlit entry point: mode switch, online lobby, waiting room, polling |
-| `ui_components/` | `main_ui.py` (turn flow), `scoreboard.py`, `dice.py`, `move_selection.py`, `sidebar.py` |
+| `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
+| `ui_components/main_ui.py` | Game screen for both modes: top bar + menu, play panel, scoreboard, results |
+| `ui_components/moves.py` | Possible moves and their exact score previews (tries each on a copy of the engine). No Streamlit |
+| `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
+| `ui_components/style.py` + `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
 | `tests/` | `unittest` tests |
 
 ### Turn state lives in the engine
@@ -63,6 +70,20 @@ the engine; there are no `awaiting_turn` / `dice_rolled` session flags any more.
   `st.session_state`. After a refresh the player opens the link and clicks
   their name; `store.reclaim` issues a new token and the old tab loses control.
 - Rooms idle for 12 hours are dropped when a new room is created.
+
+### UI conventions
+
+- Screen is chosen in `abaka_ui.main()`: seated in a room -> online game or
+  waiting room; local engine -> same-device game; `?room=` -> invite page;
+  otherwise home. There is no sidebar.
+- Widgets are styled through the `st-key-<key>` class Streamlit adds for keyed
+  elements. Dice are buttons keyed `die-0`..`die-4`; containers keyed `card-*`
+  get the card look. Per-render CSS (die faces, picked dice, roll animation) is
+  injected with `st.html("<style>...")`.
+- Picker widget keys include a turn signature (player, rolls left, dice), so a
+  pick never survives a reroll or a new turn.
+- Online toasts: "<friend> joined" when this browser was on the waiting screen
+  (`was_waiting`); "Your turn!" when `was_my_turn` flips from False to True.
 
 ## Rules for changes
 
@@ -102,9 +123,37 @@ the engine; there are no `awaiting_turn` / `dice_rolled` session flags any more.
 - Pre-roll move selection was removed: a player must roll before scoring or
   crossing (the room enforces it too).
 
+**2026-11-15: modern UI** (user asked for "more user-friendly, more modern,
+not like a game from the 80s")
+
+- Replaced the sidebar radio with a home screen (Same device / Online cards).
+- Two-column game screen so the dice and the scoreboard are both visible
+  without scrolling; stacks on phones.
+- Dice are real buttons drawn as dice (SVG via CSS) instead of emoji buttons
+  above PIL images; Pillow dropped from requirements.
+- Moves: replaced radio + button grid + "CONFIRM" with Score/Cross out switch,
+  option pills that show the score, and a confirm button that states the
+  result. Options come from `moves.py`, which runs the real engine on a copy,
+  so only legal moves are offered (the old filter offered school rows the
+  engine would then reject).
+- Light theme (indigo accent) via config.toml; Streamlit header/toolbar hidden.
+- Kept Streamlit's default font (no external font loading).
+- Streamlit minimum raised to 1.48 for horizontal containers.
+- Review fixes before merge: 16px gap between stacked cards on phones (was 64px),
+  invite link wraps, visible Cancel in the waiting room, smaller rules table on
+  phones, notifications moved to the bottom of the screen, and a
+  "<friend> joined. Your turn!" notification for the player who created the game.
+
 ## Status
 
-Done and verified (2026-11-15):
+Modern UI, verified 2026-11-15 on branch `Denis-modern-ui`:
+- 13 move-preview tests (`tests/test_moves.py`); all room and rule tests pass.
+- Two headless browsers (desktop + 390px phone) played online: create, join,
+  live dice, reroll, score with preview, cross out, refresh + rejoin, leave.
+- Screenshots checked for home, waiting room, invite, my turn, opponent view,
+  last move, results, mobile, rules dialog.
+
+Live two-player mode, done and verified (2026-11-15, merged in PR #11):
 - `abaka/rooms.py`, new `abaka_ui.py`, simplified `ui_components/main_ui.py`.
 - 14 room tests in `tests/test_rooms.py`, including a full two-player game
   and rematch. All pass, as do the 11 older rule tests.
@@ -121,6 +170,7 @@ Known issues:
 - `abaka/ui_components/requirements.txt` is a stray leftover file.
 
 Ideas not started:
+- Dark theme (would need the scoreboard CSS colours made theme-aware).
 - Show the active player's selected dice to the opponent.
 - Persist rooms (file or database) so games survive a restart.
 - More than two players (the engine supports it; `rooms.MAX_PLAYERS` and the

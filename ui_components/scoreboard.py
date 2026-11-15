@@ -1,247 +1,101 @@
 """
-Scoreboard component for Abaka game interface.
-Handles rendering of the game scoreboard with proper styling and layout.
+Scoreboard: every player's table, side by side.
+
+Each player has three cells per row (filled left to right) and a bonus cell.
+The current player's columns are tinted, and the cell the picked move would
+fill is outlined with its preview value.
 """
 
 from html import escape
+from typing import Optional
 
 import streamlit as st
+
+from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.engine import GameEngine
-from abaka.models import Category
+from ui_components.moves import Move, is_school, row_hint, row_name, school_number
+from ui_components.style import die_uri
+
+CROSS = "✕"
+CHECK = "✓"
+EMPTY = "·"
+NONE = "–"
 
 
-def render_scoreboard(engine: GameEngine) -> None:
-    """Render the complete Abaka scoreboard."""
-    st.subheader("Scoreboard")
-    
-    # Custom CSS for the scoreboard table
-    _render_scoreboard_css()
-    
-    # Create and display the scoreboard
-    html_table = _build_scoreboard_html(engine)
-    st.markdown(html_table, unsafe_allow_html=True)
+def render_scoreboard(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None) -> None:
+    """`me`: this browser's seat in an online game (marks "You"). `target`: move to preview."""
+    st.html(build_scoreboard_html(engine, me, target))
 
 
-def _render_scoreboard_css() -> None:
-    """Render the CSS styling for the scoreboard."""
-    st.markdown("""
-    <style>
-    .scoreboard-table {
-        border-collapse: collapse;
-        width: 100%;
-        font-family: monospace;
-        font-size: 14px;
-        margin-left: 0;
-    }
-    .scoreboard-table th, .scoreboard-table td {
-        border: 1px solid #444;
-        padding: 6px 8px;
-        text-align: center;
-        min-width: 45px;
-    }
-    .scoreboard-table th {
-        background-color: #2c3e50;
-        color: white;
-        font-weight: bold;
-    }
-    .scoreboard-table td {
-        background-color: #34495e;
-        color: white;
-    }
-    .scoreboard-table .row-header {
-        background-color: #2c3e50;
-        font-weight: bold;
-        text-align: left;
-        min-width: 50px;
-        padding-left: 8px;
-        padding-right: 8px;
-    }
-    .scoreboard-table .current-player {
-        background-color: #e74c3c;
-        color: white;
-        font-weight: bold;
-    }
-    .scoreboard-table .section-divider {
-        background-color: #7f8c8d;
-        height: 3px;
-    }
-    .scoreboard-table .empty-slot {
-        color: #95a5a6;
-    }
-    .scoreboard-table .crossed-slot {
-        color: #e74c3c;
-        font-weight: bold;
-    }
-    .scoreboard-table .score-slot {
-        color: #2ecc71;
-        font-weight: bold;
-    }
-    .scoreboard-table .bonus-slot {
-        color: #f39c12;
-        font-weight: bold;
-    }
-    .scoreboard-table .bonus-column {
-        border-left: 3px solid #f39c12;
-        background-color: #2d3748;
-    }
-    .scoreboard-table .player-separator {
-        border-left: 4px solid #7f8c8d;
-        background-color: #2d3748;
-    }
-    .scoreboard-table .bonus-header {
-        background-color: #f39c12;
-        color: #2d3748;
-        font-weight: bold;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+def _score_cell(value, category, classes, target_text=None) -> str:
+    if target_text is not None:
+        return f'<td class="{classes} ab-target">{escape(target_text)}</td>'
+    if value is None:
+        return f'<td class="{classes} ab-none">{EMPTY}</td>'
+    if value == "X":
+        # In school rows an X means "settled" (exactly three, or an old balance cell).
+        if is_school(category):
+            return f'<td class="{classes} ab-ok" title="Done">{CHECK}</td>'
+        return f'<td class="{classes} ab-x" title="Crossed out">{CROSS}</td>'
+    cls = "ab-neg" if isinstance(value, int) and value < 0 else "ab-num"
+    return f'<td class="{classes} {cls}">{value}</td>'
 
 
-def _build_scoreboard_html(engine: GameEngine) -> str:
-    """Build the complete HTML table for the scoreboard."""
-    html_table = """
-    <table class="scoreboard-table">
-        <thead>
-            <tr>
-                <th class="row-header">Row</th>
-    """
-    
-    # Add player headers with 4 columns each (3 score + 1 bonus)
-    for i, player in enumerate(engine.players):
-        if player == engine.players[engine.current]:
-            html_table += f'<th colspan="4" class="current-player">→ {escape(player.name)} 🎯</th>'
-        else:
-            html_table += f'<th colspan="4">{escape(player.name)}</th>'
-    
-    html_table += "</tr><tr><th class='row-header'></th>"
-    
-    # Add sub-headers for score slots
-    for player in engine.players:
-        html_table += '<th>S1</th><th>S2</th><th>S3</th><th class="bonus-header">B</th>'
-    
-    html_table += "</tr></thead><tbody>"
-    
-    # Add school categories
-    html_table += _build_school_section(engine)
-    
-    # Add combo categories
-    html_table += _build_combo_section(engine)
-    
-    # Add column bonuses
-    html_table += _build_bonus_section(engine)
-    
-    # Add totals
-    html_table += _build_totals_section(engine)
-    
-    html_table += "</tbody></table>"
-    return html_table
+def _bonus_cell(value, classes) -> str:
+    if value is None:
+        return f'<td class="{classes} ab-none">{EMPTY}</td>'
+    if value == "X":
+        return f'<td class="{classes} ab-none" title="No bonus">{NONE}</td>'
+    return f'<td class="{classes} ab-bval">{value}</td>'
 
 
-def _build_school_section(engine: GameEngine) -> str:
-    """Build the school categories section of the scoreboard."""
-    html = ""
-    for i in range(1, 7):
-        html += f"<tr><td class='row-header'>{i}</td>"
-        for player_idx, player in enumerate(engine.players):
-            slots = player.table[getattr(Category, f'SCHOOL_{i}')]
-            # 3 score slots
-            for j in range(3):
-                if slots[j] is None:
-                    html += '<td class="empty-slot">—</td>'
-                elif slots[j] == "X":
-                    html += '<td class="crossed-slot">❌</td>'
-                else:
-                    html += f'<td class="score-slot">{slots[j]}</td>'
-            # 1 bonus slot with special styling
-            bonus_class = "bonus-column"
-            if player_idx == 0:  # First player
-                bonus_class += " player-separator"
-            
-            if slots[3] is None:
-                html += f'<td class="{bonus_class} empty-slot">—</td>'
-            elif slots[3] == "X":
-                html += f'<td class="{bonus_class} crossed-slot">❌</td>'
-            else:
-                html += f'<td class="{bonus_class} bonus-slot">{slots[3]}</td>'
-        html += "</tr>"
-    return html
+def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None) -> str:
+    players = engine.players
+    over = engine.is_game_over()
+    active = None if over else engine.current
+    span = 1 + 5 * len(players)  # row label + (gap + 3 cells + bonus) per player
 
+    def act(i: int) -> str:
+        return " ab-active" if i == active else ""
 
-def _build_combo_section(engine: GameEngine) -> str:
-    """Build the combination categories section of the scoreboard."""
-    html = ""
-    # Section divider
-    html += '<tr><td colspan="' + str(len(engine.players) * 4 + 1) + '" class="section-divider"></td></tr>'
-    
-    combo_labels = ["D", "DD", "T", "LS", "BS", "F", "C", "A", "Σ"]
-    combo_cats = [Category.PAIR, Category.TWO_PAIRS, Category.TRIPS, 
-                  Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT, 
-                  Category.FULL, Category.KARE, Category.ABAKA, Category.SUM]
-    
-    for i, (label, cat) in enumerate(zip(combo_labels, combo_cats)):
-        html += f"<tr><td class='row-header'>{label}</td>"
-        for player_idx, player in enumerate(engine.players):
-            slots = player.table[cat]
-            # 3 score slots
-            for j in range(3):
-                if slots[j] is None:
-                    html += '<td class="empty-slot">—</td>'
-                elif slots[j] == "X":
-                    html += '<td class="crossed-slot">❌</td>'
-                else:
-                    html += f'<td class="score-slot">{slots[j]}</td>'
-            # 1 bonus slot with special styling
-            bonus_class = "bonus-column"
-            if player_idx == 0:  # First player
-                bonus_class += " player-separator"
-            
-            if slots[3] is None:
-                html += f'<td class="{bonus_class} empty-slot">—</td>'
-            elif slots[3] == "X":
-                html += f'<td class="{bonus_class} crossed-slot">❌</td>'
-            else:
-                html += f'<td class="{bonus_class} bonus-slot">{slots[3]}</td>'
-        html += "</tr>"
-    return html
+    h = ['<div class="ab-board-wrap"><table class="ab-board"><thead><tr><th></th>']
+    for i, p in enumerate(players):
+        dot = '<span class="ab-dot"></span>' if i == active else ""
+        you = '<span class="ab-you">You</span>' if i == me else ""
+        bal = p.school_balance
+        bal_txt = f'<span style="color:#E5484D">{bal}</span>' if bal < 0 else str(bal)
+        h.append(
+            f'<th class="ab-gap"></th><th colspan="4" class="ab-player{act(i)}">{dot}{escape(p.name)}{you}'
+            f'<div class="ab-pmeta">{p.calculate_score()} pts · balance {bal_txt}</div></th>'
+        )
+    h.append('</tr><tr class="ab-sub"><th></th>')
+    for i, _ in enumerate(players):
+        h.append(f'<th class="ab-gap"></th><th class="{act(i)}">I</th><th class="{act(i)}">II</th>'
+                 f'<th class="{act(i)}">III</th><th class="ab-bonus{act(i)}" title="Row bonus">★</th>')
+    h.append("</tr></thead><tbody>")
 
+    for title, cats in (("School", SCHOOL_CATS), ("Combinations", COMBO_CATS)):
+        h.append(f'<tr class="ab-section"><td colspan="{span}">{title}</td></tr>')
+        for cat in cats:
+            icon = f'<img src="{die_uri(school_number(cat))}" alt="">' if is_school(cat) else ""
+            h.append(f'<tr><th class="ab-row" title="{escape(row_hint(cat))}">{icon}{escape(row_name(cat))}</th>')
+            for i, p in enumerate(players):
+                h.append('<td class="ab-gap"></td>')
+                for slot in range(3):
+                    hit = target is not None and i == active and target.category == cat and target.slot == slot
+                    h.append(_score_cell(p.table[cat][slot], cat, act(i).strip(), target.preview if hit else None))
+                h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i)))
+            h.append("</tr>")
 
-def _build_bonus_section(engine: GameEngine) -> str:
-    """Build the column bonuses section of the scoreboard."""
-    html = ""
-    # Section divider
-    html += '<tr><td colspan="' + str(len(engine.players) * 4 + 1) + '" class="section-divider"></td></tr>'
-    
-    # Column bonuses row (B)
-    html += "<tr><td class='row-header'>B</td>"
-    for player_idx, player in enumerate(engine.players):
-        col_bonuses = player.column_bonus
-        # 3 column bonuses
-        for bonus in col_bonuses:
-            if bonus is None:
-                html += '<td class="empty-slot">—</td>'
-            elif bonus == "X":
-                html += '<td class="crossed-slot">❌</td>'
-            else:
-                html += f'<td class="score-slot">{bonus}</td>'
-        # 1 filler cell with special styling
-        bonus_class = "bonus-column"
-        if player_idx == 0:  # First player
-            bonus_class += " player-separator"
-        html += f'<td class="{bonus_class} empty-slot">—</td>'
-    html += "</tr>"
-    return html
-
-
-def _build_totals_section(engine: GameEngine) -> str:
-    """Build the totals section of the scoreboard."""
-    html = ""
-    # Section divider
-    html += '<tr><td colspan="' + str(len(engine.players) * 4 + 1) + '" class="section-divider"></td></tr>'
-    
-    # Totals row
-    html += "<tr><td class='row-header'>TOT</td>"
-    for player in engine.players:
-        total_score = player.calculate_score()
-        html += f'<td colspan="4" class="score-slot"><strong>{total_score}</strong></td>'
-    html += "</tr>"
-    return html
+    h.append(f'<tr class="ab-section"><td colspan="{span}">Bonuses &amp; total</td></tr>')
+    h.append('<tr><th class="ab-row" title="Complete a column with no crossed-out combinations">Column bonus</th>')
+    for i, p in enumerate(players):
+        h.append('<td class="ab-gap"></td>')
+        for value in p.column_bonus:
+            h.append(_bonus_cell(value, act(i).strip()))
+        h.append(f'<td class="ab-bonus{act(i)}"></td>')
+    h.append('</tr><tr class="ab-total"><th class="ab-row">Total</th>')
+    for i, p in enumerate(players):
+        h.append(f'<td class="ab-gap"></td><td colspan="4" class="{act(i).strip()}">{p.calculate_score()}</td>')
+    h.append("</tr></tbody></table></div>")
+    return "".join(h)

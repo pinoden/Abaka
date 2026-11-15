@@ -1,87 +1,31 @@
-# Abaka UI Components
+# Abaka UI components
 
-This directory contains the modular UI components for the Abaka game interface.
+The Streamlit interface. `abaka_ui.py` (project root) picks the screen; these
+modules draw it.
 
-## Structure
+| Module | What it does |
+|---|---|
+| `main_ui.py` | Game screen for both modes: top bar with menu, play panel (left), scoreboard (right), results |
+| `dice.py` | The five dice as tappable buttons drawn with CSS, the roll animation and the Reroll button |
+| `move_selection.py` | Score / Cross out switch, the list of possible rows with their scores, the confirm button |
+| `moves.py` | Works out which rows can be written and what each would score, by trying the move on a copy of the game. No Streamlit, unit-tested in `tests/test_moves.py` |
+| `scoreboard.py` | The score table, including the preview of the picked move |
+| `rules.py` | "How to play" text and dialog |
+| `style.py` | Page CSS, dice artwork (SVG), small HTML helpers |
 
-```
-ui_components/
-├── __init__.py              # Package initialization
-├── main_ui.py              # Main UI orchestrator
-├── scoreboard.py           # Scoreboard rendering component
-├── dice.py                 # Dice display and interaction component
-├── move_selection.py       # Move selection interface component
-├── sidebar.py              # Sidebar and new game component
-├── requirements.txt        # UI-specific dependencies
-└── README.md              # This file
-```
+## How styling works
 
-## Components
+- Colours, corner radius and fonts of Streamlit's own widgets come from
+  `.streamlit/config.toml` (`[theme]`).
+- Everything else is plain CSS in `style.py`, injected once per page.
+- Widgets are targeted by key: Streamlit adds the class `st-key-<key>` to any
+  element created with `key=...`. For example, the dice are buttons with keys
+  `die-0` to `die-4`, and `dice.py` sets each one's face with
+  `.st-key-die-0 button { background-image: ... }`.
+- Containers whose key starts with `card` get the white card look.
+- Player names are shown inside HTML, so they always go through `html.escape`.
 
-### `main_ui.py`
-- **Purpose**: Main orchestrator that coordinates all UI components
-- **Functions**: 
-  - `render_main_ui()`: Renders the complete game interface
-  - `initialize_session_state()`: Sets up Streamlit session state
-  - `render_new_game_setup()`: Shows the new game form
+## Requirements
 
-### `scoreboard.py`
-- **Purpose**: Renders the game scoreboard with proper styling
-- **Functions**:
-  - `render_scoreboard()`: Main scoreboard renderer
-  - `_build_scoreboard_html()`: Builds the HTML table structure
-  - Section builders for school, combo, bonus, and totals
-
-### `dice.py`
-- **Purpose**: Handles dice display, selection, and reroll functionality
-- **Functions**:
-  - `render_dice_section()`: Renders the complete dice section
-  - `_make_die_image()`: Creates custom die images
-  - `_parse_die()`: Parses die data from the game engine
-
-### `move_selection.py`
-- **Purpose**: Manages the move selection interface with radio buttons
-- **Functions**:
-  - `render_move_selection()`: Renders the move selection interface
-  - `_get_descriptive_label()`: Converts category enums to readable labels
-
-### `sidebar.py`
-- **Purpose**: Handles the sidebar with new game functionality
-- **Functions**:
-  - `render_sidebar()`: Renders the sidebar with new game controls
-
-## Usage
-
-### Running the Clean Version
-```bash
-streamlit run abaka_ui_clean.py
-```
-
-### Running the Original Version
-```bash
-streamlit run abaka_ui.py
-```
-
-## Benefits of the New Structure
-
-1. **Modularity**: Each component has a single responsibility
-2. **Maintainability**: Easier to find and fix issues
-3. **Testability**: Individual components can be tested separately
-4. **Reusability**: Components can be reused in other interfaces
-5. **Readability**: Much cleaner and easier to understand
-6. **Production Ready**: Professional code structure
-
-## File Sizes
-
-- **Original**: `abaka_ui.py` - 540 lines
-- **New Structure**: 
-  - `abaka_ui_clean.py` - 35 lines (main orchestrator)
-  - `ui_components/scoreboard.py` - 180 lines
-  - `ui_components/dice.py` - 120 lines
-  - `ui_components/move_selection.py` - 80 lines
-  - `ui_components/sidebar.py` - 30 lines
-  - `ui_components/main_ui.py` - 50 lines
-
-## Migration
-
-The new structure maintains 100% compatibility with the original functionality while providing a much cleaner, more maintainable codebase.
+Streamlit 1.48 or newer (horizontal containers, `st.pills`,
+`st.segmented_control`, keyed containers).

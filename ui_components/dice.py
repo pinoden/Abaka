@@ -1,147 +1,102 @@
 """
-Dice display component for Abaka game interface.
-Handles rendering of dice, selection, and reroll functionality.
+Dice: tap a die to mark it for a reroll, then press Reroll.
+
+Each die is a Streamlit button (key `die-<i>`) drawn as a die face with CSS,
+so it stays clickable and keyboard-accessible.
 """
 
 import streamlit as st
-from PIL import Image, ImageDraw
+
 from abaka.engine import GameEngine
-from abaka.models import Category
+from ui_components.style import ACCENT, die_uri
+
+MAX_ROLLS = 3
 
 
-def render_dice_section(engine: GameEngine, read_only: bool = False) -> None:
-    """Render the dice section with selection and reroll functionality."""
-    # Dice display
-    dice_cols = st.columns(len(engine.dice))
-    for i, c in enumerate(dice_cols):
-        with c:
-            face, is_joker = _parse_die(engine.dice[i])
-            img = _make_die_image(face, is_joker, size=96, style="fill")
-
-            # Picks are private to the player whose turn it is.
-            selected = (not read_only) and i in st.session_state.selected_dice
-            # add a calming yellow border if selected, soft gray if not
-            border = (255, 223, 0, 255) if selected else (180, 180, 180, 255)
-            draw = ImageDraw.Draw(img)
-            draw.rectangle([2, 2, img.width-3, img.height-3], outline=border, width=6)
-
-            # Disable dice clicking if read_only
-            if st.button(f"🎲", key=f"die_btn_{i}", disabled=read_only):
-                if selected:
-                    st.session_state.selected_dice.remove(i)
-                else:
-                    st.session_state.selected_dice.add(i)
-                st.rerun()
-
-            st.image(img, width=96, caption=f"{i}:{repr(engine.dice[i])}")
-
-    # Game info and reroll
-    _render_game_info(engine)
-    _render_reroll_section(engine, read_only)
+def _toggle_die(i: int) -> None:
+    picked = st.session_state.selected_dice
+    if i in picked:
+        picked.remove(i)
+    else:
+        picked.add(i)
 
 
-def _render_game_info(engine: GameEngine) -> None:
-    """Render game information (rolls left, first roll, player)."""
-    cols = st.columns(3)
-    cols[0].write(f"Rolls left: **{engine.rolls_left}**")
-    cols[1].write(f"First roll: **{engine.first_roll}**")
-    cols[2].write(f"Player: **{engine.players[engine.current].name}**")
+def render_dice(engine: GameEngine, interactive: bool) -> None:
+    """The five dice on the table. Only the player whose turn it is can pick them."""
+    ss = st.session_state
+    picked = ss.selected_dice if interactive else set()
+    dice = list(engine.dice)
+
+    css = []
+    for i, d in enumerate(dice):
+        rule = f'.st-key-die-{i} button {{ background-image: url("{die_uri(d.value, d.is_joker)}") !important;'
+        if i in picked:
+            rule += (f" transform: translateY(-8px); box-shadow: 0 0 0 3px {ACCENT},"
+                     " 0 12px 22px rgba(79,70,229,.28) !important;")
+        css.append(rule + " }")
+        if i in picked:
+            css.append(
+                f'.st-key-die-{i} button::after {{ content: "\\21BB"; position: absolute; top: -10px; right: -10px;'
+                f" width: 24px; height: 24px; border-radius: 50%; background: {ACCENT}; color: #fff;"
+                " font-size: 15px; line-height: 24px; text-align: center; font-weight: 700; }"
+            )
+        if d.is_joker:
+            css.append(f'.st-key-die-{i}::after {{ content: "{"wild joker" if d.value == 1 else "joker"}"; }}')
+    css.extend(_roll_animation(dice))
+    st.html("<style>" + "\n".join(css) + "</style>")
+
+    with st.container(horizontal=True, key="dice-row"):
+        for i, d in enumerate(dice):
+            label = f"{d.value} (joker)" if d.is_joker else str(d.value)
+            st.button(label, key=f"die-{i}", disabled=not interactive,
+                      on_click=_toggle_die, args=(i,))
 
 
-def _render_reroll_section(engine: GameEngine, read_only: bool) -> None:
-    """Render the reroll button section."""
-    st.divider()
-    
-    # Updated CSS for visibility without aggressive overrides
-    st.markdown("""
-    <style>
-    div[data-testid="stButton"] button[kind="secondary"] {
-        border: 2px solid #ccc !important;
-    }
-    div[data-testid="stButton"] button[kind="secondary"]:hover {
-        border-color: #f1c40f !important;
-        background-color: #fef9e7 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Disable reroll if read_only, no rolls left, or no dice selected
-    should_disable = (
-        read_only or 
-        engine.rolls_left <= 0 or 
-        not st.session_state.selected_dice
-    )
-    
-    if st.button("Reroll selected", 
-                 disabled=should_disable, 
-                 key="reroll_btn", 
-                 type="secondary"):
+def _roll_animation(dice) -> list:
+    """Spin the dice whose faces changed since this browser last drew them."""
+    ss = st.session_state
+    now = [(d.value, d.is_joker) for d in dice]
+    before = ss.get("shown_dice")
+    ss.shown_dice = now
+    if before is not None and len(before) == len(now):
+        changed = [i for i in range(len(now)) if now[i] != before[i]]
+    else:
+        changed = list(range(len(now)))
+    if not changed:
+        return []
+    # Alternate between two identical animations so a die that changes twice in a row spins again.
+    ss.roll_anim = "b" if ss.get("roll_anim") == "a" else "a"
+    return [f".st-key-die-{i} button {{ animation: ab-roll-{ss.roll_anim} .45s ease-out; }}" for i in changed]
+
+
+def render_dice_placeholder() -> None:
+    st.session_state.shown_dice = None
+    st.html('<div class="ab-dice-ph">' + "<div>?</div>" * 5 + "</div>")
+
+
+def rolls_html(engine: GameEngine) -> str:
+    used = MAX_ROLLS - engine.rolls_left if engine.dice else 0
+    dots = "".join('<i class="used"></i>' if n < used else "<i></i>" for n in range(MAX_ROLLS))
+    return f'<span class="ab-rolls" title="Rolls used">{dots}</span>'
+
+
+def render_reroll(engine: GameEngine) -> None:
+    """Hint plus the Reroll button for the player whose turn it is."""
+    ss = st.session_state
+    n = len(ss.selected_dice)
+    if engine.rolls_left <= 0:
+        st.caption("No rerolls left. Choose where to write this roll.")
+        return
+    left = "1 reroll" if engine.rolls_left == 1 else f"{engine.rolls_left} rerolls"
+    if n == 0:
+        st.caption(f"Tap the dice you want to roll again ({left} left), or choose a move below.")
+    label = "Pick dice to reroll" if n == 0 else f"Reroll {n} {'die' if n == 1 else 'dice'}"
+    if st.button(label, key="reroll", icon=":material/refresh:", disabled=n == 0,
+                 type="primary" if n else "secondary", use_container_width=True):
         try:
-            engine.reroll(sorted(st.session_state.selected_dice))
+            engine.reroll(sorted(ss.selected_dice))
         except (ValueError, RuntimeError, IndexError) as e:
             st.error(str(e))
         else:
-            st.session_state.selected_dice.clear()
+            ss.selected_dice = set()
             st.rerun()
-
-
-def _parse_die(d) -> tuple[int, bool]:
-    """Return (face 1..6, is_joker) from whatever GameEngine puts in g.dice."""
-    v = getattr(d, "value", None)
-    is_joker = bool(getattr(d, "is_joker", getattr(d, "joker", False)))
-    if v is None:
-        import re
-        s = repr(d)
-        m = re.match(r"J\((\d)\)", s)
-        if m:
-            v = int(m.group(1)); is_joker = True
-        else:
-            m2 = re.match(r"(\d)", s)
-            v = int(m2.group(1)) if m2 else 1
-    return int(v), bool(is_joker)
-
-
-def _make_die_image(value: int, is_joker: bool, size: int = 96, style: str = "fill") -> Image.Image:
-    """Create a die image with the specified value and joker status."""
-    JOKER_FILL_COLOR = (59, 130, 128, 255)
-    JOKER_OUTLINE_COLOR = (96, 165, 250, 255)
-    JOKER_BAND_COLOR = (250, 204, 21, 220)
-    PIP_COLOR = (20, 20, 20, 255)
-    
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-
-    fill = (255, 255, 255, 255)
-    outline = (30, 30, 30, 255)
-
-    if is_joker:
-        if style == "fill":
-            fill, outline = JOKER_FILL_COLOR, JOKER_OUTLINE_COLOR
-        elif style == "outline":
-            outline = JOKER_OUTLINE_COLOR
-
-    rect = (6, 6, size - 6, size - 6)
-    d.rounded_rectangle(rect, radius=16, fill=fill, outline=outline, width=6)
-
-    if is_joker and style == "band":
-        pad = 10
-        band = [
-            (pad,            size*0.35),
-            (size*0.35,      pad),
-            (size-pad,       size*0.65),
-            (size*0.65,      size-pad),
-        ]
-        d.polygon(band, fill=JOKER_BAND_COLOR)
-
-    grid = [
-        (size*0.25, size*0.25), (size*0.5, size*0.25), (size*0.75, size*0.25),
-        (size*0.25, size*0.5 ), (size*0.5, size*0.5 ), (size*0.75, size*0.5 ),
-        (size*0.25, size*0.75), (size*0.5, size*0.75), (size*0.75, size*0.75),
-    ]
-    faces = {1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8]}
-    r = int(size * 0.09)
-    for idx in faces[int(value)]:
-        cx, cy = grid[idx]
-        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=PIP_COLOR)
-
-    return img

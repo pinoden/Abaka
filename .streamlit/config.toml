@@ -1,5 +1,18 @@
 [server]
-# Allows the server to listen on all network interfaces, not just localhost.
-# This is required for other devices on the WiFi to connect.
+# Listen on all network interfaces, not just localhost,
+# so other devices on the same Wi-Fi can connect.
 address = "0.0.0.0"
 port = 8501
+
+[client]
+# Hide the developer menu and "Deploy" button for players.
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#4F46E5"
+backgroundColor = "#F5F6FA"
+secondaryBackgroundColor = "#ECEEF6"
+textColor = "#1C2033"
+borderColor = "#E3E6EF"
+baseRadius = "0.75rem"
