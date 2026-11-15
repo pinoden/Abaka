@@ -82,7 +82,8 @@ the engine; there are no `awaiting_turn` / `dice_rolled` session flags any more.
   injected with `st.html("<style>...")`.
 - Picker widget keys include a turn signature (player, rolls left, dice), so a
   pick never survives a reroll or a new turn.
-- Online "Your turn!" toast fires when `was_my_turn` flips from False to True.
+- Online toasts: "<friend> joined" when this browser was on the waiting screen
+  (`was_waiting`); "Your turn!" when `was_my_turn` flips from False to True.
 
 ## Rules for changes
 
@@ -138,6 +139,10 @@ not like a game from the 80s")
 - Light theme (indigo accent) via config.toml; Streamlit header/toolbar hidden.
 - Kept Streamlit's default font (no external font loading).
 - Streamlit minimum raised to 1.48 for horizontal containers.
+- Review fixes before merge: 16px gap between stacked cards on phones (was 64px),
+  invite link wraps, visible Cancel in the waiting room, smaller rules table on
+  phones, notifications moved to the bottom of the screen, and a
+  "<friend> joined. Your turn!" notification for the player who created the game.
 
 ## Status
 

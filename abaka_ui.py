@@ -159,11 +159,17 @@ def _render_online(store: RoomStore) -> None:
     if not view.started:
         render_top_bar(status, _leave_room, "Cancel game")
         _render_waiting_room(code)
+        ss.was_waiting = True
     else:
         engine = RoomEngine(store, code, token, view.engine)
         my_turn = not view.engine.is_game_over() and view.engine.current == seat
-        if my_turn and ss.get("was_my_turn") is False:
+        if ss.get("was_waiting"):
+            # The friend just joined; this browser was on the waiting screen.
+            friend = view.names[1 - seat]
+            st.toast(f"{friend} joined. Your turn!" if my_turn else f"{friend} joined.", icon="\U0001F3B2")
+        elif my_turn and ss.get("was_my_turn") is False:
             st.toast("Your turn!", icon="\U0001F3B2")
+        ss.was_waiting = False
         ss.was_my_turn = my_turn
 
         def rematch() -> None:
@@ -192,13 +198,17 @@ def _render_waiting_room(code: str) -> None:
                          "Send them this link. The game starts as soon as they join.")
             link, same_network_only = _invite_link(code)
             if link:
-                st.code(link, language=None)
+                st.code(link, language=None, wrap_lines=True)
                 if same_network_only:
                     st.caption("This link works for devices on the same Wi-Fi. To play over the internet, "
                                "deploy the app (see DEPLOYMENT_GUIDE.md).")
             st.html('<div class="ab-or">or share the game code</div><div class="ab-code">'
                     + "".join(f"<span>{escape(c)}</span>" for c in code)
                     + '</div><div class="ab-wait"><i></i>Waiting for your friend to join…</div>')
+            if st.button("Cancel", key="wait-cancel", type="tertiary", icon=":material/close:",
+                         use_container_width=True):
+                _leave_room()
+                st.rerun()
 
 
 def _render_invite(store: RoomStore, code: str) -> None:
@@ -260,6 +270,7 @@ def _enter_room(code: str, token: str) -> None:
     ss.room_code = code
     ss.seat_token = token
     ss.was_my_turn = None
+    ss.was_waiting = False
     reset_turn_selection()
     # Only the room code goes in the URL, so it is always safe to share.
     st.query_params["room"] = code

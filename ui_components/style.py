@@ -189,4 +189,18 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-wait { display: flex; align-items: center; gap: .6rem; justify-content: center; color: #6B7089; margin: 1rem 0 .4rem; }
 .ab-wait i { width: 10px; height: 10px; border-radius: 50%; background: #4F46E5; animation: ab-pulse 1.4s ease-in-out infinite; }
 @keyframes ab-pulse { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
+
+/* ---------- notifications: bottom of the screen, clear of the turn title and scoreboard ---------- */
+[data-testid="stToastContainer"] { top: auto !important; bottom: 1.25rem !important; }
+
+/* ---------- phones ---------- */
+@media (max-width: 640px) {
+  /* Columns stack on phones; keep the stacked cards close together. */
+  [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"]) { gap: 1rem !important; }
+  .ab-hero { margin: .5rem 0 1rem; }
+  .ab-hero .ab-brand { font-size: 2.1rem; }
+  .ab-hero p { font-size: 1rem; }
+  [data-testid="stDialog"] table { font-size: .82rem; }
+  [data-testid="stDialog"] th, [data-testid="stDialog"] td { padding: .35rem .4rem !important; }
+}
 """
