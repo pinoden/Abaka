@@ -81,7 +81,7 @@ def rolls_html(engine: GameEngine) -> str:
 
 
 def render_reroll(engine: GameEngine) -> None:
-    """Hint plus the Reroll button for the player whose turn it is."""
+    """Hint plus the Reroll buttons for the player whose turn it is."""
     ss = st.session_state
     n = len(ss.selected_dice)
     if engine.rolls_left <= 0:
@@ -90,11 +90,18 @@ def render_reroll(engine: GameEngine) -> None:
     left = "1 reroll" if engine.rolls_left == 1 else f"{engine.rolls_left} rerolls"
     if n == 0:
         st.caption(f"Tap the dice you want to roll again ({left} left), or choose a move below.")
-    label = "Pick dice to reroll" if n == 0 else f"Reroll {n} {'die' if n == 1 else 'dice'}"
-    if st.button(label, key="reroll", icon=":material/refresh:", disabled=n == 0,
-                 type="primary" if n else "secondary", use_container_width=True):
+
+    which = None
+    with st.container(horizontal=True, key="reroll-row"):
+        label = "Reroll picked" if n == 0 else f"Reroll {n} {'die' if n == 1 else 'dice'}"
+        if st.button(label, key="reroll", icon=":material/refresh:", disabled=n == 0,
+                     type="primary" if n else "secondary", width="stretch"):
+            which = sorted(ss.selected_dice)
+        if st.button("Reroll all", key="reroll-all", icon=":material/casino:", width="stretch"):
+            which = list(range(len(engine.dice)))
+    if which is not None:
         try:
-            engine.reroll(sorted(ss.selected_dice))
+            engine.reroll(which)
         except (ValueError, RuntimeError, IndexError) as e:
             st.error(str(e))
         else:

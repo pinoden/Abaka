@@ -193,6 +193,76 @@ class TestFullGame(unittest.TestCase):
         self.fail("no school row could be written")
 
 
+class TestMorePlayers(unittest.TestCase):
+    def test_game_starts_when_the_last_seat_is_taken(self):
+        store = RoomStore()
+        code, ann = store.create("Ann", players=4)
+        bob = store.join(code, "Bob")
+        cy = store.join(code, "Cy")
+        view = store.view(code)
+        self.assertFalse(view.started)
+        self.assertEqual((view.capacity, view.names), (4, ["Ann", "Bob", "Cy"]))
+        dee = store.join(code, "Dee")
+        view = store.view(code)
+        self.assertTrue(view.started)
+        self.assertEqual([p.name for p in view.engine.players], ["Ann", "Bob", "Cy", "Dee"])
+        with self.assertRaises(RoomError):
+            store.join(code, "Eve")
+
+        # Turns go round the table in seat order.
+        for token, seat in ((ann, 0), (bob, 1), (cy, 2), (dee, 3), (ann, 0)):
+            self.assertEqual(store.view(code).engine.current, seat)
+            store.roll(code, token)
+            store.cross(code, token, Category.ABAKA, store.view(code).engine.players[seat].table[Category.ABAKA].index(None))
+
+    def test_player_count_limits(self):
+        store = RoomStore()
+        for bad in (1, 6):
+            with self.assertRaises(RoomError):
+                store.create("Ann", players=bad)
+        code, _ = store.create("Ann", players=5)
+        for name in ("B", "C", "D", "E"):
+            store.join(code, name)
+        self.assertEqual(len(store.view(code).engine.players), 5)
+
+    def test_creator_can_start_early(self):
+        store = RoomStore()
+        code, ann = store.create("Ann", players=5)
+        with self.assertRaises(RoomError):
+            store.start_now(code, ann)  # nobody else yet
+        bob = store.join(code, "Bob")
+        with self.assertRaises(RoomError):
+            store.start_now(code, bob)  # only the creator
+        cy = store.join(code, "Cy")
+        store.start_now(code, ann)
+        view = store.view(code)
+        self.assertTrue(view.started)
+        self.assertEqual(view.capacity, 3)
+        self.assertEqual(len(view.engine.players), 3)
+        with self.assertRaises(RoomError):
+            store.join(code, "Dee")
+        with self.assertRaises(RoomError):
+            store.start_now(code, ann)
+
+    def test_names_are_made_distinct(self):
+        store = RoomStore()
+        code, _ = store.create("Ann", players=3)
+        store.join(code, "Ann")
+        store.join(code, "Ann")
+        self.assertEqual(store.view(code).names, ["Ann", "Ann (2)", "Ann (3)"])
+
+    def test_rematch_rotates_the_first_player(self):
+        store = RoomStore()
+        code, ann = store.create("Ann", players=3)
+        store.join(code, "Bob")
+        store.join(code, "Cy")
+        room = store._rooms[code]
+        for expected in (1, 2, 0):
+            room.engine.is_game_over = lambda: True  # pretend the game finished
+            store.rematch(code, ann)
+            self.assertEqual(store.view(code).engine.current, expected)
+
+
 class TestEngineTurnEnd(unittest.TestCase):
     def test_recording_clears_dice_for_the_next_player(self):
         g = GameEngine(["A", "B"])

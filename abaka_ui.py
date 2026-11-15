@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 import streamlit as st
 
 from abaka.engine import GameEngine
-from abaka.rooms import RoomEngine, RoomError, RoomStore, normalize_code
+from abaka.rooms import MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code
 from ui_components.main_ui import initialize_session_state, render_game, render_top_bar, reset_turn_selection
 from ui_components.rules import RULES_MD
 from ui_components.style import brand_html, chip, inject_global_css
@@ -67,7 +67,7 @@ def main():
 def _render_home(store: RoomStore) -> None:
     ss = st.session_state
     st.html(f'<div class="ab-hero">{brand_html(56)}'
-            "<p>The dice game of combinations. Play with a friend on one screen or online.</p></div>")
+            "<p>The dice game of combinations. Play with friends on one screen or online.</p></div>")
     if ss.lobby_notice:
         st.warning(ss.lobby_notice)
         ss.lobby_notice = None
@@ -75,23 +75,25 @@ def _render_home(store: RoomStore) -> None:
     _, local_col, online_col, _ = st.columns([0.4, 5, 5, 0.4], gap="large")
     with local_col:
         with st.container(border=True, key="card-local"):
-            _card_header("\U0001F465", "Same device", "Two players take turns on this screen.")
+            _card_header("\U0001F465", "Same device", "Take turns on this screen.")
+            count = _player_count("local_count")
             with st.form("local_game", border=False):
-                p1 = st.text_input("Player 1", placeholder="Name", max_chars=20, key="local_p1")
-                p2 = st.text_input("Player 2", placeholder="Name", max_chars=20, key="local_p2")
+                typed = [st.text_input(f"Player {i}", placeholder="Name", max_chars=20, key=f"local_p{i}")
+                         for i in range(1, count + 1)]
                 if st.form_submit_button("Start game", type="primary", icon=":material/play_arrow:",
                                          use_container_width=True):
-                    _start_local_game([p1.strip() or "Player 1", p2.strip() or "Player 2"])
+                    _new_local_game([t.strip() or f"Player {i}" for i, t in enumerate(typed, 1)])
                     st.rerun()
 
     with online_col:
         with st.container(border=True, key="card-online"):
-            _card_header("\U0001F310", "Online", "Each player on their own device. Invite a friend with a link.")
+            _card_header("\U0001F310", "Online", "Each player on their own device. Invite friends with a link.")
+            players = _player_count("online_count")
             with st.form("create_game", border=False):
                 name = st.text_input("Your name", placeholder="Name", max_chars=20, key="create_name")
                 if st.form_submit_button("Create game", type="primary", icon=":material/add_link:",
                                          use_container_width=True):
-                    code, token = store.create(name)
+                    code, token = store.create(name, players)
                     _enter_room(code, token)
                     st.rerun()
             st.html('<div class="ab-or">or join with a code</div>')
@@ -111,6 +113,21 @@ def _render_home(store: RoomStore) -> None:
             st.markdown(RULES_MD)
 
 
+def _player_count(key: str) -> int:
+    """Pick 2-5 players. Clicking the chosen option again would clear it, so keep the last choice."""
+    ss = st.session_state
+    last_key = key + "_last"
+
+    def keep() -> None:
+        if ss.get(key) is None:
+            ss[key] = ss.get(last_key, MIN_PLAYERS)
+        ss[last_key] = ss[key]
+
+    value = st.segmented_control("Players", list(range(MIN_PLAYERS, MAX_PLAYERS + 1)), default=MIN_PLAYERS,
+                                 key=key, on_change=keep)
+    return value or ss.get(last_key, MIN_PLAYERS)
+
+
 def _card_header(icon: str, title: str, subtitle: str) -> None:
     st.html(f'<div class="ab-card-icon">{icon}</div><div class="ab-card-title">{escape(title)}</div>'
             f'<div class="ab-card-sub">{escape(subtitle)}</div>')
@@ -127,12 +144,18 @@ def _start_local_game(names) -> None:
     reset_turn_selection()
 
 
-def _restart_local_game() -> None:
-    old = st.session_state.engine
-    names = [p.name for p in old.players]
+def _new_local_game(names) -> None:
+    st.session_state.local_games = 0
     _start_local_game(names)
-    # The other player starts the next game.
-    st.session_state.engine.current = (old.current + 1) % len(names)
+
+
+def _restart_local_game() -> None:
+    ss = st.session_state
+    names = [p.name for p in ss.engine.players]
+    _start_local_game(names)
+    # The next player in turn starts each new game.
+    ss.local_games = ss.get("local_games", 0) + 1
+    ss.engine.current = ss.local_games % len(names)
 
 
 def _end_local_game() -> None:
@@ -157,16 +180,17 @@ def _render_online(store: RoomStore) -> None:
     status = chip(f"Online · {code}", "accent")
 
     if not view.started:
-        render_top_bar(status, _leave_room, "Cancel game")
-        _render_waiting_room(code)
+        render_top_bar(status, _leave_room, "Leave game")
+        _render_waiting_room(store, view, seat, token)
         ss.was_waiting = True
     else:
         engine = RoomEngine(store, code, token, view.engine)
         my_turn = not view.engine.is_game_over() and view.engine.current == seat
         if ss.get("was_waiting"):
-            # The friend just joined; this browser was on the waiting screen.
-            friend = view.names[1 - seat]
-            st.toast(f"{friend} joined. Your turn!" if my_turn else f"{friend} joined.", icon="\U0001F3B2")
+            # The game just started; this browser was on the waiting screen.
+            others = [n for i, n in enumerate(view.names) if i != seat]
+            joined = f"{others[0]} joined." if len(others) == 1 else "Everyone's here."
+            st.toast(f"{joined} Your turn!" if my_turn else joined, icon="\U0001F3B2")
         elif my_turn and ss.get("was_my_turn") is False:
             st.toast("Your turn!", icon="\U0001F3B2")
         ss.was_waiting = False
@@ -191,22 +215,48 @@ def _watch_room(code: str, seen_version: int) -> None:
         st.rerun()
 
 
-def _render_waiting_room(code: str) -> None:
+def _render_waiting_room(store: RoomStore, view, seat: int, token: str) -> None:
+    code = view.code
+    joined, capacity = len(view.names), view.capacity
+    missing = capacity - joined
+    host = view.names[0]
     with _centered():
         with st.container(border=True, key="card-wait"):
-            _card_header("✉️", "Invite a friend",
-                         "Send them this link. The game starts as soon as they join.")
+            if seat == 0:
+                title = "Invite a friend" if capacity == 2 else "Invite your friends"
+                sub = ("Send them this link. The game starts as soon as they join." if capacity == 2 else
+                       f"Send them this link. The game starts when all {capacity} players have joined.")
+                _card_header("\u2709\ufe0f", title, sub)
+            else:
+                _card_header("\u2705", "You're in!",
+                             f"The game starts when all {capacity} players have joined, "
+                             f"or when {host} starts it. You can invite people with this link too.")
             link, same_network_only = _invite_link(code)
             if link:
                 st.code(link, language=None, wrap_lines=True)
                 if same_network_only:
                     st.caption("This link works for devices on the same Wi-Fi. To play over the internet, "
                                "deploy the app (see DEPLOYMENT_GUIDE.md).")
+            seats = "".join(f'<span class="in">{escape(n)}</span>' for n in view.names)
+            seats += '<span>Waiting\u2026</span>' * missing
+            waiting = ("Waiting for your friend to join\u2026" if capacity == 2 else
+                       f"{joined} of {capacity} players are here. Waiting for "
+                       f"{missing} more\u2026")
             st.html('<div class="ab-or">or share the game code</div><div class="ab-code">'
-                    + "".join(f"<span>{escape(c)}</span>" for c in code)
-                    + '</div><div class="ab-wait"><i></i>Waiting for your friend to join…</div>')
-            if st.button("Cancel", key="wait-cancel", type="tertiary", icon=":material/close:",
-                         use_container_width=True):
+                    + "".join(f"<span>{escape(c)}</span>" for c in code) + "</div>"
+                    + (f'<div class="ab-seats">{seats}</div>' if capacity > 2 else "")
+                    + f'<div class="ab-wait"><i></i>{waiting}</div>')
+            if seat == 0 and capacity > 2 and joined >= 2:
+                if st.button(f"Start now with {joined} players", key="big-start-now", type="primary",
+                             icon=":material/play_arrow:", use_container_width=True):
+                    try:
+                        store.start_now(code, token)
+                    except RoomError as e:
+                        st.error(str(e))
+                    else:
+                        st.rerun()
+            if st.button("Cancel" if seat == 0 else "Leave", key="wait-cancel", type="tertiary",
+                         icon=":material/close:", use_container_width=True):
                 _leave_room()
                 st.rerun()
 
@@ -224,8 +274,12 @@ def _render_invite(store: RoomStore, code: str) -> None:
 
             view = store.view(code)
             if not view.started:
-                _card_header("\U0001F3B2", f"{view.names[0]} invited you to play",
-                             "Enter your name to join. The game starts right away.")
+                if view.capacity == 2:
+                    sub = "Enter your name to join. The game starts right away."
+                else:
+                    sub = (f"A game for {view.capacity} players; {len(view.names)} joined so far: "
+                           f"{', '.join(view.names)}. Enter your name to join.")
+                _card_header("\U0001F3B2", f"{view.names[0]} invited you to play", sub)
                 with st.form("join_game", border=False):
                     name = st.text_input("Your name", placeholder="Name", max_chars=20, key="join_name")
                     if st.form_submit_button("Join game", type="primary", icon=":material/login:",
@@ -237,14 +291,13 @@ def _render_invite(store: RoomStore, code: str) -> None:
                         else:
                             _enter_room(code, token)
                             st.rerun()
-                rejoin_text = "Created this game and lost the page? Rejoin as:"
+                rejoin_text = "Already joined and lost the page? Rejoin as:"
             else:
-                _card_header("\U0001F3B2", f"{view.names[0]} vs {view.names[1]}",
-                             "This game already has two players.")
-                rejoin_text = "Are you one of them? Rejoin as:"
+                _card_header("\U0001F3B2", " vs ".join(view.names), "This game is full and already playing.")
+                rejoin_text = "Are you one of the players? Rejoin as:"
 
             st.caption(rejoin_text)
-            with st.container(horizontal=True):
+            with st.container(horizontal=True, key="rejoin-row"):
                 for i, name in enumerate(view.names):
                     if st.button(name, key=f"rejoin-{i}", icon=":material/person:"):
                         try:

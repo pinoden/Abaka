@@ -1,6 +1,6 @@
 # Abaka
 
-A dice game of combinations for two players, built in Python and Streamlit.
+A dice game of combinations for 2 to 5 players, built in Python and Streamlit.
 Play on one screen, or online with each player on their own device.
  
 ## Project Layout
@@ -41,11 +41,13 @@ Abaka/
 
 ## Features
 
-- **Two ways to play**: on one screen, or online with an invite link (see `README_MULTIPLAYER.md`)
-- **Tap-to-pick dice**: tap the dice to reroll; the joker is marked, and so is a wild joker
+- **Two ways to play**: on one screen, or online with an invite link (see `README_MULTIPLAYER.md`),
+  for 2 to 5 players
+- **Tap-to-pick dice**: tap the dice to reroll, or reroll all five; the joker is marked, and so is a wild joker
 - **Moves with previews**: every option shows its score ("Full house · 46"), the target cell
   lights up on the scoreboard, and the button says exactly what happens
-- **Clean scoreboard**: full row names, totals and school balance in each player's header
+- **Clean scoreboard**: full row names, totals and school balance in each player's header;
+  the last move is highlighted in orange until the next one
 - **Live updates**: in online games both screens update within about a second
 - **Works on phones**: the layout stacks on narrow screens
 - **How to play**: rules on the home screen and in the in-game menu

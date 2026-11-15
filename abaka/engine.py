@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 from collections import Counter  # <-- for helpful mismatch messages
 
 from .models import Category, roll_dice
@@ -33,8 +33,9 @@ class GameEngine:
 
         self.row_bonus_claimed: Dict[Category, bool] = {cat: False for cat in Category}
         self.col_bonus_claimed: List[bool] = [False, False, False]
-        self.school_minus_used: Dict[tuple[int, Category], bool] = {}
         self.row_bonus_blocked: Dict[tuple[int, Category], bool] = {}
+        # The cell written by the most recent move: (player index, category, slot), or None.
+        self.last_move: Optional[Tuple[int, Category, int]] = None
 
     # ----- turn flow -----
     def next_player(self) -> None:
@@ -103,6 +104,7 @@ class GameEngine:
                 raise ValueError(self._explain_mismatch(category))
             self.players[self.current].record(category, slot_index, score)
 
+        self.last_move = (self.current, category, slot_index)
         self._after_record(category, slot_index)
         self._end_turn()
 
@@ -116,6 +118,7 @@ class GameEngine:
             self.players[self.current].table[category][3] = 'X'
         if self.players[self.current].column_bonus[slot_index] is None:
             self.players[self.current].column_bonus[slot_index] = 'X'
+        self.last_move = (self.current, category, slot_index)
         self._after_record(category, slot_index)
         self._end_turn()
 
