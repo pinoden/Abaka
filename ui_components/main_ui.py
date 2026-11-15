@@ -53,7 +53,9 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
         me: This browser's seat in an online game; None when everyone shares this screen.
     """
     render_top_bar(status_html, on_leave, leave_label)
-    left, right = st.columns([5, 7], gap="large")
+    # Up to 4 players fit the usual layout; with 5 the scoreboard gets more room and the dice shrink a little.
+    wide_board = len(engine.players) >= 5
+    left, right = st.columns([4, 8] if wide_board else [5, 7], gap="large")
     with left:
         with st.container(border=True, key="card-play"):
             if engine.is_game_over():

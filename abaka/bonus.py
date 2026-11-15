@@ -21,8 +21,8 @@ def _check_row_bonus(engine, player_idx: int, category: Category) -> None:
 
     if category.name.startswith("SCHOOL_"):
         num = int(category.name.split('_')[1])
-        # minus in school cancels the school *row* bonus only
-        val = 'X' if engine.school_minus_used.get((player_idx, category), False) else num * 3
+        # Paying from the school balance does not cancel the row bonus.
+        val = num * 3
         if p.table[category][3] is None:
             p.table[category][3] = val
     else:

@@ -2,8 +2,9 @@
 Scoreboard: every player's table, side by side.
 
 Each player has three cells per row (filled left to right) and a bonus cell.
-The current player's columns are tinted, and the cell the picked move would
-fill is outlined with its preview value.
+The current player's columns are tinted, the cell written by the most recent
+move is highlighted in orange (until the next move), and the cell the picked
+move would fill is outlined with its preview value.
 """
 
 from html import escape
@@ -27,7 +28,9 @@ def render_scoreboard(engine: GameEngine, me: Optional[int] = None, target: Opti
     st.html(build_scoreboard_html(engine, me, target))
 
 
-def _score_cell(value, category, classes, target_text=None) -> str:
+def _score_cell(value, category, classes, target_text=None, last=False) -> str:
+    if last:
+        classes += " ab-last"
     if target_text is not None:
         return f'<td class="{classes} ab-target">{escape(target_text)}</td>'
     if value is None:
@@ -54,11 +57,13 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
     over = engine.is_game_over()
     active = None if over else engine.current
     span = 1 + 5 * len(players)  # row label + (gap + 3 cells + bonus) per player
+    last = getattr(engine, "last_move", None)  # (player, category, slot) of the latest move
+    many = len(players) > 2
 
     def act(i: int) -> str:
         return " ab-active" if i == active else ""
 
-    h = ['<div class="ab-board-wrap"><table class="ab-board"><thead><tr><th></th>']
+    h = [f'<div class="ab-board-wrap"><table class="ab-board{" ab-many" if many else ""}"><thead><tr><th></th>']
     for i, p in enumerate(players):
         dot = '<span class="ab-dot"></span>' if i == active else ""
         you = '<span class="ab-you">You</span>' if i == me else ""
@@ -66,7 +71,7 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
         bal_txt = f'<span style="color:#E5484D">{bal}</span>' if bal < 0 else str(bal)
         h.append(
             f'<th class="ab-gap"></th><th colspan="4" class="ab-player{act(i)}">{dot}{escape(p.name)}{you}'
-            f'<div class="ab-pmeta">{p.calculate_score()} pts · balance {bal_txt}</div></th>'
+            f'<div class="ab-pmeta">{p.calculate_score()} pts{"<br>" if many else " &middot; "}balance {bal_txt}</div></th>'
         )
     h.append('</tr><tr class="ab-sub"><th></th>')
     for i, _ in enumerate(players):
@@ -83,7 +88,9 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
                 h.append('<td class="ab-gap"></td>')
                 for slot in range(3):
                     hit = target is not None and i == active and target.category == cat and target.slot == slot
-                    h.append(_score_cell(p.table[cat][slot], cat, act(i).strip(), target.preview if hit else None))
+                    was_last = last is not None and tuple(last) == (i, cat, slot)
+                    h.append(_score_cell(p.table[cat][slot], cat, act(i).strip(), target.preview if hit else None,
+                                         last=was_last))
                 h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i)))
             h.append("</tr>")
 
@@ -98,4 +105,21 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
     for i, p in enumerate(players):
         h.append(f'<td class="ab-gap"></td><td colspan="4" class="{act(i).strip()}">{p.calculate_score()}</td>')
     h.append("</tr></tbody></table></div>")
+    if last is not None:
+        h.append(f'<div class="ab-legend"><span class="ab-swatch"></span>{escape(describe_move(engine, last, me))}</div>')
     return "".join(h)
+
+
+def describe_move(engine: GameEngine, move, me: Optional[int] = None) -> str:
+    """'Last move: Bob scored 23 in Full house' and similar."""
+    player, cat, slot = move
+    who = "You" if player == me else engine.players[player].name
+    value = engine.players[player].table[cat][slot]
+    name = row_name(cat)
+    if is_school(cat):
+        what = f"wrote {name} (exactly three)" if value == "X" else f"wrote {name} (balance now {value})"
+    elif value == "X":
+        what = f"crossed out {name}"
+    else:
+        what = f"scored {value} in {name}"
+    return f"Last move: {who} {what}"

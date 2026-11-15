@@ -15,7 +15,7 @@ def record_school(engine, category: Category, slot_index: int) -> None:
         Эндгейм: если вся нижняя часть заполнена (p.non_school_complete()),
                  разрешаем уходить в минус при любом k<3.
       - ВАЖНО: в школе НИКОГДА не действует удвоение первого броска.
-      - Любой «минус» в школе мгновенно перечёркивает бонус строки школы у игрока.
+      - Оплата из баланса («минус») НЕ лишает бонуса строки школы (решение владельца, 2026-11-15).
     """
     p = engine.players[engine.current]
     denom = int(category.name.split('_')[1])
@@ -56,17 +56,11 @@ def record_school(engine, category: Category, slot_index: int) -> None:
     # хватает баланса — обычный минус
     if p.school_balance >= required:
         move_balance(p.school_balance - required)
-        engine.school_minus_used[(engine.current, category)] = True
-        if p.table[category][3] is None:
-            p.table[category][3] = 'X'
         return
 
     # эндгейм — разрешаем уходить в минус
     if p.non_school_complete():
         move_balance(p.school_balance - required)  # может стать отрицательным
-        engine.school_minus_used[(engine.current, category)] = True
-        if p.table[category][3] is None:
-            p.table[category][3] = 'X'
         return
 
     # иначе недостаточно баланса
