@@ -1,6 +1,7 @@
 # Abaka
 
-A modern dice game with a beautiful, modular UI built in Python and Streamlit.
+A dice game of combinations for two players, built in Python and Streamlit.
+Play on one screen, or online with each player on their own device.
  
 ## Project Layout
 
@@ -18,17 +19,19 @@ Abaka/
 │   ├── render.py            # Text-based scoreboard
 │   ├── rooms.py             # Shared rooms for online 2-player games
 │   └── __main__.py          # CLI entry point
-├── ui_components/            # Modular UI components
-│   ├── __init__.py          # Package initialization
-│   ├── main_ui.py           # Main UI orchestrator
-│   ├── scoreboard.py        # Scoreboard rendering
-│   ├── dice.py              # Dice display and interaction
-│   ├── move_selection.py    # Move selection interface
-│   ├── sidebar.py           # Sidebar and new game
-│   ├── requirements.txt     # UI dependencies
+├── ui_components/            # Streamlit UI
+│   ├── main_ui.py           # Game screen: top bar, play panel, scoreboard
+│   ├── dice.py              # Tappable dice, reroll
+│   ├── move_selection.py    # Score / Cross out picker with previews
+│   ├── moves.py             # Which moves are possible and what they score (no Streamlit)
+│   ├── scoreboard.py        # Scoreboard table
+│   ├── rules.py             # "How to play" text
+│   ├── style.py             # CSS, dice artwork
 │   └── README.md            # UI component documentation
+├── .streamlit/config.toml   # Server settings and colour theme
 ├── tests/                    # Test suite
 │   ├── test_rooms.py        # Online room tests
+│   ├── test_moves.py        # Move preview tests
 │   └── ...
 ├── abaka_ui.py              # Main Streamlit application
 ├── main.py                  # Alternative entry point
@@ -38,13 +41,14 @@ Abaka/
 
 ## Features
 
-- **Beautiful UI**: Modern, responsive interface built with Streamlit
-- **Modular Architecture**: Clean, maintainable code structure
-- **Professional Scoreboard**: Clean table layout with visual separators
-- **Interactive Dice**: Click to select, visual feedback, joker support
-- **Smart Move Selection**: Radio button interface with descriptive labels
-- **Real-time Updates**: Live scoreboard and turn management
-- **Online Play**: Two players, each in their own browser, joined by an invite link (see `README_MULTIPLAYER.md`)
+- **Two ways to play**: on one screen, or online with an invite link (see `README_MULTIPLAYER.md`)
+- **Tap-to-pick dice**: tap the dice to reroll; the joker is marked, and so is a wild joker
+- **Moves with previews**: every option shows its score ("Full house · 46"), the target cell
+  lights up on the scoreboard, and the button says exactly what happens
+- **Clean scoreboard**: full row names, totals and school balance in each player's header
+- **Live updates**: in online games both screens update within about a second
+- **Works on phones**: the layout stacks on narrow screens
+- **How to play**: rules on the home screen and in the in-game menu
 
 ## Quick Start
 
@@ -80,25 +84,7 @@ Abaka is a dice game where players:
 
 ## UI Components
 
-### Scoreboard (`ui_components/scoreboard.py`)
-- Professional table layout with visual separators
-- Color-coded scores and bonuses
-- Clear player separation and current player highlighting
-
-### Dice Interface (`ui_components/dice.py`)
-- Interactive dice selection
-- Visual feedback with colored borders
-- Joker die support with special styling
-
-### Move Selection (`ui_components/move_selection.py`)
-- Radio button interface for actions (Score/Cross)
-- Grid layout for move categories
-- Descriptive labels instead of abbreviations
-
-### Sidebar (`ui_components/sidebar.py`)
-- New game functionality
-- Player name configuration
-- Clean, organized layout
+See `ui_components/README.md`.
 
 ## Development
 
@@ -131,9 +117,8 @@ from abaka.models import Category
 from abaka.scoring import score_category
 
 # UI components
-from ui_components.scoreboard import render_scoreboard
-from ui_components.dice import render_dice_section
-from ui_components.move_selection import render_move_selection
+from ui_components.main_ui import render_game
+from ui_components.moves import score_options, cross_options
 ```
 
 ## Requirements
@@ -143,9 +128,7 @@ from ui_components.move_selection import render_move_selection
 - See `requirements.txt` for full list
 
 ### UI Dependencies
-- Streamlit >= 1.37 (1.45+ recommended, for automatic invite links)
-- Pillow >= 9.0.0
-- See `ui_components/requirements.txt` for full list
+- Streamlit >= 1.48
 
 ## Contributing
 
