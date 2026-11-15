@@ -122,8 +122,7 @@ it. A game has 2 to 5 players; turns go round in seat order.
 ## Backlog
 
 Nothing open. The four requests below came from the owner after deploying
-(2026-11-15); all are done on branch `Denis-owner-requests`, waiting to be
-merged.
+(2026-11-15); all are done and merged in PR #13.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -159,8 +158,8 @@ merged.
   new scoreboard, phone layout).
 - **Deployed:** the owner deployed `main` on Streamlit Community Cloud and
   reports that it works.
-- **Owner requests (last move, Reroll all, School bonus, 2-5 players):** done
-  on branch `Denis-owner-requests`, waiting to be merged.
+- **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
+  merged in PR #13.
 - **Tests:** 48 pass: 19 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early), 13 move-preview tests
   (`test_moves.py`), 5 tests for the owner's requests
