@@ -80,6 +80,21 @@ class TestScoreOptions(unittest.TestCase):
         self.assertEqual(four.label, "School 4 · exactly 3")
         self.assertEqual(four.preview, "✓")
 
+    def test_crossing_out_warns_about_the_bonuses_it_gives_up(self):
+        g = game(1, 2, 3, 5, joker=6, first_roll=False)
+        abaka = {m.category: m for m in cross_options(g)}[Category.ABAKA]
+        self.assertTrue(abaka.bonus_lost and abaka.column_bonus_lost)
+        self.assertEqual(abaka.action_text, "Cross out Abaka (lose the row and column bonuses)")
+        g.players[0].column_bonus[0] = "X"  # column I's bonus is already gone
+        abaka = {m.category: m for m in cross_options(g)}[Category.ABAKA]
+        self.assertEqual(abaka.action_text, "Cross out Abaka (lose the row bonus)")
+        g.players[0].table[Category.ABAKA][3] = "X"  # and the row's
+        abaka = {m.category: m for m in cross_options(g)}[Category.ABAKA]
+        self.assertEqual(abaka.action_text, "Cross out Abaka")
+        g.players[0].column_bonus[0] = None
+        abaka = {m.category: m for m in cross_options(g)}[Category.ABAKA]
+        self.assertEqual(abaka.action_text, "Cross out Abaka (lose the column bonus)")
+
     def test_previewing_does_not_change_the_game(self):
         g = game(6, 6, 6, 6, joker=6)
         score_options(g)
@@ -103,7 +118,7 @@ class TestCrossOptions(unittest.TestCase):
         opts = cross_options(g)
         self.assertEqual([m.category for m in opts], [c for c in COMBO_CATS if c != Category.ABAKA])
         self.assertTrue(all(m.cross for m in opts))
-        self.assertEqual(opts[0].action_text, "Cross out Pair")
+        self.assertEqual(opts[0].action_text, "Cross out Pair (lose the row and column bonuses)")
 
 
 class TestOnlineEngine(unittest.TestCase):

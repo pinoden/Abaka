@@ -56,6 +56,42 @@ class TestSchoolBonusAfterPaying(unittest.TestCase):
         self.assertEqual(g.players[0].table[Category.ABAKA][3], 'X')
 
 
+class TestCrossingOutCostsTheColumnBonus(unittest.TestCase):
+    """Owner (2026-11-16): crossing out a combination gives up that column's bonus, like the row's, at once."""
+
+    def test_the_column_bonus_is_crossed_out_at_once(self):
+        g = GameEngine(["Ann", "Bob"])
+        g.dice = dice(1, 2, 3, 5)
+        g.record_cross(Category.ABAKA, 0)  # column I
+        ann = g.players[0]
+        self.assertEqual(ann.column_bonus, ['X', None, None])
+        self.assertEqual(ann.table[Category.ABAKA][3], 'X')  # and the row bonus
+        self.assertEqual(g.players[1].column_bonus, [None, None, None])  # only for the player who crossed
+
+    def test_a_column_with_a_crossed_out_combination_never_pays(self):
+        g = GameEngine(["Ann", "Bob"])
+        ann = g.players[0]
+        for cat in Category:  # columns I and II full of numbers
+            ann.table[cat][0], ann.table[cat][1] = 5, 5
+        g.dice = dice(1, 2, 3, 5)
+        g.record_cross(Category.ABAKA, 2)  # cross out in column III
+        self.assertEqual(ann.column_bonus[2], 'X')
+        for cat in Category:  # fill the rest of column III with numbers
+            if ann.table[cat][2] is None and cat is not Category.SUM:
+                ann.table[cat][2] = 6
+        g.current = 0
+        g.dice = dice(6, 6, 6, 6)
+        g.record_score(Category.SUM, 2)  # completes column III
+        self.assertEqual(ann.column_bonus[2], 'X')  # still no bonus
+
+    def test_paying_in_school_leaves_the_column_bonuses(self):
+        g = GameEngine(["Ann", "Bob"])
+        g.players[0].school_balance = 10
+        g.dice = dice(6, 6, 1, 2, joker=3)
+        g.record_score(Category.SCHOOL_6, 0)
+        self.assertEqual(g.players[0].column_bonus, [None, None, None])
+
+
 class TestLastMove(unittest.TestCase):
     def test_last_move_follows_each_move(self):
         g = GameEngine(["Ann", "Bob", "Cy"])

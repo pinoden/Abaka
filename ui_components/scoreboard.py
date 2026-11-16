@@ -114,8 +114,16 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
              f'{t("Column bonus")}</th>')
     for i, p in enumerate(players):
         h.append('<td class="ab-gap"></td>')
-        for value in p.column_bonus:
-            h.append(_bonus_cell(value, act(i).strip()))
+        for col, value in enumerate(p.column_bonus):
+            if (target is not None and i == active and target.slot == col
+                    and getattr(target, "column_bonus_lost", False)):
+                # The picked move crosses out a combination in this column: preview the crossed-out bonus.
+                h.append(f'<td class="{act(i).strip()} ab-target" '
+                         f'title="{t("This move crosses out the column bonus")}">{CROSS}</td>')
+            else:
+                # The player crossed out a combination cell in this column: they gave the bonus up.
+                crossed = any(p.table[cat][col] == "X" for cat in COMBO_CATS)
+                h.append(_bonus_cell(value, act(i).strip(), crossed))
         h.append(f'<td class="ab-bonus{act(i)}"></td>')
     h.append(f'</tr><tr class="ab-total"><th class="ab-row">{t("Total")}</th>')
     for i, p in enumerate(players):

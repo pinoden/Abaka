@@ -186,12 +186,16 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   ("Throw for Ann"); online only the thrower's screen has it ("Throw the
   dice"). Until the first move, `_starter_note` shows "Ann threw the lowest
   (9) and goes first."
-- Bonus cells: "✕" when the player gave the bonus up themselves (a School
-  row paid from the balance, or a crossed-out combination cell;
-  `engine.row_bonus_blocked`), "–" when the bonus went to or was decided by
-  another player. When a picked School move pays from the balance, the
-  confirm button ends with ", lose the row bonus)" (`Move.bonus_lost`), and
-  the scoreboard previews that row's bonus cell as crossed out.
+- Bonus cells: "✕" when the player gave the bonus up themselves, "–" when
+  the bonus went to or was decided by another player.
+  - Row bonus: a School row paid from the balance, or a crossed-out
+    combination cell (`engine.row_bonus_blocked`).
+  - Column bonus: a crossed-out combination cell in that column.
+  - When the picked move gives a bonus up, the confirm button says so
+    (`Move.bonus_lost`, `Move.column_bonus_lost`). For example: ", lose the
+    row bonus)" for a School payment, or "Cross out Abaka (lose the row and
+    column bonuses)". The scoreboard previews those bonus cells as crossed
+    out.
 
 ## Rules for changes
 
@@ -211,7 +215,8 @@ Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
 and were merged in PR #13; request 5 (2026-11-16) was merged in PR #18 and
 went live with PR #19; request 6 (2026-11-16, reversing request 3) was
 merged in PR #20; requests 7 and 8 (2026-11-16) were merged in PR #21;
-request 9 (2026-11-16) was merged in PR #22.
+request 9 (2026-11-16) was merged in PR #22; request 10 (2026-11-16) is in
+PR #24.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -289,8 +294,19 @@ request 9 (2026-11-16) was merged in PR #22.
      original code's labels were D, DD, T, LS, BS, F, C, A, Σ).
    > "хочу добавить русский язык"
 
+10. **Crossing out a combination gives up the column bonus, like the row
+    bonus.** The engine already did this; now it shows. Done in PR #24:
+    - the column bonus cell shows "✕" at once (it showed "–");
+    - the confirm button warns ("Cross out Abaka (lose the row and column
+      bonuses)");
+    - the preview crosses out both bonus cells;
+    - the rules say both bonus cells are crossed out at once.
+    > "Зачеркивание какой-то комбинации (не из школы) точно так же лишает бонуса по столбцу"
+
 ## Status (2026-11-16)
 
+- **Crossed-out combinations show the lost column bonus (owner request 10):**
+  PR #24.
 - **Russian language (owner request 9):** merged in PR #22, live within
   seconds. Checked on the live app in headless Chromium (desktop with
   `?lang=ru`, phone with a Russian browser language): home, starting throw,
@@ -314,7 +330,7 @@ request 9 (2026-11-16) was merged in PR #22.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 85 pass: 6 language tests (`test_i18n.py`: every t() text has a
+- **Tests:** 92 pass: 6 language tests (`test_i18n.py`: every t() text has a
   Russian version with the same placeholders, room errors, plurals, per-thread
   language), 10 saving tests (`test_saving.py`), 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
@@ -409,6 +425,23 @@ request 9 (2026-11-16) was merged in PR #22.
 - Save games in an external database so they also survive Cloud reboots.
 
 ## Decision log
+
+**2026-11-16: crossing out shows the lost column bonus (owner request 10)**
+
+- The rule was already in the engine (`record_cross` puts X in the row's
+  bonus cell and in the column's bonus at once; a column with a crossed-out
+  combination never pays). The owner's message matched the School "minus"
+  change, so the display was brought in line instead:
+  - "✕" in the column bonus cell;
+  - a warning on the confirm button;
+  - a preview of both bonus cells.
+- The column bonus "✕" is derived from the table (a crossed-out combination
+  cell in that column), so it needs no new engine state, and old saved
+  games show it too.
+- Tests: the engine rule (column bonus crossed at once, never paid, School
+  payments leave it alone), the button texts, the board cells and the
+  preview. The simulation checks every cross-out; the AppTest scenarios
+  check every previewed cross-out.
 
 **2026-11-16: Russian (owner request 9)**
 

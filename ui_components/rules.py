@@ -33,7 +33,8 @@ has three cells that fill from left to right.
 
 Scoring a combination on your **first roll** (no rerolls) doubles it.
 If your dice don't fit anything you want, **cross out** a combination cell instead.
-That gives up the row's bonus and that column's bonus for you.
+That gives up the row's bonus and that column's bonus for you: both bonus cells are
+crossed out at once.
 
 **School (rows 1-6).** Three dice of the row's number is par. Each extra die adds
 that number to your **school balance**; each missing die is paid from it. Paying
@@ -78,7 +79,8 @@ RULES_MD_RU = """
 
 Комбинация, записанная с **первого броска** (без перебросов), считается вдвойне.
 Если кубики ни во что не подходят, можно **зачеркнуть** клетку комбинации.
-Тогда вы теряете бонус этой строки и бонус этого столбца.
+Тогда вы теряете бонус этой строки и бонус этого столбца: обе клетки бонусов
+сразу зачёркиваются.
 
 **Школа (строки 1-6).** Три кубика с числом строки — норма. Каждый лишний кубик добавляет
 это число к **балансу школы**; каждый недостающий оплачивается из баланса. Оплата из баланса
