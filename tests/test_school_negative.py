@@ -31,8 +31,8 @@ class TestSchoolNegativeEndgame(unittest.TestCase):
         # Баланс ушёл в минус на 2*5 = 10: 2 - 10 = -8
         self.assertEqual(p.school_balance, -8)
         self.assertEqual(p.table[Category.SCHOOL_5][slot], -8)
-        # Оплата из баланса больше НЕ перечёркивает бонус строки (решение владельца, 2026-11-15)
-        self.assertIsNone(p.table[Category.SCHOOL_5][3])
+        # «Минус» сразу перечёркивает бонус строки школы (решение владельца, 2026-11-16)
+        self.assertEqual(p.table[Category.SCHOOL_5][3], 'X')
 
         # Финальный счёт: 27 единиц внизу + (-8) в школе + штраф -800 = -781
         self.assertEqual(p.calculate_score(), -781)
@@ -52,7 +52,7 @@ class TestSchoolNegativeEndgame(unittest.TestCase):
         # Баланс: 0 - 2 = -2 (без удвоения)
         self.assertEqual(p.school_balance, -2)
         self.assertEqual(p.table[Category.SCHOOL_1][slot], -2)
-        self.assertIsNone(p.table[Category.SCHOOL_1][3])
+        self.assertEqual(p.table[Category.SCHOOL_1][3], 'X')
 
         # 27 (низ) - 2 - 200 = -175
         self.assertEqual(p.calculate_score(), -175)

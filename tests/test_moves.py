@@ -55,6 +55,7 @@ class TestScoreOptions(unittest.TestCase):
         self.assertEqual(four.balance_change, 4)
         self.assertEqual(four.label, "School 4 · +4")
         self.assertEqual(four.action_text, "Write School 4 (+4 balance)")
+        self.assertFalse(four.bonus_lost)  # extra dice keep the bonus
         self.assertNotIn(Category.SCHOOL_6, opts)  # no 6s and not the endgame
         self.assertNotIn(Category.SCHOOL_2, opts)  # one 2 costs 4; the balance is 0
 
@@ -64,6 +65,12 @@ class TestScoreOptions(unittest.TestCase):
         g.players[0].school_balance = 10
         four = by_row(score_options(g))[Category.SCHOOL_4]
         self.assertEqual(four.balance_change, -4)
+        self.assertTrue(four.bonus_lost)  # paying crosses out the row bonus (owner, 2026-11-16)
+        self.assertEqual(four.action_text, "Write School 4 (pay 4 from balance, lose the row bonus)")
+        # Once the bonus is gone, the button no longer mentions it.
+        g.players[0].table[Category.SCHOOL_4][3] = "X"
+        four = by_row(score_options(g))[Category.SCHOOL_4]
+        self.assertFalse(four.bonus_lost)
         self.assertEqual(four.action_text, "Write School 4 (pay 4 from balance)")
 
     def test_exactly_three(self):

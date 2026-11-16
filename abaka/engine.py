@@ -39,6 +39,8 @@ class GameEngine:
 
         self.row_bonus_claimed: Dict[Category, bool] = {cat: False for cat in Category}
         self.col_bonus_claimed: List[bool] = [False, False, False]
+        # (player, row) pairs whose row bonus is gone: a crossed-out combination cell, or a
+        # School row paid from the balance (school.py).
         self.row_bonus_blocked: Dict[tuple[int, Category], bool] = {}
         # The cell written by the most recent move: (player index, category, slot), or None.
         self.last_move: Optional[Tuple[int, Category, int]] = None

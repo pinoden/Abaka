@@ -44,9 +44,14 @@ def _score_cell(value, category, classes, target_text=None, last=False) -> str:
     return f'<td class="{classes} {cls}">{value}</td>'
 
 
-def _bonus_cell(value, classes) -> str:
+def _bonus_cell(value, classes, given_up: bool = False) -> str:
+    """`given_up`: the player crossed out this row's bonus themselves (a crossed-out
+    combination cell, or a School row paid from the balance); otherwise an X means
+    the bonus went to, or was decided by, another player."""
     if value is None:
         return f'<td class="{classes} ab-none">{EMPTY}</td>'
+    if value == "X" and given_up:
+        return f'<td class="{classes} ab-x" title="Bonus crossed out">{CROSS}</td>'
     if value == "X":
         return f'<td class="{classes} ab-none" title="No bonus">{NONE}</td>'
     return f'<td class="{classes} ab-bval">{value}</td>'
@@ -58,6 +63,7 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
     active = None if over else engine.current
     span = 1 + 5 * len(players)  # row label + (gap + 3 cells + bonus) per player
     last = getattr(engine, "last_move", None)  # (player, category, slot) of the latest move
+    given_up = getattr(engine, "row_bonus_blocked", {})  # (player, row) bonuses crossed out by the player
     many = len(players) > 2
 
     def act(i: int) -> str:
@@ -91,7 +97,13 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
                     was_last = last is not None and tuple(last) == (i, cat, slot)
                     h.append(_score_cell(p.table[cat][slot], cat, act(i).strip(), target.preview if hit else None,
                                          last=was_last))
-                h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i)))
+                loses_bonus = (target is not None and i == active and target.category == cat
+                               and getattr(target, "bonus_lost", False))
+                if loses_bonus:  # the picked move pays from the balance: preview the crossed-out bonus
+                    h.append(f'<td class="ab-bonus{act(i)} ab-target" title="This move crosses out the row bonus">'
+                             f'{CROSS}</td>')
+                else:
+                    h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i), given_up.get((i, cat), False)))
             h.append("</tr>")
 
     h.append(f'<tr class="ab-section"><td colspan="{span}">Bonuses &amp; total</td></tr>')

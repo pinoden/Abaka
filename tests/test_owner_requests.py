@@ -1,4 +1,4 @@
-"""Rules and engine behaviour asked for by the owner on 2026-11-15."""
+"""Rules and engine behaviour asked for by the owner (2026-11-15; School bonus rule changed 2026-11-16)."""
 import unittest
 
 from abaka.engine import GameEngine
@@ -10,26 +10,44 @@ def dice(*values, joker=6):
 
 
 class TestSchoolBonusAfterPaying(unittest.TestCase):
-    def test_paying_from_balance_keeps_the_row_bonus(self):
-        g = GameEngine(["Ann", "Bob"])
-        ann = g.players[0]
-        ann.school_balance = 20
-        # Three School 4 writes: one die short, two dice short, exactly three.
-        for hand in (dice(4, 4, 1, 2), dice(4, 1, 2, 3), dice(4, 4, 4, 1)):
-            g.current = 0
-            g.dice = hand
-            g.record_score(Category.SCHOOL_4, g.leftmost_slot(ann, Category.SCHOOL_4))
-        self.assertEqual(ann.school_balance, 20 - 4 - 8)
-        self.assertEqual(ann.table[Category.SCHOOL_4][3], 12)  # 3 x 4
-        self.assertEqual(g.players[1].table[Category.SCHOOL_4][3], 'X')  # first to complete claims it
+    """
+    Owner's rule (2026-11-16, reversing the 2026-11-15 decision): paying from the balance
+    ("minus") in a School row gives up that row's bonus, and its bonus cell is crossed out at once.
+    """
 
-    def test_bonus_cell_stays_open_after_a_payment(self):
+    def test_paying_from_balance_crosses_the_row_bonus_at_once(self):
         g = GameEngine(["Ann", "Bob"])
         g.players[0].school_balance = 10
         g.dice = dice(6, 6, 1, 2, joker=3)  # two 6s: one short, costs 6
         g.record_score(Category.SCHOOL_6, 0)
         self.assertEqual(g.players[0].school_balance, 4)
-        self.assertIsNone(g.players[0].table[Category.SCHOOL_6][3])
+        self.assertEqual(g.players[0].table[Category.SCHOOL_6][3], 'X')
+        self.assertIsNone(g.players[1].table[Category.SCHOOL_6][3])  # only the payer loses it
+
+    def test_a_row_with_a_payment_never_gets_its_bonus(self):
+        g = GameEngine(["Ann", "Bob"])
+        ann = g.players[0]
+        ann.school_balance = 20
+        # One die short (pays 4), then exactly three twice: Ann completes the row first.
+        for hand in (dice(4, 4, 1, 2), dice(4, 4, 4, 1), dice(4, 4, 4, 2)):
+            g.current = 0
+            g.dice = hand
+            g.record_score(Category.SCHOOL_4, g.leftmost_slot(ann, Category.SCHOOL_4))
+        self.assertEqual(ann.school_balance, 16)
+        self.assertEqual(ann.table[Category.SCHOOL_4][3], 'X')
+        # As with a crossed-out combination, the first to complete the row decides: nobody gets it.
+        self.assertEqual(g.players[1].table[Category.SCHOOL_4][3], 'X')
+        self.assertEqual(ann.calculate_score(), 16)  # the balance cell only
+
+    def test_exactly_three_or_extra_dice_keep_the_bonus(self):
+        g = GameEngine(["Ann", "Bob"])
+        ann = g.players[0]
+        for hand in (dice(4, 4, 4, 1), dice(4, 4, 4, 4), dice(4, 4, 4, 2)):
+            g.current = 0
+            g.dice = hand
+            g.record_score(Category.SCHOOL_4, g.leftmost_slot(ann, Category.SCHOOL_4))
+        self.assertEqual(ann.table[Category.SCHOOL_4][3], 12)  # 3 x 4
+        self.assertEqual(g.players[1].table[Category.SCHOOL_4][3], 'X')  # first to complete claims it
 
     def test_crossing_a_combination_still_cancels_its_bonus(self):
         g = GameEngine(["Ann", "Bob"])

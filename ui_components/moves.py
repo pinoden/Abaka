@@ -58,7 +58,7 @@ def row_hint(category: Category) -> str:
     if is_school(category):
         n = school_number(category)
         return (f"Three {n}s are par. Extra {n}s add to your school balance; "
-                f"fewer {n}s are paid from it.")
+                f"fewer {n}s are paid from it, which crosses out this row's bonus.")
     return ROW_HINTS[category]
 
 
@@ -70,12 +70,14 @@ class Move:
     """One cell the current player could fill now."""
 
     def __init__(self, category: Category, slot: int, cross: bool,
-                 value: object = None, balance_change: Optional[int] = None) -> None:
+                 value: object = None, balance_change: Optional[int] = None,
+                 bonus_lost: bool = False) -> None:
         self.category = category
         self.slot = slot                      # 0..2, the leftmost free cell of the row
         self.cross = cross
         self.value = value                    # what the cell would show (int or 'X')
         self.balance_change = balance_change  # school rows only
+        self.bonus_lost = bonus_lost          # the move crosses out this row's (still open) bonus
 
     @property
     def name(self) -> str:
@@ -102,7 +104,8 @@ class Move:
                 return f"Write {self.name} (exactly three)"
             if self.balance_change > 0:
                 return f"Write {self.name} (+{self.balance_change} balance)"
-            return f"Write {self.name} (pay {abs(self.balance_change)} from balance)"
+            lost = ", lose the row bonus" if self.bonus_lost else ""
+            return f"Write {self.name} (pay {abs(self.balance_change)} from balance{lost})"
         return f"Score {self.value} in {self.name}"
 
     @property
@@ -144,13 +147,16 @@ def score_options(engine) -> List[Move]:
             continue
         trial = copy.deepcopy(base)
         balance_before = trial.players[me].school_balance
+        bonus_open = trial.players[me].table[category][3] is None
         try:
             trial.record_score(category, slot)
         except (ValueError, RuntimeError):
             continue  # the engine would refuse it
         after = trial.players[me]
         change = after.school_balance - balance_before if is_school(category) else None
-        options.append(Move(category, slot, False, after.table[category][slot], change))
+        # Paying from the balance crosses out the row bonus at once (owner's rule, 2026-11-16).
+        bonus_lost = is_school(category) and bonus_open and after.table[category][3] == "X"
+        options.append(Move(category, slot, False, after.table[category][slot], change, bonus_lost))
     return options
 
 
