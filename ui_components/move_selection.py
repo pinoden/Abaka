@@ -10,9 +10,10 @@ from typing import Optional
 import streamlit as st
 
 from abaka.engine import GameEngine
+from ui_components.i18n import error, t
 from ui_components.moves import Move, cross_options, score_options
 
-SCORE, CROSS = "Score", "Cross out"
+SCORE, CROSS = "Score", "Cross out"  # values of the switch (and in widget keys); shown through t()
 
 
 def _turn_key(engine: GameEngine) -> str:
@@ -31,18 +32,18 @@ def render_move_picker(engine: GameEngine) -> Optional[Move]:
     """Draw the picker. Returns the highlighted move (for the scoreboard preview)."""
     turn = _turn_key(engine)
     action_key = f"action-{turn}"
-    st.html('<div class="ab-section-label">Write this roll</div>')
+    st.html(f'<div class="ab-section-label">{t("Write this roll")}</div>')
     action = st.segmented_control(
-        "Action", [SCORE, CROSS], default=SCORE, key=action_key, label_visibility="collapsed",
+        "Action", [SCORE, CROSS], default=SCORE, key=action_key, label_visibility="collapsed", format_func=t,
         on_change=_keep_an_action, args=(action_key,),
     ) or SCORE
 
     moves = score_options(engine) if action == SCORE else cross_options(engine)
     if not moves:
         if action == SCORE:
-            st.info("Nothing can be scored with these dice. Reroll, or switch to **Cross out**.")
+            st.info(t("Nothing can be scored with these dice. Reroll, or switch to **Cross out**."))
         else:
-            st.info("There is nothing left to cross out.")
+            st.info(t("There is nothing left to cross out."))
         return None
 
     pick = st.pills(
@@ -51,7 +52,8 @@ def render_move_picker(engine: GameEngine) -> Optional[Move]:
     )
     move = moves[pick] if pick is not None else None
 
-    label = move.action_text if move else ("Choose a row above" if action == SCORE else "Choose a row to cross out")
+    label = move.action_text if move else (t("Choose a row above") if action == SCORE
+                                           else t("Choose a row to cross out"))
     if st.button(label, key="confirm", type="primary", disabled=move is None, use_container_width=True,
                  icon=":material/close:" if action == CROSS else ":material/check:"):
         try:
@@ -60,7 +62,7 @@ def render_move_picker(engine: GameEngine) -> Optional[Move]:
             else:
                 engine.record_score(move.category, move.slot)
         except ValueError as e:
-            st.error(str(e))
+            st.error(error(str(e)))
         else:
             st.session_state.selected_dice = set()
             st.rerun()

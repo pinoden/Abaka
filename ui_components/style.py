@@ -244,5 +244,8 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   .ab-hero p { font-size: 1rem; }
   [data-testid="stDialog"] table { font-size: .82rem; }
   [data-testid="stDialog"] th, [data-testid="stDialog"] td { padding: .35rem .4rem !important; }
+  /* The logo alone in the game's top bar, so the game code and the Menu stay on one line. */
+  .ab-topbar .ab-brand span { display: none; }
 }
+.ab-pmeta .ab-nw { white-space: nowrap; }
 """

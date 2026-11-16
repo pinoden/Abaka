@@ -29,9 +29,10 @@ import code_version
 code_version.load_current()
 
 from abaka.rooms import MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code  # noqa: E402
+from ui_components.i18n import LANGUAGES, error, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
-    initialize_session_state, render_game, render_top_bar, reset_turn_selection)
-from ui_components.rules import RULES_MD  # noqa: E402
+    initialize_session_state, render_game, render_language_switch, render_top_bar, reset_turn_selection)
+from ui_components.rules import rules_md  # noqa: E402
 from ui_components.style import brand_html, chip, inject_global_css  # noqa: E402
 
 POLL_SECONDS = 1.0  # how often a browser checks the room for the other player's moves
@@ -84,6 +85,7 @@ def main():
     ss.setdefault("lobby_notice", None)
     ss.setdefault("lobby_info", None)
     ss.setdefault("my_games", [])      # codes of games this browser played, newest first
+    set_language(_pick_language())
 
     store = get_store()
     invited_code = normalize_code(st.query_params.get("room", ""))
@@ -93,7 +95,7 @@ def main():
             _render_online(store)
         except RoomError as e:
             # The room vanished mid-render (expired, or the server restarted).
-            _leave_room(notice=str(e))
+            _leave_room(notice=error(str(e)))
             st.rerun()
     elif invited_code:
         _render_invite(store, invited_code)
@@ -101,56 +103,78 @@ def main():
         _render_home(store)
 
 
+def _pick_language() -> str:
+    """The page's language: the EN/RU switch (kept in the session and in ?lang=), else the browser's."""
+    ss = st.session_state
+    asked = st.query_params.get("lang")
+    if asked in LANGUAGES:
+        ss.lang = asked
+    if ss.get("lang") not in LANGUAGES:
+        try:
+            browser = (st.context.locale or "").lower()
+        except Exception:  # older Streamlit, or no browser (tests)
+            browser = ""
+        ss.lang = "ru" if browser.startswith("ru") else "en"
+    return ss.lang
+
+
+def _language_row(key: str) -> None:
+    with st.container(horizontal=True, horizontal_alignment="right", key=f"{key}-row"):
+        render_language_switch(key)
+
+
 # ------------------------------------------------------------------ home ----
 
 def _render_home(store: RoomStore) -> None:
+    _language_row("lang-home")
     st.html(f'<div class="ab-hero">{brand_html(56)}'
-            "<p>The dice game of combinations. Play with friends on one screen or online.</p></div>")
+            f"<p>{t('The dice game of combinations. Play with friends on one screen or online.')}</p></div>")
     _show_lobby_notice()
     _render_my_games(store)
 
     _, local_col, online_col, _ = st.columns([0.4, 5, 5, 0.4], gap="large")
     with local_col:
         with st.container(border=True, key="card-local"):
-            _card_header("\U0001F465", "Same device", "Take turns on this screen.")
+            _card_header("\U0001F465", t("Same device"), t("Take turns on this screen."))
             count = _player_count("local_count")
             with st.form("local_game", border=False):
-                typed = [st.text_input(f"Player {i}", placeholder="Name", max_chars=20, key=f"local_p{i}")
+                typed = [st.text_input(t("Player {i}", i=i), placeholder=t("Name"), max_chars=20, key=f"local_p{i}")
                          for i in range(1, count + 1)]
-                if st.form_submit_button("Start game", type="primary", icon=":material/play_arrow:",
+                if st.form_submit_button(t("Start game"), type="primary", icon=":material/play_arrow:",
                                          use_container_width=True):
                     # Saved like an online game: it gets a code and can be continued from its link.
-                    code, token = store.create_local([t.strip() for t in typed])
+                    names = [name.strip() or t("Player {i}", i=i) for i, name in enumerate(typed, 1)]
+                    code, token = store.create_local(names)
                     _enter_room(code, token)
                     st.rerun()
 
     with online_col:
         with st.container(border=True, key="card-online"):
-            _card_header("\U0001F310", "Online", "Each player on their own device. Invite friends with a link.")
+            _card_header("\U0001F310", t("Online"), t("Each player on their own device. Invite friends with a link."))
             players = _player_count("online_count")
             with st.form("create_game", border=False):
-                name = st.text_input("Your name", placeholder="Name", max_chars=20, key="create_name")
-                if st.form_submit_button("Create game", type="primary", icon=":material/add_link:",
+                name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="create_name")
+                if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
                                          use_container_width=True):
-                    code, token = store.create(name, players)
+                    code, token = store.create(name.strip() or t("Player {i}", i=1), players)
                     _enter_room(code, token)
                     st.rerun()
-            st.html('<div class="ab-or">or open a game by its code</div>')
+            st.html(f'<div class="ab-or">{t("or open a game by its code")}</div>')
             with st.form("find_game", border=False):
-                typed = st.text_input("Game code", placeholder="e.g. Q47CH", max_chars=8, key="find_code",
-                                      help="Join a friend's game, or continue a saved game.")
-                if st.form_submit_button("Open game", icon=":material/login:", use_container_width=True):
+                typed = st.text_input(t("Game code"), placeholder=t("e.g. Q47CH"), max_chars=8, key="find_code",
+                                      help=t("Join a friend's game, or continue a saved game."))
+                if st.form_submit_button(t("Open game"), icon=":material/login:", use_container_width=True):
                     code = normalize_code(typed)
                     if store.exists(code):
                         st.query_params["room"] = code
                         st.rerun()
                     else:
-                        st.error("No game with that code. Check it and try again.")
+                        st.error(t("No game with that code. Check it and try again."))
 
     _, mid, _ = st.columns([0.4, 10, 0.4])
     with mid:
-        with st.expander("How to play", icon=":material/help:"):
-            st.markdown(RULES_MD)
+        with st.expander(t("How to play"), icon=":material/help:"):
+            st.markdown(rules_md())
 
 
 def _player_count(key: str) -> int:
@@ -163,7 +187,7 @@ def _player_count(key: str) -> int:
             ss[key] = ss.get(last_key, MIN_PLAYERS)
         ss[last_key] = ss[key]
 
-    value = st.segmented_control("Players", list(range(MIN_PLAYERS, MAX_PLAYERS + 1)), default=MIN_PLAYERS,
+    value = st.segmented_control(t("Players"), list(range(MIN_PLAYERS, MAX_PLAYERS + 1)), default=MIN_PLAYERS,
                                  key=key, on_change=keep)
     return value or ss.get(last_key, MIN_PLAYERS)
 
@@ -194,12 +218,12 @@ def _render_my_games(store: RoomStore) -> None:
     _, mid, _ = st.columns([0.4, 10, 0.4])
     with mid:
         with st.container(border=True, key="card-my-games"):
-            st.html('<div class="ab-card-title">Continue a game</div>'
-                    '<div class="ab-card-sub">Your games are saved after every move.</div>')
+            st.html(f'<div class="ab-card-title">{t("Continue a game")}</div>'
+                    f'<div class="ab-card-sub">{t("Your games are saved after every move.")}</div>')
             with st.container(horizontal=True, key="my-games-row"):
                 for view in games[:4]:
-                    kind = "Same device" if view.local else "Online"
-                    label = f"{view.code} · {kind} · {', '.join(view.names)}"
+                    kind = t("Same device") if view.local else t("Online")
+                    label = t("{code} · {kind} · {names}", code=view.code, kind=kind, names=", ".join(view.names))
                     if st.button(label, key=f"continue-{view.code}", icon=":material/play_arrow:"):
                         st.query_params["room"] = view.code
                         st.rerun()
@@ -222,9 +246,9 @@ def _render_online(store: RoomStore) -> None:
     seat = store.seat_of(code, token)
     if seat is None:
         if store.exists(code):
-            notice = "This game was opened in another tab or device, so this tab no longer controls it."
+            notice = t("This game was opened in another tab or device, so this tab no longer controls it.")
         else:
-            notice = "That game is no longer available."
+            notice = t("That game is no longer available.")
         _leave_room(notice=notice, keep_link=store.exists(code))
         st.rerun()
 
@@ -233,7 +257,7 @@ def _render_online(store: RoomStore) -> None:
         _render_local_game(store, view, token)
         _watch_room(code, view.version)  # in step if the game is open on two devices
         return
-    status = chip(f"Online · {code}", "accent")
+    status = chip(t("Online · {code}", code=code), "accent")
 
     if not view.started:
         def leave_waiting_room() -> None:
@@ -241,18 +265,18 @@ def _render_online(store: RoomStore) -> None:
             _leave_room()
 
         _announce_departures(view, seat)
-        render_top_bar(status, leave_waiting_room, "Leave game")
+        render_top_bar(status, leave_waiting_room, t("Leave game"))
         _render_waiting_room(store, view, seat, token, leave_waiting_room)
         ss.was_waiting = True
     else:
         engine = RoomEngine(store, code, token, view.engine)
         my_turn = not view.engine.is_game_over() and view.engine.current == seat
         # Before the first round it is a turn to throw for who goes first.
-        your_turn = "Your throw!" if view.engine.choosing_first_player else "Your turn!"
+        your_turn = t("Your throw!") if view.engine.choosing_first_player else t("Your turn!")
         if ss.get("was_waiting"):
             # The game just started; this browser was on the waiting screen.
             others = [n for i, n in enumerate(view.names) if i != seat]
-            joined = f"{others[0]} joined." if len(others) == 1 else "Everyone's here."
+            joined = t("{name} joined.", name=others[0]) if len(others) == 1 else t("Everyone's here.")
             st.toast(f"{joined} {your_turn}" if my_turn else joined, icon="\U0001F3B2")
         elif my_turn and ss.get("was_my_turn") is False:
             st.toast(your_turn, icon="\U0001F3B2")
@@ -266,7 +290,7 @@ def _render_online(store: RoomStore) -> None:
                 pass  # the other player already started the next game
 
         render_game(engine, me=seat, status_html=status, on_play_again=rematch,
-                    on_leave=_leave_room, leave_label="Leave game")
+                    on_leave=_leave_room, leave_label=t("Leave game"))
 
     _watch_room(code, view.version)
 
@@ -283,12 +307,12 @@ def _render_local_game(store: RoomStore, view, token: str) -> None:
 
     def leave() -> None:
         unfinished = not view.engine.is_game_over()
-        _leave_room(info=(f"Game {code} is saved. To continue it, open it from this page or enter "
-                          f"the code {code}.") if unfinished else None)
+        _leave_room(info=t("Game {code} is saved. To continue it, open it from this page or enter the code {code}.",
+                           code=code) if unfinished else None)
 
     render_game(RoomEngine(store, code, token, view.engine), me=None,
-                status_html=chip(f"Same device · {code}"), on_play_again=rematch,
-                on_leave=leave, leave_label="Leave game")
+                status_html=chip(t("Same device · {code}", code=code)), on_play_again=rematch,
+                on_leave=leave, leave_label=t("Leave game"))
 
 
 @st.fragment(run_every=POLL_SECONDS)
@@ -308,9 +332,9 @@ def _announce_departures(view, seat: int) -> None:
     gone = [n for n in before if n not in view.names]
     if not gone:
         return
-    message = f"{', '.join(gone)} left."
+    message = t("{names} left.", names=", ".join(gone))
     if seat == 0 and before[0] != view.names[0]:
-        message += " You're the host now."
+        message += t(" You're the host now.")
     st.toast(message, icon="\U0001F44B")
 
 
@@ -322,40 +346,40 @@ def _render_waiting_room(store: RoomStore, view, seat: int, token: str, leave) -
     with _centered():
         with st.container(border=True, key="card-wait"):
             if seat == 0:
-                title = "Invite a friend" if capacity == 2 else "Invite your friends"
-                sub = ("Send them this link. The game starts as soon as they join." if capacity == 2 else
-                       f"Send them this link. The game starts when all {capacity} players have joined.")
+                title = t("Invite a friend") if capacity == 2 else t("Invite your friends")
+                sub = (t("Send them this link. The game starts as soon as they join.") if capacity == 2 else
+                       t("Send them this link. The game starts when all {n} players have joined.", n=capacity))
                 _card_header("\u2709\ufe0f", title, sub)
             else:
-                _card_header("\u2705", "You're in!",
-                             f"The game starts when all {capacity} players have joined, "
-                             f"or when {host} starts it. You can invite people with this link too.")
+                _card_header("\u2705", t("You're in!"),
+                             t("The game starts when all {capacity} players have joined, or when {host} starts it. "
+                               "You can invite people with this link too.", capacity=capacity, host=host))
             link, same_network_only = _invite_link(code)
             if link:
                 st.code(link, language=None, wrap_lines=True)
                 if same_network_only:
-                    st.caption("This link works for devices on the same Wi-Fi. To play over the internet, "
-                               "deploy the app (see DEPLOYMENT_GUIDE.md).")
+                    st.caption(t("This link works for devices on the same Wi-Fi. To play over the internet, deploy the app "
+                                 "(see DEPLOYMENT_GUIDE.md)."))
             seats = "".join(f'<span class="in">{escape(n)}</span>' for n in view.names)
-            seats += '<span>Waiting\u2026</span>' * missing
-            waiting = ("Waiting for your friend to join\u2026" if capacity == 2 else
-                       f"{joined} of {capacity} players are here. Waiting for "
-                       f"{missing} more\u2026")
-            st.html('<div class="ab-or">or share the game code</div><div class="ab-code">'
+            seats += f'<span>{t("Waiting…")}</span>' * missing
+            waiting = (t("Waiting for your friend to join…") if capacity == 2 else
+                       t("{joined} of {capacity} players are here. Waiting for {missing} more…",
+                         joined=joined, capacity=capacity, missing=missing))
+            st.html(f'<div class="ab-or">{t("or share the game code")}</div><div class="ab-code">'
                     + "".join(f"<span>{escape(c)}</span>" for c in code) + "</div>"
                     + (f'<div class="ab-seats">{seats}</div>' if capacity > 2 else "")
                     + f'<div class="ab-wait"><i></i>{waiting}</div>')
             if seat == 0 and capacity > 2 and joined >= 2:
-                if st.button(f"Start now with {joined} players", key="big-start-now", type="primary",
-                             icon=":material/play_arrow:", use_container_width=True):
+                if st.button(t("Start now with {players}", players=players_count(joined)), key="big-start-now",
+                             type="primary", icon=":material/play_arrow:", use_container_width=True):
                     try:
                         store.start_now(code, token)
                     except RoomError as e:
-                        st.error(str(e))
+                        st.error(error(str(e)))
                     else:
                         st.rerun()
             # Leaving gives up the seat. "Cancel" when the creator is alone: the game is closed.
-            if st.button("Cancel" if joined == 1 else "Leave", key="wait-cancel", type="tertiary",
+            if st.button(t("Cancel") if joined == 1 else t("Leave"), key="wait-cancel", type="tertiary",
                          icon=":material/close:", use_container_width=True):
                 leave()
                 st.rerun()
@@ -363,15 +387,16 @@ def _render_waiting_room(store: RoomStore, view, seat: int, token: str, leave) -
 
 def _render_invite(store: RoomStore, code: str) -> None:
     """Join (or rejoin) the game named in the invite link."""
+    _language_row("lang-invite")
     st.html(f'<div class="ab-hero" style="margin-bottom:1.2rem">{brand_html(44)}</div>')
     with _centered():
         # A tab whose seat was taken over keeps the link, so it lands here: tell it why.
         _show_lobby_notice()
         with st.container(border=True, key="card-invite"):
             if not store.exists(code):
-                _card_header("\U0001F50D", "Game not found",
-                             f"Game {code} has ended, or the server restarted. You can start a new one.")
-                _home_button("Go to start", primary=True)
+                _card_header("\U0001F50D", t("Game not found"),
+                             t("Game {code} has ended, or it is no longer kept. You can start a new one.", code=code))
+                _home_button(t("Go to start"), primary=True)
                 return
             if store.view(code).local:
                 # A saved same-device game (after a reload, or opened by its code): carry on at once.
@@ -381,26 +406,26 @@ def _render_invite(store: RoomStore, code: str) -> None:
             view = store.view(code)
             if not view.started:
                 if view.capacity == 2:
-                    sub = "Enter your name to join. The game starts right away."
+                    sub = t("Enter your name to join. The game starts right away.")
                 else:
-                    sub = (f"A game for {view.capacity} players; {len(view.names)} joined so far: "
-                           f"{', '.join(view.names)}. Enter your name to join.")
-                _card_header("\U0001F3B2", f"{view.names[0]} invited you to play", sub)
+                    sub = t("A game for {n} players; {k} joined so far: {names}. Enter your name to join.",
+                            n=view.capacity, k=len(view.names), names=", ".join(view.names))
+                _card_header("\U0001F3B2", t("{host} invited you to play", host=view.names[0]), sub)
                 with st.form("join_game", border=False):
-                    name = st.text_input("Your name", placeholder="Name", max_chars=20, key="join_name")
-                    if st.form_submit_button("Join game", type="primary", icon=":material/login:",
+                    name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="join_name")
+                    if st.form_submit_button(t("Join game"), type="primary", icon=":material/login:",
                                              use_container_width=True):
                         try:
-                            token = store.join(code, name)
+                            token = store.join(code, name.strip() or t("Player {i}", i=len(view.names) + 1))
                         except RoomError as e:
-                            st.error(str(e))
+                            st.error(error(str(e)))
                         else:
                             _enter_room(code, token)
                             st.rerun()
-                rejoin_text = "Already joined and lost the page? Rejoin as:"
+                rejoin_text = t("Already joined and lost the page? Rejoin as:")
             else:
-                _card_header("\U0001F3B2", " vs ".join(view.names), "This game is full and already playing.")
-                rejoin_text = "Are you one of the players? Rejoin as:"
+                _card_header("\U0001F3B2", t(" vs ").join(view.names), t("This game is full and already playing."))
+                rejoin_text = t("Are you one of the players? Rejoin as:")
 
             st.caption(rejoin_text)
             with st.container(horizontal=True, key="rejoin-row"):
@@ -409,11 +434,11 @@ def _render_invite(store: RoomStore, code: str) -> None:
                         try:
                             token = store.reclaim(code, i)
                         except RoomError as e:
-                            st.error(str(e))
+                            st.error(error(str(e)))
                         else:
                             _enter_room(code, token)
                             st.rerun()
-            _home_button("Start your own game instead")
+            _home_button(t("Start your own game instead"))
 
 
 def _home_button(label: str, primary: bool = False) -> None:

@@ -14,6 +14,7 @@ import streamlit as st
 
 from abaka.engine import GameEngine
 from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
+from ui_components.i18n import LANGUAGES, and_join, error, t
 from ui_components.move_selection import render_move_picker
 from ui_components.rules import rules_dialog
 from ui_components.scoreboard import render_scoreboard
@@ -31,12 +32,28 @@ def reset_turn_selection() -> None:
     st.session_state.selected_dice = set()
 
 
+def _language_picked(key: str) -> None:
+    choice = st.session_state.get(key)
+    if choice in LANGUAGES:
+        st.session_state.lang = choice
+        st.query_params["lang"] = choice  # a reload keeps the language
+
+
+def render_language_switch(key: str) -> None:
+    """EN / RU. Another switch may have changed the language, so show the current one first."""
+    ss = st.session_state
+    ss[key] = ss.get("lang", "en")
+    st.segmented_control(t("Language"), list(LANGUAGES), format_func=str.upper, key=key,
+                         label_visibility="collapsed", on_change=_language_picked, args=(key,))
+
+
 def render_top_bar(status_html: str, on_leave: Optional[Callable[[], None]] = None,
                    leave_label: str = "Leave game") -> None:
     with st.container(horizontal=True, vertical_alignment="center", key="topbar"):
         st.html(f'<div class="ab-topbar">{brand_html()}{status_html}</div>')
-        with st.popover("Menu", icon=":material/menu:", width="content"):
-            if st.button("How to play", icon=":material/help:", key="menu-rules", use_container_width=True):
+        with st.popover(t("Menu"), icon=":material/menu:", width="content"):
+            render_language_switch("lang-menu")
+            if st.button(t("How to play"), icon=":material/help:", key="menu-rules", use_container_width=True):
                 rules_dialog()
             if on_leave is not None and st.button(leave_label, icon=":material/logout:", key="menu-leave",
                                                   use_container_width=True):
@@ -78,28 +95,28 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
     can_act = me is None or engine.current == me
 
     if me is not None and can_act:
-        title = '<div class="ab-turn-title mine">Your turn</div>'
+        title = f'<div class="ab-turn-title mine">{t("Your turn")}</div>'
     else:
-        title = f'<div class="ab-turn-title">{name}’s turn</div>'
+        title = f'<div class="ab-turn-title">{t("{name}’s turn", name=name)}</div>'
     if engine.dice:
         roll_no = 3 - engine.rolls_left
-        sub = f"{rolls_html(engine)} Roll {roll_no} of 3"
+        sub = f"{rolls_html(engine)} {t('Roll {n} of 3', n=roll_no)}"
         if engine.first_roll:
-            sub += " " + chip("First roll: combinations score double", "gold")
+            sub += " " + chip(t("First roll: combinations score double"), "gold")
     elif can_act:
-        sub = "Roll the dice to start the turn."
+        sub = t("Roll the dice to start the turn.")
     else:
-        sub = f"Waiting for {name} to roll…"
+        sub = t("Waiting for {name} to roll…", name=name)
     st.html(f'{title}<div class="ab-turn-sub">{sub}</div>{_starter_note(engine, me)}')
 
     if not engine.dice:
         render_dice_placeholder()
-        if can_act and st.button("Roll dice", key="roll", type="primary", icon=":material/casino:",
+        if can_act and st.button(t("Roll dice"), key="roll", type="primary", icon=":material/casino:",
                                  use_container_width=True):
             try:
                 engine.start_turn()
             except ValueError as e:
-                st.error(str(e))
+                st.error(error(str(e)))
             else:
                 reset_turn_selection()
                 st.rerun()
@@ -107,7 +124,7 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
 
     render_dice(engine, interactive=can_act)
     if not can_act:
-        st.caption(f"{player.name} is choosing a move. You will see it here as it happens.")
+        st.caption(t("{name} is choosing a move. You will see it here as it happens.", name=player.name))
         return None
     render_reroll(engine)
     return render_move_picker(engine)
@@ -118,39 +135,40 @@ def _render_starting_throw(engine: GameEngine, me: Optional[int]) -> None:
     thrower = engine.players[engine.current]
     can_act = me is None or engine.current == me
     if engine.throw_round_no == 1:
-        sub = "Everyone throws all five dice. The lowest total goes first."
+        sub = t("Everyone throws all five dice. The lowest total goes first.")
     else:
-        tied = [escape(engine.players[p].name) for p in engine.throw_round]
-        sub = f"A tie for the lowest total: {' and '.join([', '.join(tied[:-1]), tied[-1]])} throw again."
-    st.html(f'<div class="ab-turn-title">Who goes first?</div><div class="ab-turn-sub">{sub}</div>'
+        tied = and_join(escape(engine.players[p].name) for p in engine.throw_round)
+        sub = t("A tie for the lowest total: {names} throw again.", names=tied)
+    st.html(f'<div class="ab-turn-title">{t("Who goes first?")}</div><div class="ab-turn-sub">{sub}</div>'
             + _throws_html(engine, me))
     if not can_act:
-        st.caption(f"Waiting for {thrower.name} to throw…")
+        st.caption(t("Waiting for {name} to throw…", name=thrower.name))
         return
-    label = "Throw the dice" if me is not None else f"Throw for {thrower.name}"
+    label = t("Throw the dice") if me is not None else t("Throw for {name}", name=thrower.name)
     if st.button(label, key="start-throw", type="primary", icon=":material/casino:", use_container_width=True):
         try:
             engine.throw_for_start()
         except ValueError as e:
-            st.error(str(e))
+            st.error(error(str(e)))
         else:
             st.rerun()
 
 
 def _throws_html(engine: GameEngine, me: Optional[int]) -> str:
     """One line per player: their latest starting throw and its total, or who throws next."""
-    latest = {t["player"]: t for t in engine.starting_throws}
+    latest = {throw["player"]: throw for throw in engine.starting_throws}
     rows = []
     for i, p in enumerate(engine.players):
         in_round = i in engine.throw_round
-        t = latest.get(i)
-        if t is not None and (t["round"] == engine.throw_round_no or not in_round):
-            faces = "".join(f'<img src="{die_uri(v, j)}" alt="{v}">' for v, j in t["dice"])
-            result = f'<span class="ab-throw-dice">{faces}</span><b>{t["total"]}</b>'
+        throw = latest.get(i)
+        if throw is not None and (throw["round"] == engine.throw_round_no or not in_round):
+            faces = "".join(f'<img src="{die_uri(v, j)}" alt="{v}">' for v, j in throw["dice"])
+            result = f'<span class="ab-throw-dice">{faces}</span><b>{throw["total"]}</b>'
         else:
-            result = '<span class="ab-throw-wait">{}</span>'.format("throws next" if i == engine.current else "waiting")
+            waiting = t("throws next") if i == engine.current else t("waiting")
+            result = f'<span class="ab-throw-wait">{waiting}</span>'
         cls = "next" if i == engine.current else ("out" if not in_round else "")
-        you = '<span class="ab-you">You</span>' if i == me else ""
+        you = f'<span class="ab-you">{t("You")}</span>' if i == me else ""
         rows.append(f'<div class="ab-throw {cls}"><span class="ab-throw-name">{escape(p.name)}{you}</span>'
                     f'<span class="ab-throw-res">{result}</span></div>')
     return f'<div class="ab-throws">{"".join(rows)}</div>'
@@ -161,9 +179,13 @@ def _starter_note(engine: GameEngine, me: Optional[int]) -> str:
     first = getattr(engine, "first_player", None)
     if first is None or engine.last_move is not None:
         return ""
-    total = [t["total"] for t in engine.starting_throws if t["player"] == first][-1]
-    who = "You" if first == me else escape(engine.players[first].name)
-    return f'<div class="ab-start-note">{who} threw the lowest ({total}) and {"go" if who == "You" else "goes"} first.</div>'
+    total = [throw["total"] for throw in engine.starting_throws if throw["player"] == first][-1]
+    if first == me:
+        note = t("You threw the lowest ({total}) and go first.", total=total)
+    else:
+        note = t("{name} threw the lowest ({total}) and goes first.", name=escape(engine.players[first].name),
+                 total=total)
+    return f'<div class="ab-start-note">{note}</div>'
 
 
 def _render_results(engine: GameEngine, me: Optional[int], on_play_again: Callable[[], None],
@@ -172,19 +194,19 @@ def _render_results(engine: GameEngine, me: Optional[int], on_play_again: Callab
     best = max(s for _, s, _ in scores)
     winners = [i for _, s, i in scores if s == best]
     if len(winners) > 1:
-        headline = "It’s a draw!"
+        headline = t("It’s a draw!")
     elif me is not None and winners[0] == me:
-        headline = "You win!"
+        headline = t("You win!")
     else:
-        headline = f"{escape(engine.players[winners[0]].name)} wins!"
+        headline = t("{name} wins!", name=escape(engine.players[winners[0]].name))
 
     rows = "".join(
         f'<div class="{"win" if s == best else ""}"><span>{escape(n)}</span><span>{s}</span></div>'
-        for n, s, _ in sorted(scores, key=lambda t: -t[1])
+        for n, s, _ in sorted(scores, key=lambda row: -row[1])
     )
     st.html(f'<div class="ab-result"><div class="trophy">\U0001F3C6</div><h2>{headline}</h2>'
             f'<div class="ab-scores">{rows}</div></div>')
-    if st.button("Play again", key="big-again", type="primary", icon=":material/replay:",
+    if st.button(t("Play again"), key="big-again", type="primary", icon=":material/replay:",
                  use_container_width=True):
         reset_turn_selection()
         on_play_again()
