@@ -33,6 +33,11 @@ python -m unittest tests.test_rooms -v                # one test module
 - Headless Chromium for browser checks is cached in
   `~/Library/Caches/ms-playwright`. Use it through `playwright-core` installed
   in a scratch folder, never in the repo.
+- Streamlit Cloud installs the newest Streamlit (requirements say
+  `streamlit>=1.48`), which is newer than the local 1.48. There, segmented
+  controls and pills are `role="radio"` buttons, so browser checks should
+  find them by text, not by role. On Cloud the app runs inside an iframe
+  (`iframe[title="streamlitApp"]`, path `/~/+/`).
 
 ## Architecture
 
@@ -182,10 +187,26 @@ Nothing open. The four requests below came from the owner after deploying
   installed, such as the base Python 3.8.
 - **Test round fixes:** the lost-seat notice, merged in PR #14; Leave in the
   waiting room frees the seat, merged in PR #15; online play on the live app
-  (stale room store after updates), PR #16.
+  (stale room store after updates), merged in PR #16.
 - **Live app check (2026-11-16):** the home screen loaded, and same-device
   play was not affected. "Create game" failed with a TypeError, so online
-  play had been broken on the live app since PR #13 was merged.
+  play had been broken on the live app since PR #13 was merged. PR #16 was
+  live within minutes, and then the full check passed in headless Chromium
+  on a desktop and a phone:
+  - Online game: the invite link is
+    `https://mipt-abaka.streamlit.app/?room=CODE` and opens the invite page.
+    The creator's screen switched to "Your turn" within a second of the join.
+  - Moves: dice reached the other player within about a second. "Reroll
+    all", scoring and crossing out worked, and the "Your turn!" toast and
+    last-move highlight appeared on both screens.
+  - Rejoin: rejoining from a second device showed the old tab the
+    "opened in another tab" notice.
+  - Leaving: Menu > Leave game worked. When the creator left a 3-player
+    waiting room, the guest was told they were now the host; their Cancel
+    then closed the room.
+  - Phone layout: a same-device game for 5 players had dice on one row and no
+    sideways page scrolling.
+  - Test games used "Test ..." names and were cancelled or left.
 - **Full test round (2026-11-16)** after the owner asked to "test everything".
   It found the lost-seat notice bug and the kept seat after Leave (see the
   Decision log).
