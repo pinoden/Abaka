@@ -251,6 +251,51 @@ class TestMorePlayers(unittest.TestCase):
         store.join(code, "Ann")
         self.assertEqual(store.view(code).names, ["Ann", "Ann (2)", "Ann (3)"])
 
+    def test_leaving_the_waiting_room_frees_the_seat(self):
+        store = RoomStore()
+        code, ann = store.create("Ann", players=3)
+        bob = store.join(code, "Bob")
+        version = store.version(code)
+        store.leave(code, bob)
+        self.assertEqual(store.view(code).names, ["Ann"])
+        self.assertGreater(store.version(code), version)  # the others' pages redraw
+        self.assertIsNone(store.seat_of(code, bob))
+        store.join(code, "Cy")
+        store.join(code, "Dee")  # the freed seat is filled: the game starts without Bob
+        view = store.view(code)
+        self.assertTrue(view.started)
+        self.assertEqual([p.name for p in view.engine.players], ["Ann", "Cy", "Dee"])
+
+    def test_when_the_creator_leaves_the_next_player_takes_over(self):
+        store = RoomStore()
+        code, ann = store.create("Ann", players=4)
+        bob = store.join(code, "Bob")
+        cy = store.join(code, "Cy")
+        store.leave(code, ann)
+        self.assertEqual(store.view(code).names, ["Bob", "Cy"])
+        self.assertEqual((store.seat_of(code, bob), store.seat_of(code, cy)), (0, 1))
+        with self.assertRaises(RoomError):
+            store.start_now(code, ann)
+        store.start_now(code, bob)  # Bob is the creator now
+        self.assertEqual([p.name for p in store.view(code).engine.players], ["Bob", "Cy"])
+
+    def test_room_closes_when_everyone_leaves(self):
+        store = RoomStore()
+        code, ann = store.create("Ann", players=3)
+        bob = store.join(code, "Bob")
+        store.leave(code, ann)
+        store.leave(code, bob)
+        self.assertFalse(store.exists(code))
+        store.leave(code, bob)  # leaving a closed room is harmless
+
+    def test_leaving_after_the_start_keeps_the_seat(self):
+        store, code, ann, bob = started_room()
+        store.leave(code, bob)
+        self.assertEqual(store.view(code).names, ["Ann", "Bob"])
+        self.assertEqual(store.seat_of(code, bob), 1)
+        store.leave(code, "not-a-token")
+        self.assertEqual(len(store.view(code).engine.players), 2)
+
     def test_rematch_rotates_the_first_player(self):
         store = RoomStore()
         code, ann = store.create("Ann", players=3)
