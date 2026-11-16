@@ -185,8 +185,13 @@ def _render_online(store: RoomStore) -> None:
     status = chip(f"Online · {code}", "accent")
 
     if not view.started:
-        render_top_bar(status, _leave_room, "Leave game")
-        _render_waiting_room(store, view, seat, token)
+        def leave_waiting_room() -> None:
+            store.leave(code, token)  # frees the seat; the next player takes over if this was the creator
+            _leave_room()
+
+        _announce_departures(view, seat)
+        render_top_bar(status, leave_waiting_room, "Leave game")
+        _render_waiting_room(store, view, seat, token, leave_waiting_room)
         ss.was_waiting = True
     else:
         engine = RoomEngine(store, code, token, view.engine)
@@ -220,7 +225,23 @@ def _watch_room(code: str, seen_version: int) -> None:
         st.rerun()
 
 
-def _render_waiting_room(store: RoomStore, view, seat: int, token: str) -> None:
+def _announce_departures(view, seat: int) -> None:
+    """In the waiting room: say who left since this page was last drawn, and who is the creator now."""
+    ss = st.session_state
+    before = ss.get("waiting_names")
+    ss.waiting_names = list(view.names)
+    if not before:
+        return
+    gone = [n for n in before if n not in view.names]
+    if not gone:
+        return
+    message = f"{', '.join(gone)} left."
+    if seat == 0 and before[0] != view.names[0]:
+        message += " You're the host now."
+    st.toast(message, icon="\U0001F44B")
+
+
+def _render_waiting_room(store: RoomStore, view, seat: int, token: str, leave) -> None:
     code = view.code
     joined, capacity = len(view.names), view.capacity
     missing = capacity - joined
@@ -260,9 +281,10 @@ def _render_waiting_room(store: RoomStore, view, seat: int, token: str) -> None:
                         st.error(str(e))
                     else:
                         st.rerun()
-            if st.button("Cancel" if seat == 0 else "Leave", key="wait-cancel", type="tertiary",
+            # Leaving gives up the seat. "Cancel" when the creator is alone: the game is closed.
+            if st.button("Cancel" if joined == 1 else "Leave", key="wait-cancel", type="tertiary",
                          icon=":material/close:", use_container_width=True):
-                _leave_room()
+                leave()
                 st.rerun()
 
 
@@ -331,6 +353,7 @@ def _enter_room(code: str, token: str) -> None:
     ss.seat_token = token
     ss.was_my_turn = None
     ss.was_waiting = False
+    ss.waiting_names = None
     reset_turn_selection()
     # Only the room code goes in the URL, so it is always safe to share.
     st.query_params["room"] = code

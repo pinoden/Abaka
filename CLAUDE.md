@@ -86,6 +86,11 @@ it. A game has 2 to 5 players; turns go round in seat order.
   clicks their name; `store.reclaim` issues a new token and the old tab loses
   control.
 - Rooms idle for 12 hours are dropped the next time a room is created.
+- Leaving the waiting room (`store.leave`, before the game starts) frees the
+  seat. Later players move up one seat, so if the creator leaves, the next
+  player becomes the creator and can press "Start now"; an empty room is
+  closed. The others see "<name> left." (`_announce_departures`). Once the
+  game has started, leaving keeps the seat so the player can rejoin.
 
 ### UI conventions
 
@@ -160,14 +165,17 @@ Nothing open. The four requests below came from the owner after deploying
   reports that it works.
 - **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
   merged in PR #13.
-- **Tests:** 49 pass: 19 room tests (`test_rooms.py`: a full two-player game,
-  rematch, 3-5 player rooms, starting early), 13 move-preview tests
-  (`test_moves.py`), 5 tests for the owner's requests
+- **Tests:** 53 pass: 23 room tests (`test_rooms.py`: a full two-player game,
+  rematch, 3-5 player rooms, starting early, leaving the waiting room),
+  13 move-preview tests (`test_moves.py`), 5 tests for the owner's requests
   (`test_owner_requests.py`), 11 older rule tests, and 1 app test
   (`test_ui_notices.py`, runs the real app script with Streamlit's AppTest;
   skipped where Streamlit is not installed, such as the base Python 3.8).
+- **Test round fixes:** the lost-seat notice, merged in PR #14; Leave in the
+  waiting room frees the seat, merged in PR #15.
 - **Full test round (2026-11-16)** after the owner asked to "test everything".
-  It found the lost-seat notice bug (see the Decision log).
+  It found the lost-seat notice bug and the kept seat after Leave (see the
+  Decision log).
   - Simulated play: 1,092 complete random games for 2-5 players
     (171,810 moves), played through the same move lists the UI offers, on
     Python 3.9 and 3.8. Found no turn without a legal move and no offered
@@ -185,9 +193,10 @@ Nothing open. The four requests below came from the owner after deploying
       refresh and rejoin, and a stale tab;
     - 3-5 player games, starting early, Cancel and Leave;
     - join-by-code errors, the rules, and player names containing HTML.
-  - Headless Chromium checks were not run in this round (the owner declined
-    them). Layout and dice size were last checked before PR #13 was merged,
-    and no layout code has changed since.
+  - Headless Chromium against a real server, after the Leave change: all the
+    browser checks below, plus the creator leaving a 4-player waiting room
+    (the next player, on a phone, is told they're the host and starts the
+    game) and the lost-seat notice on a phone.
 - **Browser checks** before merging (headless Chromium against a real server):
   a 2-player online game (desktop + phone) with refresh and rejoin; a 3-player
   online game (turn order, last-move highlight, Reroll all on every screen); a
@@ -202,15 +211,8 @@ Nothing open. The four requests below came from the owner after deploying
   expect older straight and first-roll rules. Left alone until the owner says
   which rules are right.
 - `abaka/ui_components/requirements.txt` is a leftover file that nothing uses.
-- On screens around 1024px wide, a 5-player game has small dice (about 34px)
-  and the scoreboard scrolls sideways.
-- If the creator leaves the waiting room, the players already waiting cannot
-  start the game; it only starts when the last seat is filled.
-- A guest who presses "Leave" in the waiting room keeps their seat. The game
-  still counts them and starts with them when the last seat fills; they can
-  come back only through the link, and nobody can remove them. Found in the
-  2026-11-16 test round; waits for the owner to say whether Leave should free
-  the seat.
+- On screens around 1024px wide, a 5-player game has small dice (about 34px),
+  and with 4 or 5 players the scoreboard scrolls sideways inside its card.
 
 ### Ideas not started
 
@@ -228,8 +230,20 @@ Nothing open. The four requests below came from the owner after deploying
   which did not show notices. The message appeared later, out of context, on
   the home screen. The invite page now shows it (`_show_lobby_notice`), and
   `tests/test_ui_notices.py` covers it.
-- The test scripts used for the round (game simulation, AppTest screens) are
-  not in the repo; only the regression test above was added.
+- The test scripts used for the round (game simulation, AppTest screens,
+  browser checks) are not in the repo; only the regression tests were added.
+- Leave in the waiting room now frees the seat. The test round found that a
+  guest who pressed "Leave" kept their seat: the game still counted them and
+  started with them, and nobody could remove them. Also, if the creator left,
+  the others could not start the game. The owner said "Always allow, don't ask
+  anymore", so I chose the behaviour the button's name suggests: leaving
+  before the start gives up the seat, the next player in join order becomes
+  the creator, and an empty room closes. After the start, seats are kept so
+  players can rejoin. The button reads "Cancel" only when the creator is
+  alone (the room then closes).
+- Tool permissions: the owner allowed all tools without prompts
+  (`~/.claude/settings.json`, plus `.claude/settings.local.json`, which is
+  not committed).
 
 **2026-11-15: owner requests after deploying**
 

@@ -127,6 +127,27 @@ class RoomStore:
             room.engine = _new_engine(room)
             room.touch()
 
+    def leave(self, code: str, token: str) -> None:
+        """
+        Give up a seat in the waiting room, before the game starts.
+
+        Later players move up one seat, so if the creator leaves, the next player in
+        join order becomes the creator (and can start the game). A room nobody is
+        left in is closed. Once the game has started, seats are kept, so a player
+        who left can rejoin from the link; this does nothing then.
+        """
+        with self._lock:
+            room = self._rooms.get(normalize_code(code))
+            if room is None or room.engine is not None or token not in room.tokens:
+                return
+            seat = room.tokens.index(token)
+            del room.names[seat]
+            del room.tokens[seat]
+            if not room.names:
+                del self._rooms[room.code]
+                return
+            room.touch()
+
     def reclaim(self, code: str, seat: int) -> str:
         """
         Take over an existing seat (after a page refresh or a device switch).
