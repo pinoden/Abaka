@@ -65,12 +65,9 @@ def main():
 # ------------------------------------------------------------------ home ----
 
 def _render_home(store: RoomStore) -> None:
-    ss = st.session_state
     st.html(f'<div class="ab-hero">{brand_html(56)}'
             "<p>The dice game of combinations. Play with friends on one screen or online.</p></div>")
-    if ss.lobby_notice:
-        st.warning(ss.lobby_notice)
-        ss.lobby_notice = None
+    _show_lobby_notice()
 
     _, local_col, online_col, _ = st.columns([0.4, 5, 5, 0.4], gap="large")
     with local_col:
@@ -126,6 +123,14 @@ def _player_count(key: str) -> int:
     value = st.segmented_control("Players", list(range(MIN_PLAYERS, MAX_PLAYERS + 1)), default=MIN_PLAYERS,
                                  key=key, on_change=keep)
     return value or ss.get(last_key, MIN_PLAYERS)
+
+
+def _show_lobby_notice() -> None:
+    """Say once why this browser left its game (on the home or the invite page, wherever it lands)."""
+    ss = st.session_state
+    if ss.lobby_notice:
+        st.warning(ss.lobby_notice)
+        ss.lobby_notice = None
 
 
 def _card_header(icon: str, title: str, subtitle: str) -> None:
@@ -265,6 +270,8 @@ def _render_invite(store: RoomStore, code: str) -> None:
     """Join (or rejoin) the game named in the invite link."""
     st.html(f'<div class="ab-hero" style="margin-bottom:1.2rem">{brand_html(44)}</div>')
     with _centered():
+        # A tab whose seat was taken over keeps the link, so it lands here: tell it why.
+        _show_lobby_notice()
         with st.container(border=True, key="card-invite"):
             if not store.exists(code):
                 _card_header("\U0001F50D", "Game not found",

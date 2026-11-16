@@ -151,7 +151,7 @@ Nothing open. The four requests below came from the owner after deploying
    joined, and the creator can press "Start now" with at least two.
    > "add options for 3, 4 and 5 multiplayers"
 
-## Status (2026-11-15)
+## Status (2026-11-16)
 
 - **Live two-player online mode:** merged in PR #11.
 - **Modern UI:** merged in PR #12 (home screen, tappable dice, move previews,
@@ -160,10 +160,34 @@ Nothing open. The four requests below came from the owner after deploying
   reports that it works.
 - **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
   merged in PR #13.
-- **Tests:** 48 pass: 19 room tests (`test_rooms.py`: a full two-player game,
+- **Tests:** 49 pass: 19 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early), 13 move-preview tests
   (`test_moves.py`), 5 tests for the owner's requests
-  (`test_owner_requests.py`) and 11 older rule tests.
+  (`test_owner_requests.py`), 11 older rule tests, and 1 app test
+  (`test_ui_notices.py`, runs the real app script with Streamlit's AppTest;
+  skipped where Streamlit is not installed, such as the base Python 3.8).
+- **Full test round (2026-11-16)** after the owner asked to "test everything".
+  It found the lost-seat notice bug (see the Decision log).
+  - Simulated play: 1,092 complete random games for 2-5 players
+    (171,810 moves), played through the same move lists the UI offers, on
+    Python 3.9 and 3.8. Found no turn without a legal move and no offered
+    move the engine refused. After every move it checked that the written
+    cell, last move, turn order, school balance and totals are right, and at
+    game end that row and column bonuses are right, including the School
+    bonus after paying from the balance (4,184 games had that case). Many
+    online rooms were played at once from several threads while other
+    threads kept trying moves out of turn; every such move was refused.
+  - The text CLI (`python -m abaka`): a full 3-player game.
+  - Every screen through Streamlit's AppTest (the real script, one session
+    per player; no browser):
+    - a full same-device game (90 turns, all by clicking);
+    - a full 2-player online game in two sessions, with results, Play again,
+      refresh and rejoin, and a stale tab;
+    - 3-5 player games, starting early, Cancel and Leave;
+    - join-by-code errors, the rules, and player names containing HTML.
+  - Headless Chromium checks were not run in this round (the owner declined
+    them). Layout and dice size were last checked before PR #13 was merged,
+    and no layout code has changed since.
 - **Browser checks** before merging (headless Chromium against a real server):
   a 2-player online game (desktop + phone) with refresh and rejoin; a 3-player
   online game (turn order, last-move highlight, Reroll all on every screen); a
@@ -182,6 +206,11 @@ Nothing open. The four requests below came from the owner after deploying
   and the scoreboard scrolls sideways.
 - If the creator leaves the waiting room, the players already waiting cannot
   start the game; it only starts when the last seat is filled.
+- A guest who presses "Leave" in the waiting room keeps their seat. The game
+  still counts them and starts with them when the last seat fills; they can
+  come back only through the link, and nobody can remove them. Found in the
+  2026-11-16 test round; waits for the owner to say whether Leave should free
+  the seat.
 
 ### Ideas not started
 
@@ -190,6 +219,17 @@ Nothing open. The four requests below came from the owner after deploying
 - Save rooms to a file or database so games survive an app restart.
 
 ## Decision log
+
+**2026-11-16: full test round**
+
+- Fixed: when a player's seat was taken over from another tab (refresh and
+  rejoin), the old tab was meant to say "This game was opened in another tab
+  or device". It kept the `?room=` link, so it landed on the invite page,
+  which did not show notices. The message appeared later, out of context, on
+  the home screen. The invite page now shows it (`_show_lobby_notice`), and
+  `tests/test_ui_notices.py` covers it.
+- The test scripts used for the round (game simulation, AppTest screens) are
+  not in the repo; only the regression test above was added.
 
 **2026-11-15: owner requests after deploying**
 
