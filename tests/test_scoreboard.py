@@ -9,7 +9,7 @@ import unittest
 
 from abaka.engine import GameEngine
 from abaka.models import Category, Die
-from ui_components.moves import score_options
+from ui_components.moves import cross_options, score_options
 
 try:
     from ui_components.scoreboard import build_scoreboard_html
@@ -62,6 +62,43 @@ class TestBonusCells(unittest.TestCase):
         cells = row_cells(build_scoreboard_html(g), "School 4")
         self.assertEqual(cells[4][1], "12")  # Ann completed it first: 3 x 4
         self.assertEqual(cells[9][1], "–")   # Bob: no bonus, but he did not cross it out
+
+
+@unittest.skipIf(build_scoreboard_html is None, "Streamlit is not installed")
+class TestColumnBonusCells(unittest.TestCase):
+    """Crossing out a combination gives up that column's bonus: its cell shows a cross at once."""
+
+    def column_bonus_cells(self, html):
+        return row_cells(html, "Column bonus")
+
+    def test_crossing_out_shows_a_crossed_column_bonus(self):
+        g = GameEngine(["Ann", "Bob"])
+        g.dice = dice(1, 2, 3, 5)
+        g.record_cross(Category.ABAKA, 0)
+        cells = self.column_bonus_cells(build_scoreboard_html(g))
+        # per player: gap, columns I-III, an empty cell under the row bonuses
+        self.assertEqual([c[1] for c in cells[1:4]], ["✕", "·", "·"])
+        self.assertIn("ab-x", cells[1][0])
+        self.assertEqual([c[1] for c in cells[6:9]], ["·", "·", "·"])  # Bob's are untouched
+
+    def test_preview_of_a_cross_shows_both_bonuses_crossed(self):
+        g = GameEngine(["Ann", "Bob"])
+        g.dice = dice(1, 2, 3, 5)
+        move = next(m for m in cross_options(g) if m.category == Category.ABAKA)
+        html = build_scoreboard_html(g, target=move)
+        abaka = row_cells(html, "Abaka")
+        self.assertEqual(abaka[1][1], "✕")             # the cell itself
+        self.assertIn("ab-target", abaka[4][0])        # the row bonus
+        cells = self.column_bonus_cells(html)
+        self.assertIn("ab-target", cells[1][0])        # column I's bonus
+        self.assertEqual(cells[1][1], "✕")
+        self.assertNotIn("ab-target", cells[2][0])
+
+    def test_a_column_bonus_taken_by_someone_else_shows_a_dash(self):
+        g = GameEngine(["Ann", "Bob"])
+        g.players[1].column_bonus[0] = "X"  # Ann completed column I first
+        cells = self.column_bonus_cells(build_scoreboard_html(g))
+        self.assertEqual(cells[6][1], "–")
 
 
 if __name__ == "__main__":

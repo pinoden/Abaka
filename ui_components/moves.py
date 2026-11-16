@@ -71,13 +71,14 @@ class Move:
 
     def __init__(self, category: Category, slot: int, cross: bool,
                  value: object = None, balance_change: Optional[int] = None,
-                 bonus_lost: bool = False) -> None:
+                 bonus_lost: bool = False, column_bonus_lost: bool = False) -> None:
         self.category = category
         self.slot = slot                      # 0..2, the leftmost free cell of the row
         self.cross = cross
         self.value = value                    # what the cell would show (int or 'X')
         self.balance_change = balance_change  # school rows only
         self.bonus_lost = bonus_lost          # the move crosses out this row's (still open) bonus
+        self.column_bonus_lost = column_bonus_lost  # ... and this column's (crossing out a combination)
 
     @property
     def name(self) -> str:
@@ -98,6 +99,12 @@ class Move:
     def action_text(self) -> str:
         """Text for the confirm button: says exactly what will happen."""
         if self.cross:
+            if self.bonus_lost and self.column_bonus_lost:
+                return t("Cross out {name} (lose the row and column bonuses)", name=self.name)
+            if self.bonus_lost:
+                return t("Cross out {name} (lose the row bonus)", name=self.name)
+            if self.column_bonus_lost:
+                return t("Cross out {name} (lose the column bonus)", name=self.name)
             return t("Cross out {name}", name=self.name)
         if is_school(self.category):
             if self.value == "X":
@@ -163,11 +170,17 @@ def score_options(engine) -> List[Move]:
 
 
 def cross_options(engine) -> List[Move]:
-    """Combination rows that can be crossed out (school rows cannot)."""
+    """
+    Combination rows that can be crossed out (school rows cannot). Crossing out gives up,
+    at once, the row's bonus and the bonus of the column the cell is in (if still open).
+    """
     base = plain_engine(engine)
+    player = base.players[base.current]
     options = []
     for category in COMBO_CATS:
         slot = free_slot(base, category)
         if slot is not None:
-            options.append(Move(category, slot, True, "X"))
+            options.append(Move(category, slot, True, "X",
+                                bonus_lost=player.table[category][3] is None,
+                                column_bonus_lost=player.column_bonus[slot] is None))
     return options
