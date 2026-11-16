@@ -101,7 +101,7 @@ class TestCrossOptions(unittest.TestCase):
 
 class TestOnlineEngine(unittest.TestCase):
     def test_works_through_room_engine(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, host = store.create("Ann")
         store.join(code, "Bob")
         store.roll(code, host)

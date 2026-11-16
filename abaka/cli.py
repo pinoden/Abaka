@@ -35,9 +35,20 @@ def _available_rows(engine: GameEngine, player):
 def main():
     names = input("Enter player names (comma-separated): ").strip()
     players = [n.strip() for n in names.split(',') if n.strip()] or ["Player1", "Player2"]
-    g = GameEngine(players)
+    g = GameEngine(players, starting_throw=True)
     print("=== Abaka CLI ===")
     print("Rules: leftmost slot fills automatically; first roll doubles base+bonus.")
+    print("\nWho goes first? Everyone throws all five dice; the lowest total starts.")
+    while g.choosing_first_player:
+        thrower = g.players[g.current]
+        input(f"{thrower.name}, press Enter to throw: ")
+        g.throw_for_start()
+        t = g.starting_throws[-1]
+        print(f"  {thrower.name}: {' '.join(str(v) for v, _ in t['dice'])} = {t['total']}")
+        if g.choosing_first_player and g.throw_round_no > t["round"]:
+            print("Tie for the lowest total: " + ", ".join(g.players[i].name for i in g.throw_round)
+                  + " throw again.")
+    print(f"{g.players[g.first_player].name} goes first.")
     while not g.is_game_over():
         player = g.players[g.current]
         g.start_turn()

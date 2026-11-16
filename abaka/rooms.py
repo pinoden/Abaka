@@ -79,9 +79,11 @@ class _Room:
 class RoomStore:
     """Thread-safe registry of rooms. Streamlit runs each session in its own thread."""
 
-    def __init__(self) -> None:
+    def __init__(self, starting_throw: bool = True) -> None:
+        """starting_throw: each game opens with the starting throw (lowest total goes first)."""
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
+        self.starting_throw = starting_throw
 
     # ----- lobby -----
     def create(self, host_name: str, players: int = 2) -> "tuple[str, str]":
@@ -109,7 +111,7 @@ class RoomStore:
             name = _distinct(clean_name(name, f"Player {seat_no}"), room.names)
             token = self._seat(room, name)
             if len(room.names) == room.capacity:
-                room.engine = _new_engine(room)
+                room.engine = _new_engine(room, self.starting_throw)
             room.touch()
             return token
 
@@ -124,7 +126,7 @@ class RoomStore:
             if len(room.names) < MIN_PLAYERS:
                 raise RoomError("Wait until at least one more player has joined.")
             room.capacity = len(room.names)
-            room.engine = _new_engine(room)
+            room.engine = _new_engine(room, self.starting_throw)
             room.touch()
 
     def leave(self, code: str, token: str) -> None:
@@ -188,6 +190,14 @@ class RoomStore:
                             room.version, room.games_played, room.capacity)
 
     # ----- playing -----
+    def throw_for_start(self, code: str, token: str) -> None:
+        """This player's throw in the starting throw that decides who goes first."""
+        def action(engine: GameEngine) -> None:
+            if not engine.choosing_first_player:
+                raise RoomError("The first player has already been decided.")
+            engine.throw_for_start()
+        self._act(code, token, action)
+
     def roll(self, code: str, token: str) -> None:
         """First roll of the turn."""
         def action(engine: GameEngine) -> None:
@@ -225,7 +235,7 @@ class RoomStore:
             if room.engine is None or not room.engine.is_game_over():
                 raise RoomError("The current game is not finished yet.")
             room.games_played += 1
-            room.engine = _new_engine(room)
+            room.engine = _new_engine(room, self.starting_throw)
             room.touch()
 
     # ----- internals -----
@@ -279,10 +289,11 @@ def _distinct(name: str, taken: List[str]) -> str:
         n += 1
 
 
-def _new_engine(room: _Room) -> GameEngine:
-    engine = GameEngine(list(room.names))
-    # Alternate who goes first from one game to the next.
-    engine.current = room.games_played % len(room.names)
+def _new_engine(room: _Room, starting_throw: bool) -> GameEngine:
+    engine = GameEngine(list(room.names), starting_throw=starting_throw)
+    if not starting_throw:
+        # Without the starting throw, alternate who goes first from one game to the next.
+        engine.current = room.games_played % len(room.names)
     return engine
 
 
@@ -308,6 +319,9 @@ class RoomEngine:
 
     def __getattr__(self, name: str):
         return getattr(self._engine, name)
+
+    def throw_for_start(self) -> None:
+        self._store.throw_for_start(self._code, self._token)
 
     def start_turn(self) -> None:
         self._store.roll(self._code, self._token)

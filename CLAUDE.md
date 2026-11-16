@@ -68,6 +68,16 @@ turn phase from the engine; there are no per-browser turn flags.
 the most recent move (None before the first move); the scoreboard highlights
 it. A game has 2 to 5 players; turns go round in seat order.
 
+Every game in the app (same device, online, CLI) opens with the starting
+throw: `GameEngine(names, starting_throw=True)`. While
+`engine.choosing_first_player` is true, `current` is the player whose
+throw is next and `throw_round` lists the players throwing in this round
+(after a tie, only the tied players). `throw_for_start()` records the throw
+in `starting_throws` (dice, total, round). When the round ends, the lowest
+total becomes `first_player` and `current`. `start_turn()` is refused until
+then. The default `starting_throw=False` exists for tests; `RoomStore` uses
+`starting_throw=True` unless told otherwise (old room tests pass `False`).
+
 ### Online play
 
 - One Streamlit server process serves every browser. `abaka_ui.get_store()`
@@ -125,7 +135,14 @@ it. A game has 2 to 5 players; turns go round in seat order.
   the row names pinned.
 - Online notifications: "<friend> joined" / "Everyone's here." when this
   browser was on the waiting screen (`was_waiting`); "Your turn!" when
-  `was_my_turn` changes from False to True.
+  `was_my_turn` changes from False to True ("Your throw!" during the
+  starting throw).
+- Starting throw screen: `main_ui._render_starting_throw` shows "Who goes
+  first?", each player's latest throw (small dice + total) and the
+  `start-throw` button. On the same device the button names the player
+  ("Throw for Ann"); online only the thrower's screen has it ("Throw the
+  dice"). Until the first move, `_starter_note` shows "Ann threw the lowest
+  (9) and goes first."
 
 ## Rules for changes
 
@@ -139,8 +156,8 @@ it. A game has 2 to 5 players; turns go round in seat order.
 
 ## Backlog
 
-Nothing open. The four requests below came from the owner after deploying
-(2026-11-15); all are done and merged in PR #13.
+Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
+and were merged in PR #13; request 5 (2026-11-16) is in PR #18.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -169,6 +186,20 @@ Nothing open. The four requests below came from the owner after deploying
    joined, and the creator can press "Start now" with at least two.
    > "add options for 3, 4 and 5 multiplayers"
 
+5. **Starting throw: the lowest total goes first.** Done. Before the first
+   round, each player throws all five dice, and the lowest total starts.
+   This replaced the rotation of who starts from one game to the next.
+   Details the owner did not specify; I chose them because the owner said
+   "don't ask anymore":
+   - players who tie for the lowest throw again, until one is lowest;
+   - dice count their face value (the joker's wild 1 is for combinations
+     only);
+   - every game opens with it, including "Play again" and online rematches;
+   - play then goes round the table from the starter;
+   - it applies in every mode: same device, online (each player throws on
+     their own screen) and the CLI.
+   > "Before the first round, each player throws all five dice and the one with the minimal sum starts first"
+
 ## Status (2026-11-16)
 
 - **Live two-player online mode:** merged in PR #11.
@@ -178,10 +209,13 @@ Nothing open. The four requests below came from the owner after deploying
   reports that it works.
 - **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
   merged in PR #13.
-- **Tests:** 54 pass: 23 room tests (`test_rooms.py`: a full two-player game,
+- **Starting throw (owner request 5):** PR #18.
+- **Tests:** 60 pass: 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
   13 move-preview tests (`test_moves.py`), 5 tests for the owner's requests
-  (`test_owner_requests.py`), 11 older rule tests, and 2 app tests
+  (`test_owner_requests.py`), 6 starting-throw tests
+  (`test_starting_throw.py`: lowest starts, ties, joker at face value,
+  rooms, rematch), 11 older rule tests, and 2 app tests
   (`test_ui_notices.py`, `test_ui_store.py`). The app tests run the real app
   script with Streamlit's AppTest and are skipped where Streamlit is not
   installed, such as the base Python 3.8.
@@ -255,6 +289,23 @@ Nothing open. The four requests below came from the owner after deploying
 - Save rooms to a file or database so games survive an app restart.
 
 ## Decision log
+
+**2026-11-16: starting throw (owner request 5)**
+
+- The rule lives in the engine (`throw_for_start`), so the same-device game,
+  online rooms and the CLI share one implementation. Online it is a turn
+  action like the others: `RoomStore.throw_for_start` goes through `_act`,
+  so only the player whose throw is next can throw.
+- The details the owner left open are listed under Backlog item 5. Ties
+  throw again rather than falling back to seat order, so the rule alone
+  decides.
+- The starting throw is kept out of `engine.dice`: it is not a turn and
+  never scores.
+- Checked with unit tests and simulated games (every simulated starting
+  throw ended with a single lowest total, including tie rounds). Also
+  checked through AppTest for every screen, including an online tie, and in
+  headless Chromium at 1360, 1024 and 390px wide, on the same device and
+  online between a desktop and a phone.
 
 **2026-11-16: full test round**
 

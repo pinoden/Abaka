@@ -135,6 +135,26 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-rolls i { width: 9px; height: 9px; border-radius: 50%; background: #4F46E5; display: inline-block; }
 .ab-rolls i.used { background: #D5D9E5; }
 
+/* ---------- starting throw (who goes first) ---------- */
+.ab-throws { display: flex; flex-direction: column; gap: .45rem; margin: 1rem 0 .9rem; }
+.ab-throw { display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+  padding: .5rem .75rem; min-height: 2.75rem; border-radius: 12px; background: #F5F6FA; border: 1px solid #E3E6EF; }
+.ab-throw.next { background: #EEF0FF; border-color: #4F46E5; }
+.ab-throw.out { opacity: .45; }
+.ab-throw-name { font-weight: 600; color: #1C2033; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.ab-throw-name .ab-you { display: inline-block; margin-left: .4rem; font-size: .62rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; color: #4F46E5; background: #E4E7FF; border-radius: 6px;
+  padding: 1px 5px; vertical-align: middle; }
+.ab-throw-res { display: inline-flex; align-items: center; gap: .55rem; flex: 0 0 auto; }
+.ab-throw-dice { display: inline-flex; gap: 3px; }
+.ab-throw-dice img { width: 22px; height: 22px; display: block; }
+.ab-throw-res b { font-size: 1.05rem; min-width: 1.5rem; text-align: right; color: #1C2033; }
+.ab-throw-wait { color: #8A8FA8; font-size: .85rem; }
+.ab-throw.next .ab-throw-wait { color: #4F46E5; font-weight: 600; }
+.ab-start-note { margin-top: .55rem; display: inline-block; padding: .3rem .65rem; border-radius: 999px;
+  background: #EEF0FF; color: #3730A3; font-size: .85rem; font-weight: 600; }
+
 /* ---------- big buttons ---------- */
 [class*="st-key-roll"] button, [class*="st-key-confirm"] button, [class*="st-key-big-"] button {
   min-height: 3rem; font-size: 1.02rem; font-weight: 600;
