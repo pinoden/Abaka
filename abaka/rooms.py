@@ -1,11 +1,15 @@
 """
-Shared game rooms for live online games (2 to 5 players).
+Game rooms: every game the app hosts, online (2 to 5 players, each on their own
+device) or on one device (a "local" room).
 
 One Streamlit server process serves every browser session, so a single
-RoomStore held in that process is the source of truth for all online games.
-Each browser only sends actions ("roll", "reroll", "score", "cross") and
-renders a copy of the shared state; nothing game-related lives in a
-browser session.
+RoomStore held in that process is the source of truth for all games. Each
+browser only sends actions ("roll", "reroll", "score", "cross") and renders a
+copy of the shared state; nothing game-related lives in a browser session.
+
+With a save directory, every room is written to its own JSON file after each
+change and read back when a store is created, so games survive reloads,
+dropped sessions, code updates and server restarts (as long as the disk does).
 
 This module has no Streamlit dependency so it can be unit-tested directly.
 """
@@ -13,13 +17,18 @@ This module has no Streamlit dependency so it can be unit-tested directly.
 from __future__ import annotations
 
 import copy
+import json
+import os
 import secrets
+import sys
 import threading
 import time
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
 from .engine import GameEngine
 from .models import Category
+from .saving import engine_from_data, engine_to_data
 
 # No 0/O or 1/I, so codes are easy to read aloud and type.
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -27,7 +36,7 @@ CODE_LENGTH = 5
 MIN_PLAYERS = 2
 MAX_PLAYERS = 5
 MAX_NAME_LENGTH = 20
-ROOM_TTL_SECONDS = 12 * 60 * 60  # idle rooms are dropped after this long
+ROOM_TTL_SECONDS = 7 * 24 * 60 * 60  # rooms nobody touched for a week are dropped
 
 
 class RoomError(ValueError):
@@ -47,13 +56,14 @@ class RoomView:
     """A point-in-time copy of a room, safe to read without the store lock."""
 
     def __init__(self, code: str, names: List[str], engine: Optional[GameEngine],
-                 version: int, games_played: int, capacity: int) -> None:
+                 version: int, games_played: int, capacity: int, local: bool = False) -> None:
         self.code = code
         self.names = names            # seated players, in seat order (seat 0 created the game)
         self.engine = engine
         self.version = version
         self.games_played = games_played
         self.capacity = capacity      # how many players the game is for
+        self.local = local            # a same-device game: one browser plays every seat
 
     @property
     def started(self) -> bool:
@@ -61,9 +71,10 @@ class RoomView:
 
 
 class _Room:
-    def __init__(self, code: str, capacity: int) -> None:
+    def __init__(self, code: str, capacity: int, local: bool = False) -> None:
         self.code = code
         self.capacity = capacity
+        self.local = local
         self.names: List[str] = []
         self.tokens: List[str] = []
         self.engine: Optional[GameEngine] = None
@@ -75,15 +86,40 @@ class _Room:
         self.version += 1
         self.updated_at = time.time()
 
+    def to_data(self) -> dict:
+        return {
+            "code": self.code, "capacity": self.capacity, "local": self.local,
+            "names": self.names, "tokens": self.tokens,
+            "engine": engine_to_data(self.engine) if self.engine is not None else None,
+            "version": self.version, "games_played": self.games_played, "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_data(cls, d: dict) -> "_Room":
+        room = cls(d["code"], int(d["capacity"]), bool(d.get("local", False)))
+        room.names = list(d["names"])
+        room.tokens = list(d["tokens"])
+        room.engine = engine_from_data(d["engine"]) if d.get("engine") else None
+        room.version = int(d["version"])
+        room.games_played = int(d["games_played"])
+        room.updated_at = float(d["updated_at"])
+        return room
+
 
 class RoomStore:
     """Thread-safe registry of rooms. Streamlit runs each session in its own thread."""
 
-    def __init__(self, starting_throw: bool = True) -> None:
-        """starting_throw: each game opens with the starting throw (lowest total goes first)."""
+    def __init__(self, starting_throw: bool = True, save_dir: Union[str, Path, None] = None) -> None:
+        """
+        starting_throw: each game opens with the starting throw (lowest total goes first).
+        save_dir: keep every room in a JSON file there, and load the rooms saved there now.
+        """
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
         self.starting_throw = starting_throw
+        self.save_dir = Path(save_dir) if save_dir is not None else None
+        if self.save_dir is not None:
+            self._load_saved_rooms()
 
     # ----- lobby -----
     def create(self, host_name: str, players: int = 2) -> "tuple[str, str]":
@@ -92,14 +128,39 @@ class RoomStore:
             raise RoomError(f"A game is for {MIN_PLAYERS} to {MAX_PLAYERS} players.")
         with self._lock:
             self._drop_idle_rooms()
-            while True:
-                code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
-                if code not in self._rooms:
-                    break
+            code = self._new_code()
             room = _Room(code, int(players))
             self._rooms[code] = room
             token = self._seat(room, clean_name(host_name, "Player 1"))
+            self._save(room)
             return code, token
+
+    def create_local(self, names: List[str]) -> "tuple[str, str]":
+        """
+        A same-device game: every seat is played from one browser, and the game starts at once.
+        It gets a code like an online game, so it can be continued later from its link or code.
+        """
+        if not MIN_PLAYERS <= len(names) <= MAX_PLAYERS:
+            raise RoomError(f"A game is for {MIN_PLAYERS} to {MAX_PLAYERS} players.")
+        with self._lock:
+            self._drop_idle_rooms()
+            code = self._new_code()
+            room = _Room(code, len(names), local=True)
+            token = secrets.token_urlsafe(16)
+            room.names = [clean_name(n, f"Player {i}") for i, n in enumerate(names, 1)]
+            room.tokens = [token] * len(names)  # one browser holds every seat
+            room.engine = _new_engine(room, self.starting_throw)
+            self._rooms[code] = room
+            self._save(room)
+            return code, token
+
+    def resume_local(self, code: str) -> str:
+        """Continue a same-device game from its link or code (on any browser). Returns its token."""
+        with self._lock:
+            room = self._get(code)
+            if not room.local:
+                raise RoomError("This is an online game: join it or rejoin as one of its players.")
+            return room.tokens[0]
 
     def join(self, code: str, name: str) -> str:
         """Take a free seat in a room. The game starts once every seat is taken."""
@@ -113,6 +174,7 @@ class RoomStore:
             if len(room.names) == room.capacity:
                 room.engine = _new_engine(room, self.starting_throw)
             room.touch()
+            self._save(room)
             return token
 
     def start_now(self, code: str, token: str) -> None:
@@ -128,6 +190,7 @@ class RoomStore:
             room.capacity = len(room.names)
             room.engine = _new_engine(room, self.starting_throw)
             room.touch()
+            self._save(room)
 
     def leave(self, code: str, token: str) -> None:
         """
@@ -147,8 +210,10 @@ class RoomStore:
             del room.tokens[seat]
             if not room.names:
                 del self._rooms[room.code]
+                self._unsave(room.code)
                 return
             room.touch()
+            self._save(room)
 
     def reclaim(self, code: str, seat: int) -> str:
         """
@@ -159,9 +224,12 @@ class RoomStore:
             room = self._get(code)
             if not 0 <= seat < len(room.names):
                 raise RoomError("That seat does not exist.")
+            if room.local:
+                return room.tokens[0]
             token = secrets.token_urlsafe(16)
             room.tokens[seat] = token
             room.touch()
+            self._save(room)
             return token
 
     # ----- reading -----
@@ -187,7 +255,7 @@ class RoomStore:
         with self._lock:
             room = self._get(code)
             return RoomView(room.code, list(room.names), copy.deepcopy(room.engine),
-                            room.version, room.games_played, room.capacity)
+                            room.version, room.games_played, room.capacity, room.local)
 
     # ----- playing -----
     def throw_for_start(self, code: str, token: str) -> None:
@@ -237,6 +305,7 @@ class RoomStore:
             room.games_played += 1
             room.engine = _new_engine(room, self.starting_throw)
             room.touch()
+            self._save(room)
 
     # ----- internals -----
     def _act(self, code: str, token: str, action) -> None:
@@ -249,13 +318,14 @@ class RoomStore:
                 raise RoomError("Waiting for the second player to join.")
             if room.engine.is_game_over():
                 raise RoomError("The game is over.")
-            if room.tokens.index(token) != room.engine.current:
+            if not room.local and room.tokens.index(token) != room.engine.current:
                 raise RoomError("It is not your turn.")
             # Work on a copy so a rejected move can never leave the room half-updated.
             engine = copy.deepcopy(room.engine)
             action(engine)
             room.engine = engine
             room.touch()
+            self._save(room)
 
     def _get(self, code: str) -> _Room:
         room = self._rooms.get(normalize_code(code))
@@ -270,10 +340,55 @@ class RoomStore:
         room.tokens.append(token)
         return token
 
+    def _new_code(self) -> str:
+        while True:
+            code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
+            if code not in self._rooms:
+                return code
+
     def _drop_idle_rooms(self) -> None:
         cutoff = time.time() - ROOM_TTL_SECONDS
         for code in [c for c, r in self._rooms.items() if r.updated_at < cutoff]:
             del self._rooms[code]
+            self._unsave(code)
+
+    # ----- saving (one JSON file per room) -----
+    def _path(self, code: str) -> Path:
+        return self.save_dir / f"{code}.json"
+
+    def _save(self, room: _Room) -> None:
+        """Write the room to its file. A failed write is reported but never stops the game."""
+        if self.save_dir is None:
+            return
+        try:
+            self.save_dir.mkdir(parents=True, exist_ok=True)
+            tmp = self._path(room.code).with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(room.to_data(), separators=(",", ":")), encoding="utf-8")
+            os.replace(tmp, self._path(room.code))  # atomic: a crash never leaves half a file
+        except OSError as e:
+            print(f"abaka: could not save game {room.code}: {e}", file=sys.stderr)
+
+    def _unsave(self, code: str) -> None:
+        if self.save_dir is None:
+            return
+        try:
+            self._path(code).unlink()
+        except OSError:
+            pass
+
+    def _load_saved_rooms(self) -> None:
+        if not self.save_dir.is_dir():
+            return
+        cutoff = time.time() - ROOM_TTL_SECONDS
+        for path in sorted(self.save_dir.glob("*.json")):
+            try:
+                room = _Room.from_data(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
+                print(f"abaka: skipped unreadable saved game {path.name}: {e}", file=sys.stderr)
+                continue
+            if room.updated_at < cutoff or room.code != path.stem:
+                continue
+            self._rooms[room.code] = room
 
 
 def _distinct(name: str, taken: List[str]) -> str:

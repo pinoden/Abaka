@@ -3,6 +3,10 @@
 # so other devices on the same Wi-Fi can connect.
 address = "0.0.0.0"
 port = 8501
+# Keep a browser's session for 6 hours after its connection drops (phone locked,
+# app switched, tab in the background), instead of Streamlit's 2 minutes, so a
+# player who comes back finds the same page. Games are also saved to disk.
+disconnectedSessionTTL = 21600
 
 [client]
 # Hide the developer menu and "Deploy" button for players.

@@ -8,6 +8,7 @@ new code. Uses Streamlit's AppTest, so it is skipped where Streamlit is not inst
 
 import os
 import unittest
+from unittest import mock
 
 import abaka.rooms as rooms
 import code_version
@@ -23,13 +24,16 @@ APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
 class TestStoreAfterCodeUpdate(unittest.TestCase):
     def setUp(self):
+        self.enterContext_env = mock.patch.dict(os.environ, {"ABAKA_SAVE_DIR": ""})  # no saving to disk
+        self.enterContext_env.start()
+        self.addCleanup(self.enterContext_env.stop)
         # A RoomStore class of this test's own (as after a fresh start) that records each store made.
         self.stores = []
         stores = self.stores
 
         class FreshRoomStore(rooms.RoomStore):
-            def __init__(self):
-                super().__init__()
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
                 stores.append(self)
 
         self.addCleanup(setattr, rooms, "RoomStore", rooms.RoomStore)
