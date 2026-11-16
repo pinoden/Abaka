@@ -12,8 +12,12 @@ browsers send moves to it and poll it, so both players see every roll and score
 as it happens.
 """
 
+import os
 import socket
+import tempfile
 from html import escape
+from pathlib import Path
+from typing import Optional
 from urllib.parse import urlsplit
 
 import streamlit as st
@@ -24,7 +28,6 @@ import code_version
 # commit pulled while nobody had the app open would otherwise leave old ones loaded).
 code_version.load_current()
 
-from abaka.engine import GameEngine  # noqa: E402
 from abaka.rooms import MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
     initialize_session_state, render_game, render_top_bar, reset_turn_selection)
@@ -34,9 +37,26 @@ from ui_components.style import brand_html, chip, inject_global_css  # noqa: E40
 POLL_SECONDS = 1.0  # how often a browser checks the room for the other player's moves
 
 
+def _save_dir() -> Optional[Path]:
+    """
+    Where games are saved: $ABAKA_SAVE_DIR if set (empty: do not save), else
+    ~/.abaka/games, or a temporary folder if the home folder is not writable.
+    """
+    configured = os.environ.get("ABAKA_SAVE_DIR")
+    if configured is not None:
+        return Path(configured) if configured.strip() else None
+    for folder in (Path.home() / ".abaka" / "games", Path(tempfile.gettempdir()) / "abaka-games"):
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            return folder
+        except OSError:
+            continue
+    return None
+
+
 @st.cache_resource
 def _store_for_code(code_id: int) -> RoomStore:
-    return RoomStore()
+    return RoomStore(save_dir=_save_dir())
 
 
 def get_store() -> RoomStore:
@@ -46,9 +66,9 @@ def get_store() -> RoomStore:
     It is kept per version of the code. Streamlit Community Cloud applies a new
     commit by reloading the app's modules, but cached objects survive the reload,
     and a store made by the old code breaks the new code (after PR #13, "Create
-    game" failed with a TypeError on the live app). So new code gets a new store;
-    pages still running the old code keep the old one until they reload. Games in
-    progress are lost on an update, as on a restart.
+    game" failed with a TypeError on the live app). So new code gets a new store,
+    which loads the saved games from disk: an update no longer ends them. Pages
+    still running the old code keep the old store until their next click.
     """
     return _store_for_code(id(RoomStore))
 
@@ -59,9 +79,11 @@ def main():
     inject_global_css()
     initialize_session_state()
     ss = st.session_state
-    ss.setdefault("room_code", None)   # online room this browser is seated in
+    ss.setdefault("room_code", None)   # room (online or same-device game) this browser is in
     ss.setdefault("seat_token", None)  # proves which seat this browser controls
     ss.setdefault("lobby_notice", None)
+    ss.setdefault("lobby_info", None)
+    ss.setdefault("my_games", [])      # codes of games this browser played, newest first
 
     store = get_store()
     invited_code = normalize_code(st.query_params.get("room", ""))
@@ -73,9 +95,6 @@ def main():
             # The room vanished mid-render (expired, or the server restarted).
             _leave_room(notice=str(e))
             st.rerun()
-    elif ss.engine is not None:
-        render_game(ss.engine, status_html=chip("Same device"), on_play_again=_restart_local_game,
-                    on_leave=_end_local_game, leave_label="End game")
     elif invited_code:
         _render_invite(store, invited_code)
     else:
@@ -88,6 +107,7 @@ def _render_home(store: RoomStore) -> None:
     st.html(f'<div class="ab-hero">{brand_html(56)}'
             "<p>The dice game of combinations. Play with friends on one screen or online.</p></div>")
     _show_lobby_notice()
+    _render_my_games(store)
 
     _, local_col, online_col, _ = st.columns([0.4, 5, 5, 0.4], gap="large")
     with local_col:
@@ -99,7 +119,9 @@ def _render_home(store: RoomStore) -> None:
                          for i in range(1, count + 1)]
                 if st.form_submit_button("Start game", type="primary", icon=":material/play_arrow:",
                                          use_container_width=True):
-                    _new_local_game([t.strip() or f"Player {i}" for i, t in enumerate(typed, 1)])
+                    # Saved like an online game: it gets a code and can be continued from its link.
+                    code, token = store.create_local([t.strip() for t in typed])
+                    _enter_room(code, token)
                     st.rerun()
 
     with online_col:
@@ -113,10 +135,11 @@ def _render_home(store: RoomStore) -> None:
                     code, token = store.create(name, players)
                     _enter_room(code, token)
                     st.rerun()
-            st.html('<div class="ab-or">or join with a code</div>')
+            st.html('<div class="ab-or">or open a game by its code</div>')
             with st.form("find_game", border=False):
-                typed = st.text_input("Game code", placeholder="e.g. Q47CH", max_chars=8, key="find_code")
-                if st.form_submit_button("Join game", icon=":material/login:", use_container_width=True):
+                typed = st.text_input("Game code", placeholder="e.g. Q47CH", max_chars=8, key="find_code",
+                                      help="Join a friend's game, or continue a saved game.")
+                if st.form_submit_button("Open game", icon=":material/login:", use_container_width=True):
                     code = normalize_code(typed)
                     if store.exists(code):
                         st.query_params["room"] = code
@@ -151,6 +174,35 @@ def _show_lobby_notice() -> None:
     if ss.lobby_notice:
         st.warning(ss.lobby_notice)
         ss.lobby_notice = None
+    if ss.get("lobby_info"):
+        st.info(ss.lobby_info, icon=":material/save:")
+        ss.lobby_info = None
+
+
+def _render_my_games(store: RoomStore) -> None:
+    """Unfinished games this browser played: one tap to continue (they are saved after every move)."""
+    games = []
+    for code in st.session_state.my_games:
+        if not store.exists(code):
+            continue
+        view = store.view(code)
+        if view.started and view.engine.is_game_over():
+            continue
+        games.append(view)
+    if not games:
+        return
+    _, mid, _ = st.columns([0.4, 10, 0.4])
+    with mid:
+        with st.container(border=True, key="card-my-games"):
+            st.html('<div class="ab-card-title">Continue a game</div>'
+                    '<div class="ab-card-sub">Your games are saved after every move.</div>')
+            with st.container(horizontal=True, key="my-games-row"):
+                for view in games[:4]:
+                    kind = "Same device" if view.local else "Online"
+                    label = f"{view.code} · {kind} · {', '.join(view.names)}"
+                    if st.button(label, key=f"continue-{view.code}", icon=":material/play_arrow:"):
+                        st.query_params["room"] = view.code
+                        st.rerun()
 
 
 def _card_header(icon: str, title: str, subtitle: str) -> None:
@@ -160,22 +212,6 @@ def _card_header(icon: str, title: str, subtitle: str) -> None:
 
 def _centered():
     return st.columns([1, 1.5, 1])[1]
-
-
-# ------------------------------------------------------------- same device ----
-
-def _new_local_game(names) -> None:
-    # Every game opens with the starting throw: the lowest total goes first.
-    st.session_state.engine = GameEngine(names, starting_throw=True)
-    reset_turn_selection()
-
-
-def _restart_local_game() -> None:
-    _new_local_game([p.name for p in st.session_state.engine.players])
-
-
-def _end_local_game() -> None:
-    st.session_state.engine = None
 
 
 # ------------------------------------------------------------------ online ----
@@ -193,6 +229,10 @@ def _render_online(store: RoomStore) -> None:
         st.rerun()
 
     view = store.view(code)
+    if view.local:
+        _render_local_game(store, view, token)
+        _watch_room(code, view.version)  # in step if the game is open on two devices
+        return
     status = chip(f"Online · {code}", "accent")
 
     if not view.started:
@@ -229,6 +269,26 @@ def _render_online(store: RoomStore) -> None:
                     on_leave=_leave_room, leave_label="Leave game")
 
     _watch_room(code, view.version)
+
+
+def _render_local_game(store: RoomStore, view, token: str) -> None:
+    """A same-device game. It is saved like an online game, so leaving it keeps it."""
+    code = view.code
+
+    def rematch() -> None:
+        try:
+            store.rematch(code, token)
+        except RoomError:
+            pass  # already restarted (the game is open on another device too)
+
+    def leave() -> None:
+        unfinished = not view.engine.is_game_over()
+        _leave_room(info=(f"Game {code} is saved. To continue it, open it from this page or enter "
+                          f"the code {code}.") if unfinished else None)
+
+    render_game(RoomEngine(store, code, token, view.engine), me=None,
+                status_html=chip(f"Same device · {code}"), on_play_again=rematch,
+                on_leave=leave, leave_label="Leave game")
 
 
 @st.fragment(run_every=POLL_SECONDS)
@@ -313,6 +373,10 @@ def _render_invite(store: RoomStore, code: str) -> None:
                              f"Game {code} has ended, or the server restarted. You can start a new one.")
                 _home_button("Go to start", primary=True)
                 return
+            if store.view(code).local:
+                # A saved same-device game (after a reload, or opened by its code): carry on at once.
+                _enter_room(code, store.resume_local(code))
+                st.rerun()
 
             view = store.view(code)
             if not view.started:
@@ -368,15 +432,18 @@ def _enter_room(code: str, token: str) -> None:
     ss.was_waiting = False
     ss.waiting_names = None
     reset_turn_selection()
-    # Only the room code goes in the URL, so it is always safe to share.
+    # Only the room code goes in the URL, so it is always safe to share. It also
+    # brings the game back after a reload or a dropped session.
     st.query_params["room"] = code
+    ss.my_games = [code] + [c for c in ss.get("my_games", []) if c != code]
 
 
-def _leave_room(notice: str = None, keep_link: bool = False) -> None:
+def _leave_room(notice: str = None, keep_link: bool = False, info: str = None) -> None:
     ss = st.session_state
     ss.room_code = None
     ss.seat_token = None
     ss.lobby_notice = notice
+    ss.lobby_info = info
     reset_turn_selection()
     if not keep_link and "room" in st.query_params:
         del st.query_params["room"]

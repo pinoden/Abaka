@@ -50,7 +50,8 @@ Python + Streamlit.
 | `abaka/engine.py` | `GameEngine`: turn flow (`start_turn`, `reroll`, `record_score`, `record_cross`) |
 | `abaka/player.py` | `PlayerState`: score table, school balance, final score |
 | `abaka/scoring.py`, `school.py`, `bonus.py` | Combination scoring, school balance, row and column bonuses |
-| `abaka/rooms.py` | Online play: `RoomStore` (shared rooms) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
+| `abaka/rooms.py` | Every game: `RoomStore` (online and same-device rooms, saved to disk) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
+| `abaka/saving.py` | `GameEngine` <-> plain JSON data (`engine_to_data`, `engine_from_data`) for saved games |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
 | `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
@@ -116,7 +117,23 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   stays in `st.session_state`. After a refresh, the player opens the link and
   clicks their name; `store.reclaim` issues a new token and the old tab loses
   control.
-- Rooms idle for 12 hours are dropped the next time a room is created.
+- Same-device games are rooms too (`store.create_local`, `room.local`): every
+  seat belongs to one token, the turn check is skipped, and nobody can join.
+  They get a code and `?room=CODE` like online games. Opening that link (a
+  reload, a dropped session, another device) or typing the code on the home
+  page continues the game at once (`store.resume_local`, no seat to pick).
+- Saving: the app's store (`RoomStore(save_dir=...)`) writes each room to
+  `<save_dir>/<CODE>.json` after every change (atomic replace) and loads all
+  saved rooms when it is created. That happens at startup and after every
+  code update, so updates and restarts no longer end games. `save_dir` is
+  `$ABAKA_SAVE_DIR` (empty: no saving; tests use this) or `~/.abaka/games`
+  (or a temp folder). A failed write is printed and play goes on.
+- Rooms nobody touched for 7 days are dropped (from disk too) the next time
+  a room is created.
+- `.streamlit/config.toml` keeps a disconnected session for 6 hours
+  (`server.disconnectedSessionTTL = 21600`, Streamlit's default is 2
+  minutes), so a phone that was locked for a while comes back to the same
+  page.
 - Leaving the waiting room (`store.leave`, before the game starts) frees the
   seat. Later players move up one seat, so if the creator leaves, the next
   player becomes the creator and can press "Start now"; an empty room is
@@ -125,9 +142,13 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 
 ### UI conventions
 
-- `abaka_ui.main()` picks the screen: seated in a room -> online game or
-  waiting room; a local engine -> same-device game; `?room=` in the URL ->
-  invite page; otherwise -> home. There is no sidebar.
+- `abaka_ui.main()` picks the screen: seated in a room -> the game (online or
+  same device, `_render_local_game`) or the waiting room; `?room=` in the URL
+  -> the invite page (which continues a same-device game at once); otherwise
+  -> home. There is no sidebar.
+- Home: "Continue a game" lists the unfinished games this browser played
+  (`ss.my_games`). "Open game" takes a code for both joining and continuing.
+  Leaving a same-device game shows "Game CODE is saved..." (`ss.lobby_info`).
 - Widgets are styled through the `st-key-<key>` class Streamlit adds to keyed
   elements. Dice are buttons keyed `die-0` to `die-4`; containers keyed
   `card-*` get the card look. Per-render CSS (die faces, picked dice, roll
@@ -172,8 +193,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 
 Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
 and were merged in PR #13; request 5 (2026-11-16) was merged in PR #18 and
-went live with PR #19; request 6 (2026-11-16, reversing request 3) is in
-PR #20.
+went live with PR #19; request 6 (2026-11-16, reversing request 3) was
+merged in PR #20; requests 7 and 8 (2026-11-16) are in PR #21. Open:
+request 9, Russian language (in progress).
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -231,8 +253,24 @@ PR #20.
      previews the crossed-out bonus, and the cell shows "✕".
    > "if you use "minus" for school - you loosing the chance to get a bonus for that line - so you need to cross the bonus section right away"
 
+7. **A game disappears after a short pause (from a tester).** Fixed in PR #21:
+   games are saved and come back from their link or code (Decision log).
+   > "Комментарий от живого тестировщика: При небольшой паузе игра тоже пропадает, возвращаешься на исходную страницу"
+
+8. **Save the game so it is not lost if you stop midway.** Done in PR #21:
+   every game is saved after every move. "Continue a game" on the home page,
+   the game's link, or its code bring it back (also after a code update or a
+   restart; see Known issues for Cloud reboots).
+   > "возможность сохранять игру чтобы она не пропадала если остановился посередине"
+
+9. **Russian language.** In progress.
+   > "хочу добавить русский язык"
+
 ## Status (2026-11-16)
 
+- **Saved games (owner requests 7 and 8):** PR #21. Every game is saved after
+  every move and comes back after a reload, a dropped session, a code update
+  or a restart.
 - **Live two-player online mode:** merged in PR #11.
 - **Modern UI:** merged in PR #12 (home screen, tappable dice, move previews,
   new scoreboard, phone layout).
@@ -240,19 +278,21 @@ PR #20.
   reports that it works.
 - **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
   merged in PR #13.
-- **School minus crosses the row bonus (owner request 6):** PR #20.
+- **School minus crosses the row bonus (owner request 6):** merged in
+  PR #20. Streamlit Cloud had not picked it up 40 minutes after the merge
+  (earlier merges were live within a minute); see Known issues.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 68 pass: 23 room tests (`test_rooms.py`: a full two-player game,
+- **Tests:** 79 pass: 10 saving tests (`test_saving.py`), 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
   13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 4 module-reload tests (`test_code_version.py`), 11 older
   rule tests, 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
-  and their preview) and 2 app tests (`test_ui_notices.py`,
-  `test_ui_store.py`). The app tests run the real app script with
+  and their preview) and 3 app tests (`test_ui_notices.py`,
+  `test_ui_store.py`, `test_ui_saved_games.py`). The app tests run the real app script with
   Streamlit's AppTest. They and the scoreboard tests are skipped where
   Streamlit is not installed, such as the base Python 3.8.
 - **Test round fixes:** the lost-seat notice, merged in PR #14; Leave in the
@@ -317,14 +357,57 @@ PR #20.
 - `abaka/ui_components/requirements.txt` is a leftover file that nothing uses.
 - On screens around 1024px wide, a 5-player game has small dice (about 34px),
   and with 4 or 5 players the scoreboard scrolls sideways inside its card.
+- Saved games live on the server's disk. On Streamlit Community Cloud that
+  survives code updates and restarts of the app process, but probably not a
+  reboot from the Cloud dashboard or the app going to sleep: the container
+  is rebuilt. Keeping games through those needs an external database
+  (credentials in Streamlit secrets), which the owner would have to set up.
+- Online players coming back in a new session (a reload, or a session
+  dropped after more than 6 hours) land on the invite page and tap their
+  name. The seat token is kept out of the URL, so a copied address bar
+  never hands over a seat.
+- Streamlit Cloud sometimes does not pick up a merge for a long time (PR #20,
+  2026-11-16). "Reboot app" in the Cloud dashboard pulls the latest `main`.
 
 ### Ideas not started
 
 - Dark theme (the scoreboard CSS colours would need to follow the theme).
 - Show the opponent which dice the active player has picked.
-- Save rooms to a file or database so games survive an app restart.
+- Save games in an external database so they also survive Cloud reboots.
 
 ## Decision log
+
+**2026-11-16: saved games (owner requests 7 and 8)**
+
+- Request 7 (a tester): "after a short pause the game disappears, you are
+  back on the start page". Causes found:
+  - A same-device game lived only in the browser session, which Streamlit
+    drops 2 minutes after the connection goes (a locked phone), and which a
+    reload replaces.
+  - Every code update ended all online games (stores were kept per code
+    version, in memory only).
+  - Reproduced with headless Chromium: on `main`, a reload or a server
+    restart sends a phone back to the start page with the game gone.
+- Request 8: save the game so it is not lost when stopped midway.
+- Decisions:
+  - Same-device games became rooms, so one mechanism (codes, links, saving)
+    serves both modes.
+  - Games are autosaved after every move; there is no Save button to forget.
+  - One JSON file per room, so a write stays small and a bad file affects
+    one game.
+  - JSON instead of pickle, so any later version of the code can read old
+    saves.
+  - Idle games are kept 7 days instead of 12 hours.
+  - The session lifetime after a disconnect is 6 hours.
+- The online seat token stays out of the URL (see Known issues); rejoining
+  is still one tap on your name.
+- Checked: unit tests (engine round trips at every stage, a second store
+  carrying on every game, bad and old files skipped); AppTest (a game left
+  midway comes back from the home page, its link in a new session, its code
+  and a restart); and headless Chromium against a real server. A phone kept
+  its same-device game through a reload and a server restart; on `main` it
+  lost it. An online game continued after a restart, each player tapping
+  their name once.
 
 **2026-11-16: School minus crosses the row bonus again (owner request 6)**
 
