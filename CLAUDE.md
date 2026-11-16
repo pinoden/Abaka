@@ -52,6 +52,7 @@ Python + Streamlit.
 | `abaka/scoring.py`, `school.py`, `bonus.py` | Combination scoring, school balance, row and column bonuses |
 | `abaka/rooms.py` | Online play: `RoomStore` (shared rooms) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
+| `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
 | `ui_components/moves.py` | Possible moves with exact score previews (tries each on a copy of the engine). No Streamlit |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
@@ -88,6 +89,13 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   games in progress end on every update, as on a restart. Do not go back to a
   plain cached `RoomStore()`: an old store reached the new code and broke the
   live app (Decision log, 2026-11-16).
+- Streamlit re-reads `abaka_ui.py` on every run, but imported modules stay
+  loaded, and its file watcher unloads them only while a browser session is
+  open. So `abaka_ui` first calls `code_version.load_current()`. It hashes the
+  `.py` files of `abaka/` and `ui_components/` and, if they differ from the
+  loaded code (`abaka.code_fingerprint`), drops those modules so they are
+  imported again from disk. Tests that patch modules before running the app
+  call `code_version.mark_current()` first.
 - A room has a 5-character code, a `capacity` of 2 to 5 players chosen by the
   creator (`rooms.MIN_PLAYERS`..`MAX_PLAYERS`), seats in join order (each a
   name plus a secret token; seat 0 is the creator) and one `GameEngine`,
@@ -157,7 +165,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
-and were merged in PR #13; request 5 (2026-11-16) is in PR #18.
+and were merged in PR #13; request 5 (2026-11-16) was merged in PR #18 and
+went live with PR #19.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -209,13 +218,16 @@ and were merged in PR #13; request 5 (2026-11-16) is in PR #18.
   reports that it works.
 - **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
   merged in PR #13.
-- **Starting throw (owner request 5):** PR #18.
-- **Tests:** 60 pass: 23 room tests (`test_rooms.py`: a full two-player game,
+- **Starting throw (owner request 5):** merged in PR #18. On the live app
+  it crashed "Start game" until PR #19, which reloads modules left stale by
+  the update (Decision log).
+- **Tests:** 64 pass: 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
   13 move-preview tests (`test_moves.py`), 5 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
-  rooms, rematch), 11 older rule tests, and 2 app tests
+  rooms, rematch), 4 module-reload tests (`test_code_version.py`), 11 older
+  rule tests, and 2 app tests
   (`test_ui_notices.py`, `test_ui_store.py`). The app tests run the real app
   script with Streamlit's AppTest and are skipped where Streamlit is not
   installed, such as the base Python 3.8.
@@ -289,6 +301,25 @@ and were merged in PR #13; request 5 (2026-11-16) is in PR #18.
 - Save rooms to a file or database so games survive an app restart.
 
 ## Decision log
+
+**2026-11-16: stale modules on the live app after PR #18**
+
+- After PR #18 went live, "Start game" failed there with a TypeError. The new
+  `abaka_ui.py` called `GameEngine(names, starting_throw=True)` on the old
+  `GameEngine`, and the rules text was old too.
+- Cause: Streamlit re-reads the main script on every run, but imported
+  modules stay in `sys.modules`. Its file watcher, which unloads changed
+  modules, belongs to a browser session and runs only while one is open.
+  Cloud pulled the commit while nobody had the app open, so nothing unloaded
+  the old modules. Reproduced locally (a file changed on disk with no
+  session open, server started with `--server.disconnectedSessionTTL 1`): on
+  `main` the next visitor got the old code, and with the fix the new code.
+- Fix: `code_version.load_current()` runs first on every run and reloads
+  `abaka`/`ui_components` when their files changed (hash of the `.py`
+  files). Hashing the contents rather than file times avoids depending on
+  how Cloud writes the files.
+- Merging PR #19 also cleared the stale modules on the live app: the main
+  script changed, and the reload check found modules without a fingerprint.
 
 **2026-11-16: starting throw (owner request 5)**
 

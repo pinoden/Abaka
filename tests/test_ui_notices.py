@@ -8,6 +8,7 @@ import os
 import unittest
 
 import abaka.rooms as rooms
+import code_version
 
 try:
     from streamlit.testing.v1 import AppTest
@@ -32,6 +33,7 @@ class TestLostGameNotices(unittest.TestCase):
 
         self.addCleanup(setattr, rooms, "RoomStore", rooms.RoomStore)
         rooms.RoomStore = FreshRoomStore
+        code_version.mark_current()  # so the app uses these (patched) modules
 
     def page(self, room=None, **state):
         at = AppTest.from_file(APP, default_timeout=30)
