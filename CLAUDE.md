@@ -211,7 +211,7 @@ Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
 and were merged in PR #13; request 5 (2026-11-16) was merged in PR #18 and
 went live with PR #19; request 6 (2026-11-16, reversing request 3) was
 merged in PR #20; requests 7 and 8 (2026-11-16) were merged in PR #21;
-request 9 (2026-11-16) is in PR #22.
+request 9 (2026-11-16) was merged in PR #22.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -291,10 +291,16 @@ request 9 (2026-11-16) is in PR #22.
 
 ## Status (2026-11-16)
 
-- **Russian language (owner request 9):** PR #22.
+- **Russian language (owner request 9):** merged in PR #22, live within
+  seconds. Checked on the live app in headless Chromium (desktop with
+  `?lang=ru`, phone with a Russian browser language): home, starting throw,
+  a turn, the board and the rules.
 - **Saved games (owner requests 7 and 8):** merged in PR #21. Every game is saved after
   every move and comes back after a reload, a dropped session, a code update
-  or a restart.
+  or a restart. On the live app, test game ULQZP came back from its link
+  after a reload, and was still there unchanged after the PR #22 update. That
+  means the new code loaded it from disk, so saving works on Streamlit Cloud
+  across updates.
 - **Live two-player online mode:** merged in PR #11.
 - **Modern UI:** merged in PR #12 (home screen, tappable dice, move previews,
   new scoreboard, phone layout).
@@ -304,7 +310,7 @@ request 9 (2026-11-16) is in PR #22.
   merged in PR #13.
 - **School minus crosses the row bonus (owner request 6):** merged in
   PR #20. Streamlit Cloud had not picked it up 40 minutes after the merge
-  (earlier merges were live within a minute); see Known issues.
+  (earlier merges were live within a minute); it went live with PR #21.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
@@ -384,7 +390,8 @@ request 9 (2026-11-16) is in PR #22.
 - On screens around 1024px wide, a 5-player game has small dice (about 34px),
   and with 4 or 5 players the scoreboard scrolls sideways inside its card.
 - Saved games live on the server's disk. On Streamlit Community Cloud that
-  survives code updates and restarts of the app process, but probably not a
+  survives code updates (checked on the live app) and restarts of the app
+  process, but probably not a
   reboot from the Cloud dashboard or the app going to sleep: the container
   is rebuilt. Keeping games through those needs an external database
   (credentials in Streamlit secrets), which the owner would have to set up.
