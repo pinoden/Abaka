@@ -18,11 +18,18 @@ from urllib.parse import urlsplit
 
 import streamlit as st
 
-from abaka.engine import GameEngine
-from abaka.rooms import MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code
-from ui_components.main_ui import initialize_session_state, render_game, render_top_bar, reset_turn_selection
-from ui_components.rules import RULES_MD
-from ui_components.style import brand_html, chip, inject_global_css
+import code_version
+
+# Before importing the game's modules: make sure they match the files on disk (a
+# commit pulled while nobody had the app open would otherwise leave old ones loaded).
+code_version.load_current()
+
+from abaka.engine import GameEngine  # noqa: E402
+from abaka.rooms import MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code  # noqa: E402
+from ui_components.main_ui import (  # noqa: E402
+    initialize_session_state, render_game, render_top_bar, reset_turn_selection)
+from ui_components.rules import RULES_MD  # noqa: E402
+from ui_components.style import brand_html, chip, inject_global_css  # noqa: E402
 
 POLL_SECONDS = 1.0  # how often a browser checks the room for the other player's moves
 
