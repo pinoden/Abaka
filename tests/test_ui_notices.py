@@ -20,16 +20,18 @@ APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
 class TestLostGameNotices(unittest.TestCase):
     def setUp(self):
-        # Catch the RoomStore the app creates, so the test can set up rooms in it.
+        # Catch the RoomStore the app creates, so the test can set up rooms in it. A RoomStore
+        # class of this test's own gets a store of its own (the app keeps one store per class).
         self.stores = []
-        original = rooms.RoomStore.__init__
+        stores = self.stores
 
-        def capture(store):
-            original(store)
-            self.stores.append(store)
+        class FreshRoomStore(rooms.RoomStore):
+            def __init__(self):
+                super().__init__()
+                stores.append(self)
 
-        rooms.RoomStore.__init__ = capture
-        self.addCleanup(setattr, rooms.RoomStore, "__init__", original)
+        self.addCleanup(setattr, rooms, "RoomStore", rooms.RoomStore)
+        rooms.RoomStore = FreshRoomStore
 
     def page(self, room=None, **state):
         at = AppTest.from_file(APP, default_timeout=30)

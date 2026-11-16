@@ -28,9 +28,22 @@ POLL_SECONDS = 1.0  # how often a browser checks the room for the other player's
 
 
 @st.cache_resource
-def get_store() -> RoomStore:
-    """The one RoomStore shared by every browser session of this server."""
+def _store_for_code(code_id: int) -> RoomStore:
     return RoomStore()
+
+
+def get_store() -> RoomStore:
+    """
+    The one RoomStore shared by every browser session of this server.
+
+    It is kept per version of the code. Streamlit Community Cloud applies a new
+    commit by reloading the app's modules, but cached objects survive the reload,
+    and a store made by the old code breaks the new code (after PR #13, "Create
+    game" failed with a TypeError on the live app). So new code gets a new store;
+    pages still running the old code keep the old one until they reload. Games in
+    progress are lost on an update, as on a restart.
+    """
+    return _store_for_code(id(RoomStore))
 
 
 def main():

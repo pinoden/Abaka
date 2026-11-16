@@ -7,8 +7,10 @@ Update the Backlog, Status and Decision log whenever work is done.
 - **Repository:** https://github.com/pinoden/Abaka (git remote `origin`). Finished
   work goes there. `main` is protected: every change goes in through a pull
   request.
-- **Live app:** deployed by the owner on Streamlit Community Cloud from `main`
-  (main file `abaka_ui.py`). Merging into `main` redeploys it automatically.
+- **Live app:** https://mipt-abaka.streamlit.app/, deployed by the owner on
+  Streamlit Community Cloud from `main` (main file `abaka_ui.py`). Merging into
+  `main` updates it automatically, within a few minutes. Cloud reloads the code
+  in the running server instead of restarting it (see Online play).
 
 ## Commands
 
@@ -64,7 +66,13 @@ it. A game has 2 to 5 players; turns go round in seat order.
 ### Online play
 
 - One Streamlit server process serves every browser. `abaka_ui.get_store()`
-  (`st.cache_resource`) returns the single `RoomStore` for that process.
+  returns the single `RoomStore` for that process. It is cached with
+  `st.cache_resource` per `RoomStore` class (`_store_for_code(id(RoomStore))`).
+  When a commit is applied, Streamlit reloads all of the app's modules, but
+  cached objects survive. Keying by class gives the new code a new store, so
+  games in progress end on every update, as on a restart. Do not go back to a
+  plain cached `RoomStore()`: an old store reached the new code and broke the
+  live app (Decision log, 2026-11-16).
 - A room has a 5-character code, a `capacity` of 2 to 5 players chosen by the
   creator (`rooms.MIN_PLAYERS`..`MAX_PLAYERS`), seats in join order (each a
   name plus a secret token; seat 0 is the creator) and one `GameEngine`,
@@ -165,14 +173,19 @@ Nothing open. The four requests below came from the owner after deploying
   reports that it works.
 - **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
   merged in PR #13.
-- **Tests:** 53 pass: 23 room tests (`test_rooms.py`: a full two-player game,
+- **Tests:** 54 pass: 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
   13 move-preview tests (`test_moves.py`), 5 tests for the owner's requests
-  (`test_owner_requests.py`), 11 older rule tests, and 1 app test
-  (`test_ui_notices.py`, runs the real app script with Streamlit's AppTest;
-  skipped where Streamlit is not installed, such as the base Python 3.8).
+  (`test_owner_requests.py`), 11 older rule tests, and 2 app tests
+  (`test_ui_notices.py`, `test_ui_store.py`). The app tests run the real app
+  script with Streamlit's AppTest and are skipped where Streamlit is not
+  installed, such as the base Python 3.8.
 - **Test round fixes:** the lost-seat notice, merged in PR #14; Leave in the
-  waiting room frees the seat, merged in PR #15.
+  waiting room frees the seat, merged in PR #15; online play on the live app
+  (stale room store after updates), PR #16.
+- **Live app check (2026-11-16):** the home screen loaded, and same-device
+  play was not affected. "Create game" failed with a TypeError, so online
+  play had been broken on the live app since PR #13 was merged.
 - **Full test round (2026-11-16)** after the owner asked to "test everything".
   It found the lost-seat notice bug and the kept seat after Leave (see the
   Decision log).
@@ -223,6 +236,25 @@ Nothing open. The four requests below came from the owner after deploying
 ## Decision log
 
 **2026-11-16: full test round**
+
+- Fixed: online play was broken on the live app. "Create game" failed with a
+  TypeError at `store.create(name, players)`.
+  - Cause: Streamlit Cloud applies each commit by reloading the modules in the
+    running server, and `st.cache_resource` objects survive the reload.
+    `get_store()`'s source never changed, so the live app still held the
+    `RoomStore` made by the PR #12 code, whose `create()` takes no player
+    count.
+  - Fix: the store is now cached per `RoomStore` class, so new code always
+    gets a new store. `validate=` was rejected: Streamlit keeps the first
+    validate function it was given, and that function would still compare
+    against the old class.
+  - Pages that keep running the old code (the 1-second poll) keep the old
+    store until the next click, so old and new code never replace each
+    other's store.
+  - Tested with `tests/test_ui_store.py`, and on a real server by editing
+    `abaka/rooms.py` while a game was open.
+  - The fix itself changes `get_store()`, so merging it also cleared the
+    live app's stale store; no reboot was needed.
 
 - Fixed: when a player's seat was taken over from another tab (refresh and
   rejoin), the old tab was meant to say "This game was opened in another tab
