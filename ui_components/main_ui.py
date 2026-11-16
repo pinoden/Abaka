@@ -17,7 +17,7 @@ from ui_components.dice import render_dice, render_dice_placeholder, render_rero
 from ui_components.move_selection import render_move_picker
 from ui_components.rules import rules_dialog
 from ui_components.scoreboard import render_scoreboard
-from ui_components.style import brand_html, chip
+from ui_components.style import brand_html, chip, die_uri
 
 
 def initialize_session_state() -> None:
@@ -69,6 +69,10 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
 
 
 def _render_play_panel(engine: GameEngine, me: Optional[int]):
+    if getattr(engine, "choosing_first_player", False):
+        _render_starting_throw(engine, me)
+        return None
+
     player = engine.players[engine.current]
     name = escape(player.name)
     can_act = me is None or engine.current == me
@@ -86,7 +90,7 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
         sub = "Roll the dice to start the turn."
     else:
         sub = f"Waiting for {name} to roll…"
-    st.html(f'{title}<div class="ab-turn-sub">{sub}</div>')
+    st.html(f'{title}<div class="ab-turn-sub">{sub}</div>{_starter_note(engine, me)}')
 
     if not engine.dice:
         render_dice_placeholder()
@@ -107,6 +111,59 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
         return None
     render_reroll(engine)
     return render_move_picker(engine)
+
+
+def _render_starting_throw(engine: GameEngine, me: Optional[int]) -> None:
+    """Before the first round: everyone throws all five dice, and the lowest total goes first."""
+    thrower = engine.players[engine.current]
+    can_act = me is None or engine.current == me
+    if engine.throw_round_no == 1:
+        sub = "Everyone throws all five dice. The lowest total goes first."
+    else:
+        tied = [escape(engine.players[p].name) for p in engine.throw_round]
+        sub = f"A tie for the lowest total: {' and '.join([', '.join(tied[:-1]), tied[-1]])} throw again."
+    st.html(f'<div class="ab-turn-title">Who goes first?</div><div class="ab-turn-sub">{sub}</div>'
+            + _throws_html(engine, me))
+    if not can_act:
+        st.caption(f"Waiting for {thrower.name} to throw…")
+        return
+    label = "Throw the dice" if me is not None else f"Throw for {thrower.name}"
+    if st.button(label, key="start-throw", type="primary", icon=":material/casino:", use_container_width=True):
+        try:
+            engine.throw_for_start()
+        except ValueError as e:
+            st.error(str(e))
+        else:
+            st.rerun()
+
+
+def _throws_html(engine: GameEngine, me: Optional[int]) -> str:
+    """One line per player: their latest starting throw and its total, or who throws next."""
+    latest = {t["player"]: t for t in engine.starting_throws}
+    rows = []
+    for i, p in enumerate(engine.players):
+        in_round = i in engine.throw_round
+        t = latest.get(i)
+        if t is not None and (t["round"] == engine.throw_round_no or not in_round):
+            faces = "".join(f'<img src="{die_uri(v, j)}" alt="{v}">' for v, j in t["dice"])
+            result = f'<span class="ab-throw-dice">{faces}</span><b>{t["total"]}</b>'
+        else:
+            result = '<span class="ab-throw-wait">{}</span>'.format("throws next" if i == engine.current else "waiting")
+        cls = "next" if i == engine.current else ("out" if not in_round else "")
+        you = '<span class="ab-you">You</span>' if i == me else ""
+        rows.append(f'<div class="ab-throw {cls}"><span class="ab-throw-name">{escape(p.name)}{you}</span>'
+                    f'<span class="ab-throw-res">{result}</span></div>')
+    return f'<div class="ab-throws">{"".join(rows)}</div>'
+
+
+def _starter_note(engine: GameEngine, me: Optional[int]) -> str:
+    """Until the first move: who won the starting throw."""
+    first = getattr(engine, "first_player", None)
+    if first is None or engine.last_move is not None:
+        return ""
+    total = [t["total"] for t in engine.starting_throws if t["player"] == first][-1]
+    who = "You" if first == me else escape(engine.players[first].name)
+    return f'<div class="ab-start-note">{who} threw the lowest ({total}) and {"go" if who == "You" else "goes"} first.</div>'
 
 
 def _render_results(engine: GameEngine, me: Optional[int], on_play_again: Callable[[], None],

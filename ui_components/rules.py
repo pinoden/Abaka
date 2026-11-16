@@ -5,6 +5,10 @@ import streamlit as st
 RULES_MD = """
 **Players.** 2 to 5, taking turns in order.
 
+**Who starts.** Before the first round, each player throws all five dice. The lowest
+total goes first (dice count their face value); players who tie for the lowest throw
+again. Then turns go round the table.
+
 **Your turn.** Roll five dice: four white and one dark **joker**. You may roll any
 of them again (or all of them), up to two more times. Then write the roll into one row. Each row
 has three cells that fill from left to right.

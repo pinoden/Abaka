@@ -24,7 +24,13 @@ NON_SCHOOL_STRICT = {
 class GameEngine:
     """Turn flow + thin facades to school/bonus/rendering."""
 
-    def __init__(self, player_names: List[str]) -> None:
+    def __init__(self, player_names: List[str], starting_throw: bool = False) -> None:
+        """
+        starting_throw: decide who goes first by the starting throw (the owner's rule,
+        2026-11-16): before the first round each player throws all five dice and the
+        lowest total starts. Players who tie for the lowest throw again. Without it,
+        the player at `current` (0 unless changed) starts.
+        """
         self.players: List[PlayerState] = [PlayerState(n) for n in player_names]
         self.current: int = 0
         self.dice = []
@@ -37,11 +43,57 @@ class GameEngine:
         # The cell written by the most recent move: (player index, category, slot), or None.
         self.last_move: Optional[Tuple[int, Category, int]] = None
 
+        # Starting throw. `throw_round` lists the players throwing in the current round, in
+        # order; `current` is the one whose throw is next. It is empty once the first player
+        # is decided (or when there is no starting throw).
+        self.throw_round: List[int] = list(range(len(self.players))) if starting_throw else []
+        self.throw_round_no: int = 1
+        # Every throw so far: {"round", "player", "dice": [(value, is_joker), ...], "total"}.
+        self.starting_throws: List[dict] = []
+        self.first_player: Optional[int] = None  # who won the starting throw
+
+    # ----- starting throw -----
+    @property
+    def choosing_first_player(self) -> bool:
+        """True until the starting throw has decided who goes first."""
+        return bool(self.throw_round)
+
+    def throw_for_start(self) -> None:
+        """The current player throws all five dice for the starting throw."""
+        if not self.throw_round:
+            raise ValueError("The first player has already been decided.")
+        player = self.current
+        dice = roll_dice()
+        self.starting_throws.append({
+            "round": self.throw_round_no,
+            "player": player,
+            "dice": [(d.value, d.is_joker) for d in dice],
+            "total": sum(d.value for d in dice),  # face values: the joker's wild 1 is for combinations only
+        })
+        position = self.throw_round.index(player)
+        if position + 1 < len(self.throw_round):
+            self.current = self.throw_round[position + 1]
+            return
+        # Everyone in this round has thrown: the lowest total starts; a tie throws again.
+        totals = {t["player"]: t["total"] for t in self.starting_throws if t["round"] == self.throw_round_no}
+        lowest = min(totals.values())
+        tied = [p for p in self.throw_round if totals[p] == lowest]
+        if len(tied) == 1:
+            self.throw_round = []
+            self.first_player = tied[0]
+            self.current = tied[0]
+        else:
+            self.throw_round = tied
+            self.throw_round_no += 1
+            self.current = tied[0]
+
     # ----- turn flow -----
     def next_player(self) -> None:
         self.current = (self.current + 1) % len(self.players)
 
     def start_turn(self) -> None:
+        if self.throw_round:
+            raise ValueError("Throw for the first turn first: the lowest throw starts.")
         self.dice = roll_dice()
         self.rolls_left = 2
         self.first_roll = True

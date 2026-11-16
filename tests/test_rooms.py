@@ -6,7 +6,7 @@ from abaka.rooms import RoomEngine, RoomError, RoomStore
 
 
 def started_room():
-    store = RoomStore()
+    store = RoomStore(starting_throw=False)
     code, host = store.create("Ann")
     guest = store.join(code, "Bob")
     return store, code, host, guest
@@ -14,7 +14,7 @@ def started_room():
 
 class TestLobby(unittest.TestCase):
     def test_game_starts_when_second_player_joins(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, host = store.create("Ann")
         self.assertFalse(store.view(code).started)
 
@@ -31,14 +31,14 @@ class TestLobby(unittest.TestCase):
             store.join(code, "Eve")
 
     def test_unknown_room(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         self.assertFalse(store.exists("NOPE1"))
         self.assertEqual(store.version("NOPE1"), -1)
         with self.assertRaises(RoomError):
             store.join("NOPE1", "Bob")
 
     def test_same_name_is_made_distinct(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, _ = store.create("Ann")
         store.join(code, "Ann")
         names = store.view(code).names
@@ -126,7 +126,7 @@ class TestTurns(unittest.TestCase):
         self.assertIsNone(engine.players[0].table[Category.ABAKA][0])
 
     def test_version_changes_on_every_change(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, host = store.create("Ann")
         seen = {store.version(code)}
         guest = store.join(code, "Bob")
@@ -195,7 +195,7 @@ class TestFullGame(unittest.TestCase):
 
 class TestMorePlayers(unittest.TestCase):
     def test_game_starts_when_the_last_seat_is_taken(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=4)
         bob = store.join(code, "Bob")
         cy = store.join(code, "Cy")
@@ -216,7 +216,7 @@ class TestMorePlayers(unittest.TestCase):
             store.cross(code, token, Category.ABAKA, store.view(code).engine.players[seat].table[Category.ABAKA].index(None))
 
     def test_player_count_limits(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         for bad in (1, 6):
             with self.assertRaises(RoomError):
                 store.create("Ann", players=bad)
@@ -226,7 +226,7 @@ class TestMorePlayers(unittest.TestCase):
         self.assertEqual(len(store.view(code).engine.players), 5)
 
     def test_creator_can_start_early(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=5)
         with self.assertRaises(RoomError):
             store.start_now(code, ann)  # nobody else yet
@@ -245,14 +245,14 @@ class TestMorePlayers(unittest.TestCase):
             store.start_now(code, ann)
 
     def test_names_are_made_distinct(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, _ = store.create("Ann", players=3)
         store.join(code, "Ann")
         store.join(code, "Ann")
         self.assertEqual(store.view(code).names, ["Ann", "Ann (2)", "Ann (3)"])
 
     def test_leaving_the_waiting_room_frees_the_seat(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=3)
         bob = store.join(code, "Bob")
         version = store.version(code)
@@ -267,7 +267,7 @@ class TestMorePlayers(unittest.TestCase):
         self.assertEqual([p.name for p in view.engine.players], ["Ann", "Cy", "Dee"])
 
     def test_when_the_creator_leaves_the_next_player_takes_over(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=4)
         bob = store.join(code, "Bob")
         cy = store.join(code, "Cy")
@@ -280,7 +280,7 @@ class TestMorePlayers(unittest.TestCase):
         self.assertEqual([p.name for p in store.view(code).engine.players], ["Bob", "Cy"])
 
     def test_room_closes_when_everyone_leaves(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=3)
         bob = store.join(code, "Bob")
         store.leave(code, ann)
@@ -297,7 +297,7 @@ class TestMorePlayers(unittest.TestCase):
         self.assertEqual(len(store.view(code).engine.players), 2)
 
     def test_rematch_rotates_the_first_player(self):
-        store = RoomStore()
+        store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=3)
         store.join(code, "Bob")
         store.join(code, "Cy")

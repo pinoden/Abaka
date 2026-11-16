@@ -157,23 +157,14 @@ def _centered():
 
 # ------------------------------------------------------------- same device ----
 
-def _start_local_game(names) -> None:
-    st.session_state.engine = GameEngine(names)
+def _new_local_game(names) -> None:
+    # Every game opens with the starting throw: the lowest total goes first.
+    st.session_state.engine = GameEngine(names, starting_throw=True)
     reset_turn_selection()
 
 
-def _new_local_game(names) -> None:
-    st.session_state.local_games = 0
-    _start_local_game(names)
-
-
 def _restart_local_game() -> None:
-    ss = st.session_state
-    names = [p.name for p in ss.engine.players]
-    _start_local_game(names)
-    # The next player in turn starts each new game.
-    ss.local_games = ss.get("local_games", 0) + 1
-    ss.engine.current = ss.local_games % len(names)
+    _new_local_game([p.name for p in st.session_state.engine.players])
 
 
 def _end_local_game() -> None:
@@ -209,13 +200,15 @@ def _render_online(store: RoomStore) -> None:
     else:
         engine = RoomEngine(store, code, token, view.engine)
         my_turn = not view.engine.is_game_over() and view.engine.current == seat
+        # Before the first round it is a turn to throw for who goes first.
+        your_turn = "Your throw!" if view.engine.choosing_first_player else "Your turn!"
         if ss.get("was_waiting"):
             # The game just started; this browser was on the waiting screen.
             others = [n for i, n in enumerate(view.names) if i != seat]
             joined = f"{others[0]} joined." if len(others) == 1 else "Everyone's here."
-            st.toast(f"{joined} Your turn!" if my_turn else joined, icon="\U0001F3B2")
+            st.toast(f"{joined} {your_turn}" if my_turn else joined, icon="\U0001F3B2")
         elif my_turn and ss.get("was_my_turn") is False:
-            st.toast("Your turn!", icon="\U0001F3B2")
+            st.toast(your_turn, icon="\U0001F3B2")
         ss.was_waiting = False
         ss.was_my_turn = my_turn
 
