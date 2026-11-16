@@ -134,7 +134,10 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - `.streamlit/config.toml` keeps a disconnected session for 6 hours
   (`server.disconnectedSessionTTL = 21600`, Streamlit's default is 2
   minutes), so a phone that was locked for a while comes back to the same
-  page.
+  page. Streamlit keeps at most 128 disconnected sessions, though
+  (`MemorySessionStorage(maxsize=128)`), so with many players older ones are
+  dropped sooner. The game itself is saved either way; the player comes back
+  by its link or code.
 - Leaving the waiting room (`store.leave`, before the game starts) frees the
   seat. Later players move up one seat, so if the creator leaves, the next
   player becomes the creator and can press "Start now"; an empty room is
@@ -305,8 +308,13 @@ PR #24.
 
 ## Status (2026-11-16)
 
+- **Architecture review (owner's request, 2026-11-16):** a separate agent, in
+  the role of senior architect, reviewed the whole project for running many
+  games in parallel. The full report is in `docs/ARCHITECTURE_REVIEW.md`:
+  verdict, measurements, findings with file:line, quick wins and a staged
+  roadmap. Nothing from it has been implemented yet; see "Roadmap" below.
 - **Crossed-out combinations show the lost column bonus (owner request 10):**
-  PR #24.
+  merged in PR #24, checked on the live app in Russian.
 - **Russian language (owner request 9):** merged in PR #22, live within
   seconds. Checked on the live app in headless Chromium (desktop with
   `?lang=ru`, phone with a Russian browser language): home, starting throw,
@@ -418,13 +426,87 @@ PR #24.
 - Streamlit Cloud sometimes does not pick up a merge for a long time (PR #20,
   2026-11-16). "Reboot app" in the Cloud dashboard pulls the latest `main`.
 
-### Ideas not started
+From the architecture review (details and file:line in
+`docs/ARCHITECTURE_REVIEW.md`):
 
-- Dark theme (the scoreboard CSS colours would need to follow the theme).
-- Show the opponent which dice the active player has picked.
-- Save games in an external database so they also survive Cloud reboots.
+- **Capacity.** Every open browser reruns the `_watch_room` fragment once a
+  second, and Streamlit runs a full `gc.collect(2)` after every script run
+  (`runner.postScriptGC`, on by default).
+  - Measured on one M1 core: 50-100 waiting browsers saturate the server,
+    which is about 6-10 actively played 3-player games. Cloud is 1.5-3
+    times slower.
+  - `postScriptGC = false` cut CPU per poll 5-10 times in the same test.
+- **Memory only grows.** Finished games stay in memory for 7 days. After
+  every code update, the previous `RoomStore` (with all its rooms) stays in
+  `st.cache_resource`, and the old and new stores can both write a room's
+  file.
+- **Shared lock.** The global lock is held across deep copies and file writes;
+  every poll and render waits behind any room's save.
+- **Security, "friends only":**
+  - anyone with a game's code can take any seat or empty a waiting room;
+  - 5-character codes can be guessed;
+  - room creation is unlimited;
+  - player names reach Markdown unescaped (captions, toasts, button labels),
+    so a name can be a link or an image.
+- **Build:** Streamlit is unpinned (Cloud runs a newer one than the tests),
+  there is no CI, and expired or unreadable save files are never deleted.
+
+### Roadmap (from the architecture review)
+
+Effort scale: S is up to 2 days, M is 1-2 weeks, L is 3-6 weeks.
+
+- **Stage 0, stabilize (S, about 2-4 days, no accounts):**
+  - `[runner] postScriptGC = false` and `[browser] gatherUsageStats = false`;
+  - retire old stores after code updates;
+  - `GameEngine.clone()` instead of `deepcopy` (about 20 times faster), a
+    `view()` without copying, and a cached move list;
+  - write files outside the lock;
+  - unload finished and idle rooms from memory, delete expired files, and cap
+    room creation;
+  - adaptive polling and `on_click` callbacks;
+  - escape names for Markdown;
+  - pin Streamlit, add CI (GitHub Actions), remove dead files, fix the
+    READMEs, add logging and a stats line.
+- **Stage 1, harden the single process (M):**
+  - a `RoomRepository` interface;
+  - personal per-seat rejoin links (or PIN or host approval);
+  - presence;
+  - rate limits;
+  - a load-test baseline.
+- **Stage 2, durable shared store (M):** Postgres or Redis behind the
+  repository, so games survive Cloud sleep and reboots. The owner must create
+  the database account and put the URL in Streamlit secrets.
+- **Stage 3, scale out (M or L), only if hundreds of games become a target:**
+  - several Streamlit replicas on paid hosting with sticky sessions and store
+    notifications; or
+  - a separate game server (FastAPI + WebSockets, reusing `abaka/`) with a
+    thin client.
+- **Owner decisions needed:**
+  - the Python policy: keep 3.8 for the engine, or move to 3.10+;
+  - whether the CLI and the old docs stay;
+  - how rejoining should be protected;
+  - the limits;
+  - for Stage 2, the database; for Stage 3, hosting and a budget.
+- **Other ideas:**
+  - a dark theme (the scoreboard CSS colours would need to follow the theme);
+  - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-16: architecture review (owner's request)**
+
+- The owner asked for a review by a separate agent in the role of senior
+  architect, focused on running many games in parallel. The agent worked
+  read-only and measured on a local server with a websocket load driver.
+  Its report, unedited apart from a header, is `docs/ARCHITECTURE_REVIEW.md`.
+- I checked two of its findings in Streamlit's source, and both correct
+  earlier statements in this file and to the owner:
+  - `runner.postScriptGC` defaults to True and runs `gc.collect(2)` after
+    every script run, polls included;
+  - disconnected sessions are capped at 128, so the 6-hour lifetime does not
+    hold for everyone.
+- The review also found that names reach Markdown unescaped. Nothing was
+  changed yet; the Roadmap lists what comes next.
 
 **2026-11-16: crossing out shows the lost column bonus (owner request 10)**
 
