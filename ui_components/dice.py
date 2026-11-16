@@ -8,6 +8,7 @@ so it stays clickable and keyboard-accessible.
 import streamlit as st
 
 from abaka.engine import GameEngine
+from ui_components.i18n import error, reroll_dice, rerolls_left, t
 from ui_components.style import ACCENT, die_uri
 
 MAX_ROLLS = 3
@@ -41,13 +42,13 @@ def render_dice(engine: GameEngine, interactive: bool) -> None:
                 " font-size: 15px; line-height: 24px; text-align: center; font-weight: 700; }"
             )
         if d.is_joker:
-            css.append(f'.st-key-die-{i}::after {{ content: "{"wild joker" if d.value == 1 else "joker"}"; }}')
+            css.append(f'.st-key-die-{i}::after {{ content: "{t("wild joker") if d.value == 1 else t("joker")}"; }}')
     css.extend(_roll_animation(dice))
     st.html("<style>" + "\n".join(css) + "</style>")
 
     with st.container(horizontal=True, key="dice-row"):
         for i, d in enumerate(dice):
-            label = f"{d.value} (joker)" if d.is_joker else str(d.value)
+            label = t("{value} (joker)", value=d.value) if d.is_joker else str(d.value)
             st.button(label, key=f"die-{i}", disabled=not interactive,
                       on_click=_toggle_die, args=(i,))
 
@@ -77,7 +78,7 @@ def render_dice_placeholder() -> None:
 def rolls_html(engine: GameEngine) -> str:
     used = MAX_ROLLS - engine.rolls_left if engine.dice else 0
     dots = "".join('<i class="used"></i>' if n < used else "<i></i>" for n in range(MAX_ROLLS))
-    return f'<span class="ab-rolls" title="Rolls used">{dots}</span>'
+    return f'<span class="ab-rolls" title="{t("Rolls used")}">{dots}</span>'
 
 
 def render_reroll(engine: GameEngine) -> None:
@@ -85,25 +86,25 @@ def render_reroll(engine: GameEngine) -> None:
     ss = st.session_state
     n = len(ss.selected_dice)
     if engine.rolls_left <= 0:
-        st.caption("No rerolls left. Choose where to write this roll.")
+        st.caption(t("No rerolls left. Choose where to write this roll."))
         return
-    left = "1 reroll" if engine.rolls_left == 1 else f"{engine.rolls_left} rerolls"
+    left = rerolls_left(engine.rolls_left)
     if n == 0:
-        st.caption(f"Tap the dice you want to roll again ({left} left), or choose a move below.")
+        st.caption(t("Tap the dice you want to roll again ({left} left), or choose a move below.", left=left))
 
     which = None
     with st.container(horizontal=True, key="reroll-row"):
-        label = "Reroll picked" if n == 0 else f"Reroll {n} {'die' if n == 1 else 'dice'}"
+        label = t("Reroll picked") if n == 0 else reroll_dice(n)
         if st.button(label, key="reroll", icon=":material/refresh:", disabled=n == 0,
                      type="primary" if n else "secondary", width="stretch"):
             which = sorted(ss.selected_dice)
-        if st.button("Reroll all", key="reroll-all", icon=":material/casino:", width="stretch"):
+        if st.button(t("Reroll all"), key="reroll-all", icon=":material/casino:", width="stretch"):
             which = list(range(len(engine.dice)))
     if which is not None:
         try:
             engine.reroll(which)
         except (ValueError, RuntimeError, IndexError) as e:
-            st.error(str(e))
+            st.error(error(str(e)))
         else:
             ss.selected_dice = set()
             st.rerun()

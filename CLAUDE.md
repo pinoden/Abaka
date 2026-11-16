@@ -58,6 +58,7 @@ Python + Streamlit.
 | `ui_components/moves.py` | Possible moves with exact score previews (tries each on a copy of the engine). No Streamlit |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
+| `ui_components/i18n.py` | Interface text in English and Russian: `t("...")`, plurals, error messages. No Streamlit |
 | `tests/` | `unittest` tests |
 
 ### Turn state lives in the engine
@@ -146,6 +147,19 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   same device, `_render_local_game`) or the waiting room; `?room=` in the URL
   -> the invite page (which continues a same-device game at once); otherwise
   -> home. There is no sidebar.
+- Languages: English and Russian. Code is written with English text wrapped in
+  `t("...")`; `i18n.RU` holds the Russian versions, with the same
+  `{placeholders}`.
+  - The language is set at the start of every run (`set_language`, per
+    thread): the EN/RU switch (`render_language_switch`, at the top of the home
+    and invite pages and in the game menu) keeps it in `ss.lang` and `?lang=`;
+    otherwise it follows the browser (`st.context.locale`, Russian -> ru).
+  - Each player of an online game sees their own language. Player names
+    typed in are kept as typed; blank names get "Player 2" / "Игрок 2" in
+    the language of the browser that created the seat.
+  - Errors from the engine and rooms are shown through `i18n.error()`.
+  - Widget values stay English (the Score / Cross out switch, keys); only
+    their labels are translated.
 - Home: "Continue a game" lists the unfinished games this browser played
   (`ss.my_games`). "Open game" takes a code for both joining and continuing.
   Leaving a same-device game shows "Game CODE is saved..." (`ss.lobby_info`).
@@ -182,6 +196,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Rules for changes
 
 - Engine code must keep working on Python 3.8 (no `X | None` at runtime).
+- Every new text shown to players goes through `t("...")` and gets a Russian
+  version in `ui_components/i18n.py`; `tests/test_i18n.py` fails otherwise.
 - Player names reach other players' browsers. `scoreboard.py` and other
   modules build raw HTML, so names must go through `html.escape`.
 - Every new online action goes through `RoomStore._act`, so it gets the turn
@@ -194,8 +210,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
 and were merged in PR #13; request 5 (2026-11-16) was merged in PR #18 and
 went live with PR #19; request 6 (2026-11-16, reversing request 3) was
-merged in PR #20; requests 7 and 8 (2026-11-16) are in PR #21. Open:
-request 9, Russian language (in progress).
+merged in PR #20; requests 7 and 8 (2026-11-16) were merged in PR #21;
+request 9 (2026-11-16) is in PR #22.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -263,12 +279,20 @@ request 9, Russian language (in progress).
    restart; see Known issues for Cloud reboots).
    > "возможность сохранять игру чтобы она не пропадала если остановился посередине"
 
-9. **Russian language.** In progress.
+9. **Russian language.** Done in PR #22.
+   - Every screen, the rules, the move texts, the scoreboard, toasts and
+     error messages are in Russian.
+   - A Russian browser starts in Russian; EN/RU switches sit on the home and
+     invite pages and in the game menu, and the choice survives a reload.
+   - Row names: Пара, Две пары, Тройка, Малый стрит, Большой стрит, Фулл-хаус,
+     Каре, Абака, Сумма, Школа 1-6. The owner may want other terms (the
+     original code's labels were D, DD, T, LS, BS, F, C, A, Σ).
    > "хочу добавить русский язык"
 
 ## Status (2026-11-16)
 
-- **Saved games (owner requests 7 and 8):** PR #21. Every game is saved after
+- **Russian language (owner request 9):** PR #22.
+- **Saved games (owner requests 7 and 8):** merged in PR #21. Every game is saved after
   every move and comes back after a reload, a dropped session, a code update
   or a restart.
 - **Live two-player online mode:** merged in PR #11.
@@ -284,7 +308,9 @@ request 9, Russian language (in progress).
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 79 pass: 10 saving tests (`test_saving.py`), 23 room tests (`test_rooms.py`: a full two-player game,
+- **Tests:** 85 pass: 6 language tests (`test_i18n.py`: every t() text has a
+  Russian version with the same placeholders, room errors, plurals, per-thread
+  language), 10 saving tests (`test_saving.py`), 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
   13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
@@ -376,6 +402,27 @@ request 9, Russian language (in progress).
 - Save games in an external database so they also survive Cloud reboots.
 
 ## Decision log
+
+**2026-11-16: Russian (owner request 9)**
+
+- English text stays in the code and is wrapped in `t()`, rather than moved
+  to message keys, so the code still reads naturally and a missing
+  translation falls back to English. A test scans the code for `t()` texts,
+  so none is forgotten.
+- The language is per browser, not per game: each player of an online game
+  sees their own. It is kept per thread, because Streamlit runs every
+  session's script in its own thread, and `moves.py` (no Streamlit) needs it
+  too.
+- Russian wording avoids verbs that change with gender ("Последний ход —
+  Аня: 23 в «Сумма»", "{name} в игре"), because names don't tell the
+  gender.
+- On phones the game's top bar shows only the logo (no "Abaka" word), so the
+  longer "Одно устройство · CODE" and the Menu fit on one line.
+- Checked: unit tests; the AppTest scenarios (all English ones, plus a game
+  in Russian with blank names becoming Игрок 1/2 and the menu switch back to
+  English); headless Chromium in Russian on desktop (?lang=ru) and on a
+  phone (Russian browser language): home, starting throw, a turn, the board
+  and the rules, with no sideways scrolling and the dice on one row.
 
 **2026-11-16: saved games (owner requests 7 and 8)**
 

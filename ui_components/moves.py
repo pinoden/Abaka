@@ -12,6 +12,7 @@ from typing import List, Optional
 from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.engine import GameEngine
 from abaka.models import Category
+from ui_components.i18n import t
 
 ROW_ORDER = SCHOOL_CATS + COMBO_CATS
 
@@ -50,16 +51,15 @@ def school_number(category: Category) -> int:
 
 def row_name(category: Category) -> str:
     if is_school(category):
-        return f"School {school_number(category)}"
-    return _COMBO_NAMES[category]
+        return t("School {n}", n=school_number(category))
+    return t(_COMBO_NAMES[category])
 
 
 def row_hint(category: Category) -> str:
     if is_school(category):
-        n = school_number(category)
-        return (f"Three {n}s are par. Extra {n}s add to your school balance; "
-                f"fewer {n}s are paid from it, which crosses out this row's bonus.")
-    return ROW_HINTS[category]
+        return t("Three {n}s are par. Extra {n}s add to your school balance; fewer {n}s are paid from it, "
+                 "which crosses out this row's bonus.", n=school_number(category))
+    return t(ROW_HINTS[category])
 
 
 def _signed(n: int) -> str:
@@ -90,7 +90,7 @@ class Move:
             return self.name
         if is_school(self.category):
             if self.value == "X":
-                return f"{self.name} · exactly 3"
+                return t("{name} · exactly 3", name=self.name)
             return f"{self.name} · {_signed(self.balance_change)}"
         return f"{self.name} · {self.value}"
 
@@ -98,15 +98,17 @@ class Move:
     def action_text(self) -> str:
         """Text for the confirm button: says exactly what will happen."""
         if self.cross:
-            return f"Cross out {self.name}"
+            return t("Cross out {name}", name=self.name)
         if is_school(self.category):
             if self.value == "X":
-                return f"Write {self.name} (exactly three)"
+                return t("Write {name} (exactly three)", name=self.name)
             if self.balance_change > 0:
-                return f"Write {self.name} (+{self.balance_change} balance)"
-            lost = ", lose the row bonus" if self.bonus_lost else ""
-            return f"Write {self.name} (pay {abs(self.balance_change)} from balance{lost})"
-        return f"Score {self.value} in {self.name}"
+                return t("Write {name} (+{n} balance)", name=self.name, n=self.balance_change)
+            if self.bonus_lost:
+                return t("Write {name} (pay {n} from balance, lose the row bonus)",
+                         name=self.name, n=abs(self.balance_change))
+            return t("Write {name} (pay {n} from balance)", name=self.name, n=abs(self.balance_change))
+        return t("Score {value} in {name}", value=self.value, name=self.name)
 
     @property
     def preview(self) -> str:

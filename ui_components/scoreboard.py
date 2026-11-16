@@ -14,6 +14,7 @@ import streamlit as st
 
 from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.engine import GameEngine
+from ui_components.i18n import t
 from ui_components.moves import Move, is_school, row_hint, row_name, school_number
 from ui_components.style import die_uri
 
@@ -38,8 +39,8 @@ def _score_cell(value, category, classes, target_text=None, last=False) -> str:
     if value == "X":
         # In school rows an X means "settled" (exactly three, or an old balance cell).
         if is_school(category):
-            return f'<td class="{classes} ab-ok" title="Done">{CHECK}</td>'
-        return f'<td class="{classes} ab-x" title="Crossed out">{CROSS}</td>'
+            return f'<td class="{classes} ab-ok" title="{t("Done")}">{CHECK}</td>'
+        return f'<td class="{classes} ab-x" title="{t("Crossed out")}">{CROSS}</td>'
     cls = "ab-neg" if isinstance(value, int) and value < 0 else "ab-num"
     return f'<td class="{classes} {cls}">{value}</td>'
 
@@ -51,9 +52,9 @@ def _bonus_cell(value, classes, given_up: bool = False) -> str:
     if value is None:
         return f'<td class="{classes} ab-none">{EMPTY}</td>'
     if value == "X" and given_up:
-        return f'<td class="{classes} ab-x" title="Bonus crossed out">{CROSS}</td>'
+        return f'<td class="{classes} ab-x" title="{t("Bonus crossed out")}">{CROSS}</td>'
     if value == "X":
-        return f'<td class="{classes} ab-none" title="No bonus">{NONE}</td>'
+        return f'<td class="{classes} ab-none" title="{t("No bonus")}">{NONE}</td>'
     return f'<td class="{classes} ab-bval">{value}</td>'
 
 
@@ -72,20 +73,22 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
     h = [f'<div class="ab-board-wrap"><table class="ab-board{" ab-many" if many else ""}"><thead><tr><th></th>']
     for i, p in enumerate(players):
         dot = '<span class="ab-dot"></span>' if i == active else ""
-        you = '<span class="ab-you">You</span>' if i == me else ""
+        you = f'<span class="ab-you">{t("You")}</span>' if i == me else ""
         bal = p.school_balance
         bal_txt = f'<span style="color:#E5484D">{bal}</span>' if bal < 0 else str(bal)
         h.append(
             f'<th class="ab-gap"></th><th colspan="4" class="ab-player{act(i)}">{dot}{escape(p.name)}{you}'
-            f'<div class="ab-pmeta">{p.calculate_score()} pts{"<br>" if many else " &middot; "}balance {bal_txt}</div></th>'
+            f'<div class="ab-pmeta"><span class="ab-nw">{t("{score} pts", score=p.calculate_score())}</span>'
+            f'{"<br>" if many else " &middot; "}<span class="ab-nw">{t("balance {balance}", balance=bal_txt)}</span>'
+            f'</div></th>'
         )
     h.append('</tr><tr class="ab-sub"><th></th>')
     for i, _ in enumerate(players):
         h.append(f'<th class="ab-gap"></th><th class="{act(i)}">I</th><th class="{act(i)}">II</th>'
-                 f'<th class="{act(i)}">III</th><th class="ab-bonus{act(i)}" title="Row bonus">★</th>')
+                 f'<th class="{act(i)}">III</th><th class="ab-bonus{act(i)}" title="{t("Row bonus")}">★</th>')
     h.append("</tr></thead><tbody>")
 
-    for title, cats in (("School", SCHOOL_CATS), ("Combinations", COMBO_CATS)):
+    for title, cats in ((t("School"), SCHOOL_CATS), (t("Combinations"), COMBO_CATS)):
         h.append(f'<tr class="ab-section"><td colspan="{span}">{title}</td></tr>')
         for cat in cats:
             icon = f'<img src="{die_uri(school_number(cat))}" alt="">' if is_school(cat) else ""
@@ -100,20 +103,21 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
                 loses_bonus = (target is not None and i == active and target.category == cat
                                and getattr(target, "bonus_lost", False))
                 if loses_bonus:  # the picked move pays from the balance: preview the crossed-out bonus
-                    h.append(f'<td class="ab-bonus{act(i)} ab-target" title="This move crosses out the row bonus">'
-                             f'{CROSS}</td>')
+                    h.append(f'<td class="ab-bonus{act(i)} ab-target" '
+                             f'title="{t("This move crosses out the row bonus")}">{CROSS}</td>')
                 else:
                     h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i), given_up.get((i, cat), False)))
             h.append("</tr>")
 
-    h.append(f'<tr class="ab-section"><td colspan="{span}">Bonuses &amp; total</td></tr>')
-    h.append('<tr><th class="ab-row" title="Complete a column with no crossed-out combinations">Column bonus</th>')
+    h.append(f'<tr class="ab-section"><td colspan="{span}">{escape(t("Bonuses & total"))}</td></tr>')
+    h.append(f'<tr><th class="ab-row" title="{t("Complete a column with no crossed-out combinations")}">'
+             f'{t("Column bonus")}</th>')
     for i, p in enumerate(players):
         h.append('<td class="ab-gap"></td>')
         for value in p.column_bonus:
             h.append(_bonus_cell(value, act(i).strip()))
         h.append(f'<td class="ab-bonus{act(i)}"></td>')
-    h.append('</tr><tr class="ab-total"><th class="ab-row">Total</th>')
+    h.append(f'</tr><tr class="ab-total"><th class="ab-row">{t("Total")}</th>')
     for i, p in enumerate(players):
         h.append(f'<td class="ab-gap"></td><td colspan="4" class="{act(i).strip()}">{p.calculate_score()}</td>')
     h.append("</tr></tbody></table></div>")
@@ -125,13 +129,14 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
 def describe_move(engine: GameEngine, move, me: Optional[int] = None) -> str:
     """'Last move: Bob scored 23 in Full house' and similar."""
     player, cat, slot = move
-    who = "You" if player == me else engine.players[player].name
+    who = t("You") if player == me else engine.players[player].name
     value = engine.players[player].table[cat][slot]
     name = row_name(cat)
     if is_school(cat):
-        what = f"wrote {name} (exactly three)" if value == "X" else f"wrote {name} (balance now {value})"
+        what = (t("wrote {name} (exactly three)", name=name) if value == "X"
+                else t("wrote {name} (balance now {value})", name=name, value=value))
     elif value == "X":
-        what = f"crossed out {name}"
+        what = t("crossed out {name}", name=name)
     else:
-        what = f"scored {value} in {name}"
-    return f"Last move: {who} {what}"
+        what = t("scored {value} in {name}", value=value, name=name)
+    return t("Last move: {who} {what}", who=who, what=what)
