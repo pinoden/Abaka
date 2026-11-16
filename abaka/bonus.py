@@ -21,8 +21,10 @@ def _check_row_bonus(engine, player_idx: int, category: Category) -> None:
 
     if category.name.startswith("SCHOOL_"):
         num = int(category.name.split('_')[1])
-        # Paying from the school balance does not cancel the row bonus.
-        val = num * 3
+        # Paying from the school balance ("minus") in this row gave the bonus up (owner, 2026-11-16);
+        # the bonus cell was crossed out at that moment (school.py).
+        blocked = getattr(engine, "row_bonus_blocked", {}).get((player_idx, category), False)
+        val = 'X' if blocked else num * 3
         if p.table[category][3] is None:
             p.table[category][3] = val
     else:

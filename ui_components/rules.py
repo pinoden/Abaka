@@ -34,13 +34,14 @@ If your dice don't fit anything you want, **cross out** a combination cell inste
 That gives up the row's bonus and that column's bonus for you.
 
 **School (rows 1-6).** Three dice of the row's number is par. Each extra die adds
-that number to your **school balance**; each missing die is paid from it. You
+that number to your **school balance**; each missing die is paid from it. Paying
+from the balance gives up that row's bonus: its bonus cell is crossed out at once. You
 need at least one die of the number until all your combinations are filled. Ending with a negative balance costs 100 points
 per point below zero.
 
 **Bonuses.** The first player to complete a row decides its bonus: 3 x the number
 for school rows, the best cell for combinations, nothing if they crossed out a
-cell in it. Complete a column with no crossed-out combinations for its best value;
+cell in it or paid from the balance in it. Complete a column with no crossed-out combinations for its best value;
 columns I and II go only to the first player to complete them.
 
 **The end.** When every cell is filled, the highest total wins.

@@ -151,6 +151,12 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   ("Throw for Ann"); online only the thrower's screen has it ("Throw the
   dice"). Until the first move, `_starter_note` shows "Ann threw the lowest
   (9) and goes first."
+- Bonus cells: "✕" when the player gave the bonus up themselves (a School
+  row paid from the balance, or a crossed-out combination cell;
+  `engine.row_bonus_blocked`), "–" when the bonus went to or was decided by
+  another player. When a picked School move pays from the balance, the
+  confirm button ends with ", lose the row bonus)" (`Move.bonus_lost`), and
+  the scoreboard previews that row's bonus cell as crossed out.
 
 ## Rules for changes
 
@@ -166,7 +172,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 
 Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
 and were merged in PR #13; request 5 (2026-11-16) was merged in PR #18 and
-went live with PR #19.
+went live with PR #19; request 6 (2026-11-16, reversing request 3) is in
+PR #20.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -177,7 +184,8 @@ went live with PR #19.
    rerolls only the picked dice ("Reroll picked" / "Reroll 2 dice").
    > "add button "reroll all""
 
-3. **School row bonus after paying from the balance.** Done. Before, writing a
+3. **School row bonus after paying from the balance.** Reversed on
+   2026-11-16 by request 6: paying crosses out the row bonus again. Before, writing a
    School row with fewer than three dice of its number was paid from the
    school balance (one die short costs 1 in School 1 ... 6 in School 6) and
    the row's bonus was crossed out for that player at once.
@@ -209,6 +217,20 @@ went live with PR #19.
      their own screen) and the CLI.
    > "Before the first round, each player throws all five dice and the one with the minimal sum starts first"
 
+6. **Paying from the balance in School crosses out the row bonus.** Done.
+   This reverses request 3 and restores the rule the code had before PR #13.
+   - Any payment ("minus", fewer than three dice of the number, including
+     endgame writes below zero) crosses out that row's bonus cell for the
+     player at once: `school.py` puts X in the cell and sets
+     `engine.row_bonus_blocked[(player, row)]`.
+   - Exactly three or extra dice keep the bonus.
+   - If the player who paid is the first to complete the row, nobody gets
+     that row's bonus, the same as a crossed-out combination ("the first
+     player to complete a row decides its bonus").
+   - The confirm button warns ("…, lose the row bonus"), the scoreboard
+     previews the crossed-out bonus, and the cell shows "✕".
+   > "if you use "minus" for school - you loosing the chance to get a bonus for that line - so you need to cross the bonus section right away"
+
 ## Status (2026-11-16)
 
 - **Live two-player online mode:** merged in PR #11.
@@ -218,19 +240,21 @@ went live with PR #19.
   reports that it works.
 - **Owner requests (last move, Reroll all, School bonus, 2-5 players):**
   merged in PR #13.
+- **School minus crosses the row bonus (owner request 6):** PR #20.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 64 pass: 23 room tests (`test_rooms.py`: a full two-player game,
+- **Tests:** 68 pass: 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
-  13 move-preview tests (`test_moves.py`), 5 tests for the owner's requests
+  13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 4 module-reload tests (`test_code_version.py`), 11 older
-  rule tests, and 2 app tests
-  (`test_ui_notices.py`, `test_ui_store.py`). The app tests run the real app
-  script with Streamlit's AppTest and are skipped where Streamlit is not
-  installed, such as the base Python 3.8.
+  rule tests, 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
+  and their preview) and 2 app tests (`test_ui_notices.py`,
+  `test_ui_store.py`). The app tests run the real app script with
+  Streamlit's AppTest. They and the scoreboard tests are skipped where
+  Streamlit is not installed, such as the base Python 3.8.
 - **Test round fixes:** the lost-seat notice, merged in PR #14; Leave in the
   waiting room frees the seat, merged in PR #15; online play on the live app
   (stale room store after updates), merged in PR #16.
@@ -301,6 +325,22 @@ went live with PR #19.
 - Save rooms to a file or database so games survive an app restart.
 
 ## Decision log
+
+**2026-11-16: School minus crosses the row bonus again (owner request 6)**
+
+- The owner reversed the 2026-11-15 decision (request 3). I restored the
+  pre-PR #13 behaviour: the cell is crossed at the moment of payment, and a
+  payer who completes the row first decides "no bonus" for everyone. The only
+  difference is that the record lives in the existing `row_bonus_blocked`
+  instead of the removed `school_minus_used`.
+- Added on top, so the cost is visible before confirming: the "lose the row
+  bonus" wording on the confirm button, the bonus-cell preview, and "✕" for
+  bonuses a player gave up (also after crossing out a combination).
+- Checked with unit tests and the game simulation: after every payment the
+  bonus cell was X at once, and at game end no player who paid in a row had
+  its bonus. Also checked with AppTest screen scenarios (each School payment
+  picked showed the preview, then the X) and in a browser at desktop and
+  phone widths.
 
 **2026-11-16: stale modules on the live app after PR #18**
 
