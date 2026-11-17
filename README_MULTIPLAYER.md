@@ -43,5 +43,5 @@ lives on that server.
 Every game is saved on the server's disk after every move. It survives a page
 refresh, an update of the app and a restart. Games nobody has played for 7 days
 are deleted. On Streamlit Community Cloud, a reboot from the dashboard or the
-app going to sleep after inactivity probably starts from an empty disk, and
-saved games are lost then.
+app going to sleep after inactivity may start from an empty disk, and saved
+games would be lost then.

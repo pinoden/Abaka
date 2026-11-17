@@ -547,6 +547,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   verdict, measurements, findings with file:line, quick wins and a staged
   roadmap. Its plan is Backlog item 11; Stage 0 is done (PR #27 to #33).
   Stages 1-3 wait for the owner's decisions listed there.
+- **Build (Stage 0.9):** merged in PR #32.
+  - The open page's connection dropped 10 s after the merge: Cloud restarted
+    the app to install the pinned packages. It came back on the same
+    Streamlit 1.67.0 and Python 3.13.18.
+  - A same-device test game saved just before (S6VSZ) came back from its link
+    unchanged, with the same dice and turn. So saved games survive that
+    restart.
+- **Monitoring (Stage 0.10):** merged in PR #33. Afterwards the live smoke
+  test passed (polling, one run per click, an online game). The stats line
+  goes to the Cloud logs, which only the owner can open.
 - **Fewer reruns (Stage 0.7):** merged in PR #31, live 16 s later. Checked on
   the live app in headless Chromium:
   - a same-device page polled twice in 21 s;
@@ -666,11 +676,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - On screens around 1024px wide, a 5-player game has small dice (about 34px),
   and with 4 or 5 players the scoreboard scrolls sideways inside its card.
 - Saved games live on the server's disk. On Streamlit Community Cloud that
-  survives code updates (checked on the live app) and restarts of the app
-  process, but probably not a
-  reboot from the Cloud dashboard or the app going to sleep: the container
-  is rebuilt. Keeping games through those needs an external database
-  (credentials in Streamlit secrets), which the owner would have to set up.
+  survives code updates and the restart after a change to
+  `requirements.txt` (both checked on the live app). It probably does not
+  survive a reboot from the Cloud dashboard or the app going to sleep, if
+  those rebuild the container; that is not checked. Keeping games through
+  those needs an external database (credentials in Streamlit secrets), which
+  the owner would have to set up.
 - Online players coming back in a new session (a reload, or a session
   dropped after more than 6 hours) land on the invite page and tap their
   name. The seat token is kept out of the URL, so a copied address bar
