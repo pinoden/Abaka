@@ -8,6 +8,18 @@ port = 8501
 # player who comes back finds the same page. Games are also saved to disk.
 disconnectedSessionTTL = 21600
 
+[runner]
+# No full garbage collection after every script run. Streamlit does one by
+# default, and every browser's once-a-second poll is a script run, so it made
+# each poll cost 25-50 ms of CPU. With 50 browsers: 86% CPU and polls going
+# unanswered with it, 18% without (tools/loadtest.py). Python's own garbage
+# collector still runs as usual.
+postScriptGC = false
+
+[browser]
+# Don't collect usage statistics (also stops a message after every run).
+gatherUsageStats = false
+
 [client]
 # Hide the developer menu and "Deploy" button for players.
 toolbarMode = "minimal"
