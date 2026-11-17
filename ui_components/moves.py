@@ -6,7 +6,6 @@ tried on a copy of the game with the real engine rules, and only moves the
 engine accepts are offered.
 """
 
-import copy
 from typing import List, Optional
 
 from abaka.constants import COMBO_CATS, SCHOOL_CATS
@@ -154,7 +153,7 @@ def score_options(engine) -> List[Move]:
         slot = free_slot(base, category)
         if slot is None:
             continue
-        trial = copy.deepcopy(base)
+        trial = base.clone()
         balance_before = trial.players[me].school_balance
         bonus_open = trial.players[me].table[category][3] is None
         try:

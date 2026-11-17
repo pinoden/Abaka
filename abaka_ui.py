@@ -14,7 +14,9 @@ as it happens.
 
 import os
 import socket
+import sys
 import tempfile
+import threading
 from html import escape
 from pathlib import Path
 from typing import Optional
@@ -56,22 +58,38 @@ def _save_dir() -> Optional[Path]:
 
 
 @st.cache_resource
-def _store_for_code(code_id: int) -> RoomStore:
-    return RoomStore(save_dir=_save_dir())
+def _store_registry() -> dict:
+    # Do not edit this function: its source is its cache key. An edit would start a
+    # second registry after the next code update and leave the previous store running.
+    return {"lock": threading.Lock(), "store": None}
+
+
+def _running_current_code() -> bool:
+    """False in pages still running code from before an update (their once-a-second poll)."""
+    rooms_module = sys.modules.get("abaka.rooms")
+    return rooms_module is not None and getattr(rooms_module, "RoomStore", None) is RoomStore
 
 
 def get_store() -> RoomStore:
     """
     The one RoomStore shared by every browser session of this server.
 
-    It is kept per version of the code. Streamlit Community Cloud applies a new
-    commit by reloading the app's modules, but cached objects survive the reload,
-    and a store made by the old code breaks the new code (after PR #13, "Create
-    game" failed with a TypeError on the live app). So new code gets a new store,
-    which loads the saved games from disk: an update no longer ends them. Pages
-    still running the old code keep the old store until their next click.
+    Streamlit Community Cloud applies a commit by reloading the app's modules, but
+    cached objects survive, and a store made by the old code breaks the new code
+    (after PR #13, "Create game" failed with a TypeError on the live app). So when
+    the new code first asks for the store, the old one is retired (its rooms are
+    freed; writes under way finish) and a new one loads the saved games from disk.
+    Pages still running the old code get the new store too, so nobody keeps polling
+    a store that no longer changes, and old stores never pile up in memory.
     """
-    return _store_for_code(id(RoomStore))
+    registry = _store_registry()
+    with registry["lock"]:
+        store = registry["store"]
+        if store is None or (type(store) is not RoomStore and _running_current_code()):
+            if store is not None:
+                store.retire()
+            store = registry["store"] = RoomStore(save_dir=_save_dir())
+        return store
 
 
 def main():

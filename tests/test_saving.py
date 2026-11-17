@@ -142,6 +142,86 @@ class TestStoreOnDisk(unittest.TestCase):
         self.assertFalse(self.dir.exists())
 
 
+class TestWritingFiles(unittest.TestCase):
+    """Files are written outside the store's lock: the newest version always wins."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+
+    def saved_version(self, code):
+        return json.loads((self.dir / f"{code}.json").read_text())["version"]
+
+    def test_an_older_state_never_replaces_a_newer_file(self):
+        store = RoomStore(save_dir=self.dir, starting_throw=False)
+        code, key = store.create_local(["Ann", "Bob"])
+        with store._lock:
+            old = store._snapshot(store._rooms[code])  # taken before the move...
+        store.roll(code, key)
+        store._write(old)  # ...but written after it (a slow thread)
+        self.assertEqual(self.saved_version(code), store.version(code))
+        self.assertEqual(list(self.dir.glob("*.tmp")) + list(self.dir.glob(".*.tmp")), [])
+
+    def test_a_closed_room_is_not_brought_back_by_a_late_write(self):
+        store = RoomStore(save_dir=self.dir)
+        code, ann = store.create("Ann", players=3)
+        bob = store.join(code, "Bob")
+        with store._lock:
+            late = store._snapshot(store._rooms[code])
+        store.leave(code, ann)
+        store.leave(code, bob)  # the room closes and its file goes
+        store._write(late)
+        self.assertFalse((self.dir / f"{code}.json").exists())
+
+    def test_many_threads_leave_every_file_at_its_room_version(self):
+        import threading
+        store = RoomStore(save_dir=self.dir, starting_throw=False)
+        rooms = [store.create_local(["A", "B", "C"]) for _ in range(6)]
+        errors = []
+
+        def play(code, key):
+            try:
+                rng = random.Random(code)
+                for _ in range(30):
+                    play_some(RoomEngine(store, code, key, store.view(code).engine), rng, 1)
+            except Exception as e:  # noqa: BLE001
+                errors.append(repr(e))
+
+        threads = [threading.Thread(target=play, args=room) for room in rooms for _ in range(2)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+        self.assertEqual([e for e in errors if "not your turn" not in e and "already rolled" not in e], [])
+        for code, _ in rooms:
+            self.assertEqual(self.saved_version(code), store.version(code))
+        again = RoomStore(save_dir=self.dir)
+        for code, _ in rooms:
+            self.assertTrue(engines_equal(again.view(code).engine, store.view(code).engine))
+
+    def test_leftover_temp_files_are_removed_on_load(self):
+        RoomStore(save_dir=self.dir).create_local(["Ann", "Bob"])
+        (self.dir / ".ABCDE-x.tmp").write_text("half a file")
+        RoomStore(save_dir=self.dir)
+        self.assertEqual(list(self.dir.glob(".*.tmp")), [])
+
+
+class TestRetire(unittest.TestCase):
+    """After a code update the old store is retired: it stops serving and frees its rooms."""
+
+    def test_a_retired_store_stops_serving(self):
+        store = RoomStore()
+        code, key = store.create_local(["Ann", "Bob"])
+        store.retire()
+        self.assertEqual(store.version(code), -1)  # its pages rerun into the new code
+        self.assertFalse(store.exists(code))
+        with self.assertRaises(RoomError) as caught:
+            store.throw_for_start(code, key)
+        self.assertIn("just updated", str(caught.exception))
+        self.assertEqual(store._rooms, {})
+
+
 class TestLocalRooms(unittest.TestCase):
     def test_one_browser_plays_every_seat(self):
         store = RoomStore(starting_throw=False)

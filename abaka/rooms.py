@@ -16,11 +16,11 @@ This module has no Streamlit dependency so it can be unit-tested directly.
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import secrets
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -89,7 +89,7 @@ class _Room:
     def to_data(self) -> dict:
         return {
             "code": self.code, "capacity": self.capacity, "local": self.local,
-            "names": self.names, "tokens": self.tokens,
+            "names": list(self.names), "tokens": list(self.tokens),
             "engine": engine_to_data(self.engine) if self.engine is not None else None,
             "version": self.version, "games_played": self.games_played, "updated_at": self.updated_at,
         }
@@ -107,7 +107,14 @@ class _Room:
 
 
 class RoomStore:
-    """Thread-safe registry of rooms. Streamlit runs each session in its own thread."""
+    """
+    Thread-safe registry of rooms. Streamlit runs each session in its own thread.
+
+    One lock guards the rooms. Engines are copy-on-write: a move works on a clone and
+    installs it, and an installed engine is never changed again, so view() hands it
+    out without copying (readers must not change it either). Files are written after
+    the lock is released (_write), so a slow disk never holds up other games.
+    """
 
     def __init__(self, starting_throw: bool = True, save_dir: Union[str, Path, None] = None) -> None:
         """
@@ -116,10 +123,27 @@ class RoomStore:
         """
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
+        self._retired = False
         self.starting_throw = starting_throw
         self.save_dir = Path(save_dir) if save_dir is not None else None
+        # Writes happen outside self._lock; this lock orders them, and the versions
+        # make sure an older state of a room never replaces a newer file.
+        self._save_lock = threading.Lock()
+        self._saved_versions: Dict[str, float] = {}
         if self.save_dir is not None:
             self._load_saved_rooms()
+
+    def retire(self) -> None:
+        """
+        This store's code has been replaced by an update (see abaka_ui.get_store): stop
+        serving and free the rooms. The new store reads them back from disk, so writes
+        already under way finish first.
+        """
+        with self._lock:
+            self._retired = True
+            self._rooms.clear()
+        with self._save_lock:
+            pass
 
     # ----- lobby -----
     def create(self, host_name: str, players: int = 2) -> "tuple[str, str]":
@@ -132,8 +156,9 @@ class RoomStore:
             room = _Room(code, int(players))
             self._rooms[code] = room
             token = self._seat(room, clean_name(host_name, "Player 1"))
-            self._save(room)
-            return code, token
+            pending = self._snapshot(room)
+        self._write(pending)
+        return code, token
 
     def create_local(self, names: List[str]) -> "tuple[str, str]":
         """
@@ -151,8 +176,9 @@ class RoomStore:
             room.tokens = [token] * len(names)  # one browser holds every seat
             room.engine = _new_engine(room, self.starting_throw)
             self._rooms[code] = room
-            self._save(room)
-            return code, token
+            pending = self._snapshot(room)
+        self._write(pending)
+        return code, token
 
     def resume_local(self, code: str) -> str:
         """Continue a same-device game from its link or code (on any browser). Returns its token."""
@@ -174,8 +200,9 @@ class RoomStore:
             if len(room.names) == room.capacity:
                 room.engine = _new_engine(room, self.starting_throw)
             room.touch()
-            self._save(room)
-            return token
+            pending = self._snapshot(room)
+        self._write(pending)
+        return token
 
     def start_now(self, code: str, token: str) -> None:
         """The creator starts the game early with the players who have joined (at least two)."""
@@ -190,7 +217,8 @@ class RoomStore:
             room.capacity = len(room.names)
             room.engine = _new_engine(room, self.starting_throw)
             room.touch()
-            self._save(room)
+            pending = self._snapshot(room)
+        self._write(pending)
 
     def leave(self, code: str, token: str) -> None:
         """
@@ -213,7 +241,8 @@ class RoomStore:
                 self._unsave(room.code)
                 return
             room.touch()
-            self._save(room)
+            pending = self._snapshot(room)
+        self._write(pending)
 
     def reclaim(self, code: str, seat: int) -> str:
         """
@@ -229,8 +258,9 @@ class RoomStore:
             token = secrets.token_urlsafe(16)
             room.tokens[seat] = token
             room.touch()
-            self._save(room)
-            return token
+            pending = self._snapshot(room)
+        self._write(pending)
+        return token
 
     # ----- reading -----
     def exists(self, code: str) -> bool:
@@ -252,9 +282,10 @@ class RoomStore:
             return room.version if room else -1
 
     def view(self, code: str) -> RoomView:
+        """The room as it is now. The engine is shared, not copied: do not change it."""
         with self._lock:
             room = self._get(code)
-            return RoomView(room.code, list(room.names), copy.deepcopy(room.engine),
+            return RoomView(room.code, list(room.names), room.engine,
                             room.version, room.games_played, room.capacity, room.local)
 
     # ----- playing -----
@@ -305,7 +336,8 @@ class RoomStore:
             room.games_played += 1
             room.engine = _new_engine(room, self.starting_throw)
             room.touch()
-            self._save(room)
+            pending = self._snapshot(room)
+        self._write(pending)
 
     # ----- internals -----
     def _act(self, code: str, token: str, action) -> None:
@@ -320,14 +352,18 @@ class RoomStore:
                 raise RoomError("The game is over.")
             if not room.local and room.tokens.index(token) != room.engine.current:
                 raise RoomError("It is not your turn.")
-            # Work on a copy so a rejected move can never leave the room half-updated.
-            engine = copy.deepcopy(room.engine)
+            # Work on a copy so a rejected move can never leave the room half-updated, and so the
+            # engine that views have handed out never changes (copy-on-write).
+            engine = room.engine.clone()
             action(engine)
             room.engine = engine
             room.touch()
-            self._save(room)
+            pending = self._snapshot(room)
+        self._write(pending)
 
     def _get(self, code: str) -> _Room:
+        if self._retired:
+            raise RoomError("The app was just updated. Please try again.")
         room = self._rooms.get(normalize_code(code))
         if room is None:
             raise RoomError("Game not found. Check the code, or ask for a new invite.")
@@ -344,6 +380,8 @@ class RoomStore:
         while True:
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
             if code not in self._rooms:
+                with self._save_lock:
+                    self._saved_versions.pop(code, None)  # a code freed earlier may be used again
                 return code
 
     def _drop_idle_rooms(self) -> None:
@@ -356,29 +394,58 @@ class RoomStore:
     def _path(self, code: str) -> Path:
         return self.save_dir / f"{code}.json"
 
-    def _save(self, room: _Room) -> None:
-        """Write the room to its file. A failed write is reported but never stops the game."""
+    def _snapshot(self, room: _Room):
+        """What to write for this room: taken under the lock, written after it by _write."""
         if self.save_dir is None:
+            return None
+        return room.code, room.version, room.to_data()
+
+    def _write(self, pending) -> None:
+        """
+        Write a room's file (call it without holding self._lock). It never replaces a newer
+        version, and a failed write is reported but never stops the game.
+        """
+        if pending is None:
             return
-        try:
-            self.save_dir.mkdir(parents=True, exist_ok=True)
-            tmp = self._path(room.code).with_suffix(".json.tmp")
-            tmp.write_text(json.dumps(room.to_data(), separators=(",", ":")), encoding="utf-8")
-            os.replace(tmp, self._path(room.code))  # atomic: a crash never leaves half a file
-        except OSError as e:
-            print(f"abaka: could not save game {room.code}: {e}", file=sys.stderr)
+        code, version, data = pending
+        text = json.dumps(data, separators=(",", ":"))
+        with self._save_lock:
+            if version <= self._saved_versions.get(code, -1):
+                return  # a newer state of this room is already on disk (or it was closed)
+            tmp = None
+            try:
+                self.save_dir.mkdir(parents=True, exist_ok=True)
+                fd, tmp = tempfile.mkstemp(dir=self.save_dir, prefix=f".{code}-", suffix=".tmp")
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(text)
+                os.replace(tmp, self._path(code))  # atomic: a crash never leaves half a file
+                self._saved_versions[code] = version
+            except Exception as e:  # noqa: BLE001 - saving must never break a move
+                print(f"abaka: could not save game {code}: {e}", file=sys.stderr)
+                if tmp is not None:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
 
     def _unsave(self, code: str) -> None:
         if self.save_dir is None:
             return
-        try:
-            self._path(code).unlink()
-        except OSError:
-            pass
+        with self._save_lock:
+            self._saved_versions[code] = float("inf")  # a late write must not bring it back
+            try:
+                self._path(code).unlink()
+            except OSError:
+                pass
 
     def _load_saved_rooms(self) -> None:
         if not self.save_dir.is_dir():
             return
+        for leftover in self.save_dir.glob(".*.tmp"):  # from a write cut short by a crash
+            try:
+                leftover.unlink()
+            except OSError:
+                pass
         cutoff = time.time() - ROOM_TTL_SECONDS
         for path in sorted(self.save_dir.glob("*.json")):
             try:
@@ -389,6 +456,7 @@ class RoomStore:
             if room.updated_at < cutoff or room.code != path.stem:
                 continue
             self._rooms[room.code] = room
+            self._saved_versions[room.code] = room.version
 
 
 def _distinct(name: str, taken: List[str]) -> str:

@@ -87,13 +87,19 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ### Online play
 
 - One Streamlit server process serves every browser. `abaka_ui.get_store()`
-  returns the single `RoomStore` for that process. It is cached with
-  `st.cache_resource` per `RoomStore` class (`_store_for_code(id(RoomStore))`).
-  When a commit is applied, Streamlit reloads all of the app's modules, but
-  cached objects survive. Keying by class gives the new code a new store, so
-  games in progress end on every update, as on a restart. Do not go back to a
-  plain cached `RoomStore()`: an old store reached the new code and broke the
-  live app (Decision log, 2026-11-16).
+  returns the single `RoomStore` for that process, kept in a registry
+  (`_store_registry`, an `st.cache_resource` that survives code updates; do not
+  edit that function, its source is its cache key).
+  - When a commit is applied, Streamlit reloads the app's modules, but cached
+    objects survive.
+  - The first run of the new code retires the old store (`retire()`: its
+    rooms are freed, writes under way finish) and makes a new one, which loads
+    the saved games from disk. So updates no longer end games.
+  - Pages still running the old code (their once-a-second poll) get the new
+    store too (`_running_current_code`), so nobody keeps polling a store that
+    no longer changes, and old stores never pile up.
+  - Do not go back to a plain cached `RoomStore()`: an old store reached the
+    new code and broke the live app (Decision log, 2026-11-16).
 - Streamlit re-reads `abaka_ui.py` on every run, but imported modules stay
   loaded, and its file watcher unloads them only while a browser session is
   open. So `abaka_ui` first calls `code_version.load_current()`. It hashes the
@@ -108,12 +114,16 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   `store.start_now` with at least two players seated. Names are made distinct
   ("Ann (2)").
 - Browsers never hold game state. Each page render takes `store.view(code)`
-  (a deep copy) and wraps it in `RoomEngine`, so the UI components work the
-  same as in a local game. `RoomEngine` forwards `start_turn`, `reroll`,
+  and wraps it in `RoomEngine`, so the UI components work the same as in a
+  local game. `RoomEngine` forwards `throw_for_start`, `start_turn`, `reroll`,
   `record_score` and `record_cross` to the store.
-- `RoomStore._act` holds a lock, checks that the token owns the seat whose turn
-  it is, applies the move to a copy of the engine, and swaps the copy in only
-  if the move succeeded. Every change bumps `room.version`.
+- Engines are copy-on-write. `RoomStore._act` holds the lock, checks that the
+  token owns the seat whose turn it is, applies the move to a clone
+  (`GameEngine.clone()`, about 15 times cheaper than `deepcopy`) and installs
+  the clone only if the move succeeded. An installed engine is never changed
+  again, so `view()` hands it out without copying: the UI must never change
+  it (`tests/test_ui_store.py` checks every phase). Every change bumps
+  `room.version`.
 - Live updates: `_watch_room` is an `st.fragment(run_every=1.0)` that compares
   `store.version(code)` with the version the page was drawn from, and calls
   `st.rerun()` when they differ.
@@ -127,11 +137,18 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   reload, a dropped session, another device) or typing the code on the home
   page continues the game at once (`store.resume_local`, no seat to pick).
 - Saving: the app's store (`RoomStore(save_dir=...)`) writes each room to
-  `<save_dir>/<CODE>.json` after every change (atomic replace) and loads all
-  saved rooms when it is created. That happens at startup and after every
-  code update, so updates and restarts no longer end games. `save_dir` is
-  `$ABAKA_SAVE_DIR` (empty: no saving; tests use this) or `~/.abaka/games`
-  (or a temp folder). A failed write is printed and play goes on.
+  `<save_dir>/<CODE>.json` after every change and loads all saved rooms when
+  it is created.
+  - The data is taken under the lock (`_snapshot`) and written after it
+    (`_write`), so the disk never holds up other games.
+  - Each write uses its own temp file and an atomic replace.
+  - An older state never replaces a newer file (`_saved_versions`), and a
+    closed room is never written back.
+  - Loading happens at startup and after every code update, so updates and
+    restarts no longer end games.
+  - `save_dir` is `$ABAKA_SAVE_DIR` (empty: no saving; tests use this) or
+    `~/.abaka/games` (or a temp folder). A failed write is printed and play
+    goes on.
 - Rooms nobody touched for 7 days are dropped (from disk too) the next time
   a room is created.
 - `.streamlit/config.toml` keeps a disconnected session for 6 hours
@@ -334,17 +351,28 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       - `tools/loadtest.py`: simulated browsers over websockets; reports
         server CPU, polls served and poll latency;
       - `tools/simulate.py`: random complete games with invariant checks.
-    - [ ] 0.3 Cheap reads and trial moves:
-      - `GameEngine.clone()` instead of `deepcopy` in `_act` and
-        `score_options`;
-      - `view()` hands out the shared copy-on-write snapshot;
-      - the move list is cached per room version;
-      - a test proves rendering never changes the snapshot.
-    - [ ] 0.4 Saving outside the global lock: serialize under the lock and
-      write after it; a unique temp file per write; never overwrite a newer
-      version.
-    - [ ] 0.5 Retire old stores after a code update: the old store stops
-      answering, its pages move to the new code, and its rooms are freed.
+    - [x] 0.3 Cheap reads and trial moves. PR #28.
+      - `GameEngine.clone()` replaces `deepcopy` in `_act` and
+        `score_options`: 15 instead of 210-270 µs; previews 0.30 instead of
+        3.5 ms.
+      - `view()` hands out the shared copy-on-write engine.
+      - A test proves drawing every phase changes nothing.
+      - Caching the move list is not needed at 0.3 ms.
+    - [x] 0.4 Saving outside the global lock. PR #28. The data is taken
+      under the lock and written after it, with a unique temp file per write;
+      an older state never replaces a newer file. Measured with 40 rooms
+      played at once from threads while 8 threads polled `version()`, with
+      saving:
+      - 245 → 1,922 moves/s;
+      - poll wait p50 98 ms → ~0, p99 624 ms → ~0.
+    - [x] 0.5 Retire old stores after a code update. PR #28. A registry keeps
+      one current store.
+      - The new code retires the old one: its rooms are freed and its writes
+        finish first.
+      - Old pages poll the new store.
+      - Checked on a real server: a game created before a code change on disk
+        was still there afterwards, and the page opened before the change saw
+        the second player join without being touched.
     - [ ] 0.6 Room lifecycle:
       - finished and idle rooms leave memory and are loaded from disk on
         demand;
@@ -439,17 +467,20 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 92 pass: 6 language tests (`test_i18n.py`: every t() text has a
+- **Tests:** 103 pass: 5 clone tests (`test_clone.py`: same game as
+  `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
   Russian version with the same placeholders, room errors, plurals, per-thread
-  language), 10 saving tests (`test_saving.py`), 23 room tests (`test_rooms.py`: a full two-player game,
+  language), 15 saving tests (`test_saving.py`, including writes outside the
+  lock and a retired store), 23 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room),
   13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 4 module-reload tests (`test_code_version.py`), 11 older
   rule tests, 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
-  and their preview) and 3 app tests (`test_ui_notices.py`,
-  `test_ui_store.py`, `test_ui_saved_games.py`). The app tests run the real app script with
+  and their preview) and 4 app tests (`test_ui_notices.py`,
+  `test_ui_store.py` with the old store retired and rendering that never
+  changes the shared engine, `test_ui_saved_games.py`). The app tests run the real app script with
   Streamlit's AppTest. They and the scoreboard tests are skipped where
   Streamlit is not installed, such as the base Python 3.8.
 - **Test round fixes:** the lost-seat notice, merged in PR #14; Leave in the
@@ -526,6 +557,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   never hands over a seat.
 - Streamlit Cloud sometimes does not pick up a merge for a long time (PR #20,
   2026-11-16). "Reboot app" in the Cloud dashboard pulls the latest `main`.
+- Changes to `.streamlit/config.toml` apply differently:
+  - `runner.*` and other run options apply while the app runs (Streamlit
+    watches the file);
+  - `server.*` options, such as `disconnectedSessionTTL`, apply only when the
+    server process starts: on Cloud, after a reboot or a change to
+    `requirements.txt`.
 
 From the architecture review (details and file:line in
 `docs/ARCHITECTURE_REVIEW.md`):
@@ -561,6 +598,19 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-16: Stage 0.3-0.5, faster store (PR #28)**
+
+- Copy-on-write instead of copies: a move works on `GameEngine.clone()` and
+  installs it, so `view()` can share the installed engine. The contract (the
+  UI never changes an engine) is tested on every phase of a game.
+- Files are written outside the lock, with per-room versions, so a late
+  writer can never put an older state back and a closed room never returns.
+- Old stores are retired through a registry, not left in a per-class cache.
+  Pages still on the old code read the new store, which is safe because its
+  `version()` and data come from the same saved files.
+- No cache for the move list: with `clone()`, `score_options` costs about
+  0.3 ms, about 1% of a page run.
 
 **2026-11-16: architecture review (owner's request)**
 
