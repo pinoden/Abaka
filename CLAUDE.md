@@ -21,8 +21,8 @@ python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
 python -m unittest tests.test_rooms -v                # one test module
 python tools/simulate.py 200 40                       # random complete games with rule checks (2-3 min)
-python tools/loadtest.py --clients 100                # simulated browsers polling games: CPU, latency
-python tools/loadtest.py --clients 100 --set runner.postScriptGC=true   # compare a Streamlit option
+python tools/loadtest.py --clients 100 --interval 1   # simulated pages polling every second: CPU, latency
+python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a Streamlit option
 ```
 
 ### Notes for this machine
@@ -59,6 +59,7 @@ Python + Streamlit.
 | `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
 | `ui_components/moves.py` | Possible moves with exact score previews (tries each on a copy of the engine). No Streamlit |
+| `ui_components/actions.py` | `on_click` callbacks of the game buttons: make the move, keep a refusal to show once |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
 | `ui_components/i18n.py` | Interface text in English and Russian: `t("...")`, plurals, error messages. No Streamlit |
@@ -117,6 +118,12 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   and wraps it in `RoomEngine`, so the UI components work the same as in a
   local game. `RoomEngine` forwards `throw_for_start`, `start_turn`, `reroll`,
   `record_score` and `record_cross` to the store.
+  - The app gives it `get_store` (a function) rather than the store: a
+    button's move runs when the next click arrives, and a code update in
+    between replaces the store.
+  - It also passes the room version the page was drawn from. If the room has
+    changed since (a double tap, a page not redrawn yet), the store refuses
+    the move with `OutdatedPage`, and the app only redraws the page.
 - Engines are copy-on-write. `RoomStore._act` holds the lock, checks that the
   token owns the seat whose turn it is, applies the move to a clone
   (`GameEngine.clone()`, about 15 times cheaper than `deepcopy`) and installs
@@ -124,9 +131,15 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   again, so `view()` hands it out without copying: the UI must never change
   it (`tests/test_ui_store.py` checks every phase). Every change bumps
   `room.version`.
-- Live updates: `_watch_room` is an `st.fragment(run_every=1.0)` that compares
-  `store.version(code)` with the version the page was drawn from, and calls
-  `st.rerun()` when they differ.
+- Live updates: `_watch_room` draws a polling fragment
+  (`st.fragment(run_every=...)`) that compares `store.version(code)` with the
+  version the page was drawn from, and calls `st.rerun()` when they differ.
+  - It checks every second while someone else can change the room (players
+    joining, another player's turn), every 3 s on the player's own turn or
+    after the game, and every 10 s in a same-device game (`POLL_FAST`,
+    `POLL_CALM`, `POLL_IDLE`).
+  - Streamlit fixes a fragment's interval where the fragment is defined, so
+    there is one fragment function per interval.
 - The URL carries only `?room=CODE`, so it is safe to share. The seat token
   stays in `st.session_state`. After a refresh, the player opens the link and
   clicks their name; `store.reclaim` issues a new token and the old tab loses
@@ -207,6 +220,14 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   animation) is injected with `st.html("<style>...")`.
 - Move-picker widget keys include a turn signature (player, rolls left, dice),
   so a pick never carries over to a reroll or a new turn.
+- Game buttons (Throw, Roll dice, the two Reroll buttons, the confirm button)
+  make their move in an `on_click` callback (`ui_components/actions.py`), so a
+  move costs one script run instead of two (the second came from
+  `st.rerun()`). A refused move is kept in the session and shown once, at the
+  top of the play panel.
+  - Streamlit tells buttons apart by key and label. A button that kept both
+    after its move would hand a fast second tap the next page's move, so
+    "Reroll all" has the rerolls left in its key (`reroll-all-2`).
 - Dice size: at most `--ab-die` (60px) and shrinks so all five fit the play
   card. The card is a CSS size container and the size is
   `min(--ab-die, (100cqw - 4 gaps) / 5)`, so it adapts to any layout.
@@ -402,9 +423,25 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         save folder).
       - Load test with 5,000 saved games: 100 browsers at 33% CPU, 15 ms
         median poll.
-    - [ ] 0.7 Fewer reruns:
-      - adaptive polling (1 s only while another player is acting);
-      - `on_click` callbacks instead of `st.rerun()` after actions.
+    - [x] 0.7 Fewer reruns. PR #31.
+      - Polling adapts: every second only while someone else can change the
+        room; every 3 s on your own turn or after the game; every 10 s in a
+        same-device game.
+      - The game buttons make their move in `on_click` callbacks: one script
+        run per click instead of two (counted from the websocket messages in
+        headless Chromium, on `main` and on the branch).
+      - A click from an outdated page (a double tap, a page not redrawn yet)
+        makes no move: the store checks the version the page was drawn from.
+      - `server.websocketPingInterval = 30`. That is Streamlit's default with
+        Tornado 6.5+ (as on Cloud); with an older Tornado it pings every page
+        every second.
+      - Measured with `tools/loadtest.py`, which now has `--interval` to
+        force a poll rate:
+        - 100 same-device pages: 29% CPU before, 5% after (pings every 30 s
+          in both);
+        - 100 idle pages with Tornado 6.4: 8% CPU for the pings, 0% after;
+        - an online game asks for 2 polls a second before, 1.33 after with
+          2 players (3 players: 3 and 2.33).
     - [x] 0.8 Player names cannot inject Markdown. PR #29.
       - `i18n.md()` is used in the 7 Markdown places that show names.
       - `clean_name` drops control and invisible characters.
@@ -496,21 +533,23 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 119 pass: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
+- **Tests:** 125 pass: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
   Russian version with the same placeholders, room errors, plurals, per-thread
   language), 15 saving tests (`test_saving.py`, including writes outside the
-  lock and a retired store), 23 room tests (`test_rooms.py`: a full two-player game,
-  rematch, 3-5 player rooms, starting early, leaving the waiting room),
+  lock and a retired store), 26 room tests (`test_rooms.py`: a full two-player game,
+  rematch, 3-5 player rooms, starting early, leaving the waiting room, moves
+  from outdated pages),
   13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 4 module-reload tests (`test_code_version.py`), 11 older
   rule tests, 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
-  and their preview) and 4 app tests (`test_ui_notices.py`,
+  and their preview) and 7 app tests (`test_ui_notices.py`,
   `test_ui_store.py` with the old store retired and rendering that never
-  changes the shared engine, `test_ui_saved_games.py`). The app tests run the real app script with
+  changes the shared engine, `test_ui_saved_games.py`, `test_ui_reruns.py`:
+  one script run per move, a click on an outdated page, poll intervals). The app tests run the real app script with
   Streamlit's AppTest. They and the scoreboard tests are skipped where
   Streamlit is not installed, such as the base Python 3.8.
 - **Test round fixes:** the lost-seat notice, merged in PR #14; Leave in the
@@ -597,17 +636,18 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 From the architecture review (details and file:line in
 `docs/ARCHITECTURE_REVIEW.md`):
 
-- **Capacity.** Every open browser reruns the `_watch_room` fragment once a
-  second, and Streamlit runs a full `gc.collect(2)` after every script run
-  (`runner.postScriptGC`, on by default).
-  - Measured on one M1 core: 50-100 waiting browsers saturate the server,
-    which is about 6-10 actively played 3-player games. Cloud is 1.5-3
-    times slower.
-  - `postScriptGC = false` cut CPU per poll 5-10 times in the same test.
+- **Capacity.** Every open page polls its room through the `_watch_room`
+  fragment: every second while another player acts, otherwise every 3 or
+  10 s (PR #31).
+  - Before stage 0, measured on one M1 core: 50-100 waiting browsers
+    saturated the server, about 6-10 actively played 3-player games. Cloud
+    is 1.5-3 times slower.
+  - Since `postScriptGC = false` (PR #27), 100 pages polling every second
+    take about 30% of a core.
 - (Fixed in PR #28 and PR #30: memory only grew. Finished games stayed in
   memory for 7 days, and every code update left the previous store behind.)
-- **Shared lock.** The global lock is held across deep copies and file writes;
-  every poll and render waits behind any room's save.
+- (Fixed in PR #28: the global lock was held across deep copies and file
+  writes, so every poll and render waited behind any room's save.)
 - **Security, "friends only":**
   - anyone with a game's code can take any seat or empty a waiting room;
   - 5-character codes can be guessed;
@@ -629,6 +669,32 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-16: Stage 0.7, fewer reruns (PR #31)**
+
+- Moves in `on_click` callbacks. With `if st.button(...)`, the click makes
+  the move halfway through a script run, and `st.rerun()` then draws the page
+  again. A callback runs before the script, so the page is drawn once, with
+  the move made.
+- A callback makes the move its page showed. A second tap that arrives before
+  the page is redrawn would make a move nobody saw: on the same device, a
+  double tap on "Throw for Ann" would also throw for Bob.
+  - So each move carries the version its page was drawn from, and the store
+    refuses it if the room has changed (`OutdatedPage`). The app then only
+    redraws the page.
+  - A reclaim (a player taking their seat back on another device) changes the
+    version too, so the player whose turn it is can lose one tap then. Their
+    page redraws at once.
+- `RoomEngine` takes `get_store` rather than the store, because a code update
+  can replace the store between drawing a page and the click.
+- Polling uses one fragment function per interval, because Streamlit fixes a
+  fragment's `run_every` where it is defined. Checked in headless Chromium
+  that the old timer stops when a page switches: 3 polls in 9 s on your own
+  turn, 9 while watching, 2 in 21 s on the same device.
+- The idle load in the local load test was websocket pings. Streamlit pings
+  every second with Tornado below 6.5 (6.4.1 here) and every 30 s with 6.5+
+  (Cloud installs the newest). The config now says 30 s, so every setup
+  behaves like Cloud.
 
 **2026-11-16: Stage 0.3-0.5, faster store (PR #28)**
 

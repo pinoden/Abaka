@@ -53,6 +53,11 @@ class RoomError(ValueError):
     """A request the room refused; the message is safe to show to the player."""
 
 
+class OutdatedPage(RoomError):
+    """A move made on a page drawn before the room's latest change (a double tap, or a
+    move by someone else meanwhile). Nothing was changed; the page only needs redrawing."""
+
+
 def clean_name(name: str, fallback: str) -> str:
     """Spaces collapsed, at most MAX_NAME_LENGTH characters, no control or invisible format
     characters (such as right-to-left overrides); `fallback` if nothing is left."""
@@ -323,41 +328,46 @@ class RoomStore:
                             room.version, room.games_played, room.capacity, room.local)
 
     # ----- playing -----
-    def throw_for_start(self, code: str, token: str) -> None:
+    # Each move may name the room version the player's page was drawn from
+    # (`expected_version`); if the room has changed since, the move is refused with
+    # OutdatedPage, so a double tap or a stale page never makes a move nobody saw.
+    def throw_for_start(self, code: str, token: str, expected_version: Optional[int] = None) -> None:
         """This player's throw in the starting throw that decides who goes first."""
         def action(engine: GameEngine) -> None:
             if not engine.choosing_first_player:
                 raise RoomError("The first player has already been decided.")
             engine.throw_for_start()
-        self._act(code, token, action)
+        self._act(code, token, action, expected_version)
 
-    def roll(self, code: str, token: str) -> None:
+    def roll(self, code: str, token: str, expected_version: Optional[int] = None) -> None:
         """First roll of the turn."""
         def action(engine: GameEngine) -> None:
             if engine.dice:
                 raise RoomError("You have already rolled this turn.")
             engine.start_turn()
-        self._act(code, token, action)
+        self._act(code, token, action, expected_version)
 
-    def reroll(self, code: str, token: str, indices: List[int]) -> None:
+    def reroll(self, code: str, token: str, indices: List[int], expected_version: Optional[int] = None) -> None:
         def action(engine: GameEngine) -> None:
             _require_rolled(engine)
             if engine.rolls_left <= 0:
                 raise RoomError("No rerolls left.")
             engine.reroll(sorted(set(indices)))
-        self._act(code, token, action)
+        self._act(code, token, action, expected_version)
 
-    def score(self, code: str, token: str, category: Category, slot_index: int) -> None:
+    def score(self, code: str, token: str, category: Category, slot_index: int,
+              expected_version: Optional[int] = None) -> None:
         def action(engine: GameEngine) -> None:
             _require_rolled(engine)
             engine.record_score(category, slot_index)
-        self._act(code, token, action)
+        self._act(code, token, action, expected_version)
 
-    def cross(self, code: str, token: str, category: Category, slot_index: int) -> None:
+    def cross(self, code: str, token: str, category: Category, slot_index: int,
+              expected_version: Optional[int] = None) -> None:
         def action(engine: GameEngine) -> None:
             _require_rolled(engine)
             engine.record_cross(category, slot_index)
-        self._act(code, token, action)
+        self._act(code, token, action, expected_version)
 
     def rematch(self, code: str, token: str) -> None:
         """Start a fresh game with the same players once the current one is over."""
@@ -374,12 +384,14 @@ class RoomStore:
         self._write(pending)
 
     # ----- internals -----
-    def _act(self, code: str, token: str, action) -> None:
+    def _act(self, code: str, token: str, action, expected_version: Optional[int] = None) -> None:
         """Run one move for the player holding `token`, atomically."""
         with self._lock:
             room = self._get(code)
             if token not in room.tokens:
                 raise RoomError("You are not seated in this game.")
+            if expected_version is not None and room.version != expected_version:
+                raise OutdatedPage("This page was out of date, so the move was not made.")
             if room.engine is None:
                 raise RoomError("Waiting for the second player to join.")
             if room.engine.is_game_over():
@@ -598,31 +610,41 @@ class RoomEngine:
     """
     Looks like a GameEngine to the UI components, but is backed by a shared room.
 
-    Reads come from a snapshot taken for this page render. The four turn actions
+    Reads come from a snapshot taken for this page render. The five turn actions
     are forwarded to the RoomStore, which checks whose turn it is and applies
     them to the one shared game.
+
+    `store` is the RoomStore, or a function returning the current one: the app
+    passes a function, because a button's move runs when the next click arrives,
+    and a code update in between replaces the store. `version` is the room
+    version the snapshot was taken at; when given, a move is refused
+    (OutdatedPage) if the room has changed since.
     """
 
-    def __init__(self, store: RoomStore, code: str, token: str, engine: GameEngine) -> None:
+    def __init__(self, store, code: str, token: str, engine: GameEngine, version: Optional[int] = None) -> None:
         self._store = store
         self._code = code
         self._token = token
         self._engine = engine
+        self._version = version
 
     def __getattr__(self, name: str):
         return getattr(self._engine, name)
 
+    def _room_store(self) -> RoomStore:
+        return self._store() if callable(self._store) else self._store
+
     def throw_for_start(self) -> None:
-        self._store.throw_for_start(self._code, self._token)
+        self._room_store().throw_for_start(self._code, self._token, expected_version=self._version)
 
     def start_turn(self) -> None:
-        self._store.roll(self._code, self._token)
+        self._room_store().roll(self._code, self._token, expected_version=self._version)
 
     def reroll(self, indices: List[int]) -> None:
-        self._store.reroll(self._code, self._token, indices)
+        self._room_store().reroll(self._code, self._token, indices, expected_version=self._version)
 
     def record_score(self, category: Category, slot_index: int) -> None:
-        self._store.score(self._code, self._token, category, slot_index)
+        self._room_store().score(self._code, self._token, category, slot_index, expected_version=self._version)
 
     def record_cross(self, category: Category, slot_index: int) -> None:
-        self._store.cross(self._code, self._token, category, slot_index)
+        self._room_store().cross(self._code, self._token, category, slot_index, expected_version=self._version)

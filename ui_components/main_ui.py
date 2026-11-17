@@ -13,8 +13,9 @@ from typing import Callable, Optional
 import streamlit as st
 
 from abaka.engine import GameEngine
+from ui_components.actions import run_action, show_action_error
 from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
-from ui_components.i18n import LANGUAGES, and_join, error, md, t
+from ui_components.i18n import LANGUAGES, and_join, md, t
 from ui_components.move_selection import render_move_picker
 from ui_components.rules import rules_dialog
 from ui_components.scoreboard import render_scoreboard
@@ -86,6 +87,7 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
 
 
 def _render_play_panel(engine: GameEngine, me: Optional[int]):
+    show_action_error()
     if getattr(engine, "choosing_first_player", False):
         _render_starting_throw(engine, me)
         return None
@@ -111,15 +113,9 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
 
     if not engine.dice:
         render_dice_placeholder()
-        if can_act and st.button(t("Roll dice"), key="roll", type="primary", icon=":material/casino:",
-                                 use_container_width=True):
-            try:
-                engine.start_turn()
-            except ValueError as e:
-                st.error(error(str(e)))
-            else:
-                reset_turn_selection()
-                st.rerun()
+        if can_act:
+            st.button(t("Roll dice"), key="roll", type="primary", icon=":material/casino:",
+                      use_container_width=True, on_click=run_action, args=(engine.start_turn,))
         return None
 
     render_dice(engine, interactive=can_act)
@@ -145,13 +141,8 @@ def _render_starting_throw(engine: GameEngine, me: Optional[int]) -> None:
         st.caption(t("Waiting for {name} to throw…", name=md(thrower.name)))
         return
     label = t("Throw the dice") if me is not None else t("Throw for {name}", name=md(thrower.name))
-    if st.button(label, key="start-throw", type="primary", icon=":material/casino:", use_container_width=True):
-        try:
-            engine.throw_for_start()
-        except ValueError as e:
-            st.error(error(str(e)))
-        else:
-            st.rerun()
+    st.button(label, key="start-throw", type="primary", icon=":material/casino:", use_container_width=True,
+              on_click=run_action, args=(engine.throw_for_start,))
 
 
 def _throws_html(engine: GameEngine, me: Optional[int]) -> str:

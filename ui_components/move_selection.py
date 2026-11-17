@@ -10,7 +10,8 @@ from typing import Optional
 import streamlit as st
 
 from abaka.engine import GameEngine
-from ui_components.i18n import error, t
+from ui_components.actions import run_action
+from ui_components.i18n import t
 from ui_components.moves import Move, cross_options, score_options
 
 SCORE, CROSS = "Score", "Cross out"  # values of the switch (and in widget keys); shown through t()
@@ -54,16 +55,11 @@ def render_move_picker(engine: GameEngine) -> Optional[Move]:
 
     label = move.action_text if move else (t("Choose a row above") if action == SCORE
                                            else t("Choose a row to cross out"))
-    if st.button(label, key="confirm", type="primary", disabled=move is None, use_container_width=True,
-                 icon=":material/close:" if action == CROSS else ":material/check:"):
-        try:
-            if move.cross:
-                engine.record_cross(move.category, move.slot)
-            else:
-                engine.record_score(move.category, move.slot)
-        except ValueError as e:
-            st.error(error(str(e)))
-        else:
-            st.session_state.selected_dice = set()
-            st.rerun()
+    # The move runs in an on_click callback (ui_components/actions.py): one script run, not two.
+    args = None
+    if move is not None:
+        args = (engine.record_cross if move.cross else engine.record_score, move.category, move.slot)
+    st.button(label, key="confirm", type="primary", disabled=move is None, use_container_width=True,
+              icon=":material/close:" if action == CROSS else ":material/check:",
+              on_click=run_action if move is not None else None, args=args)
     return move

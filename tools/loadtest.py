@@ -3,13 +3,15 @@ Load test: many browsers keeping an Abaka game open, simulated over websockets.
 
 Starts the app on a local port with a temporary save folder full of games, then
 opens N simulated browsers. Each one opens a saved same-device game (3 players,
-mid-game, dice on the table) and then polls it once a second, exactly like the
-page's `_watch_room` fragment does in a real browser. Reports server CPU and
-memory, polls answered per second, and poll latency.
+mid-game, dice on the table) and then polls it like the page's `_watch_room`
+fragment does in a real browser, at the interval the page asks for (a
+same-device game: every 10 s). `--interval 1` polls every second instead, like
+a page watching another player's turn online: the worst case. Reports server
+CPU and memory, polls answered per second, and poll latency.
 
-  python tools/loadtest.py --clients 100
-  python tools/loadtest.py --clients 100 --rooms 5000 --seconds 20
-  python tools/loadtest.py --clients 100 --set runner.postScriptGC=true   # compare a setting
+  python tools/loadtest.py --clients 100 --interval 1
+  python tools/loadtest.py --clients 100 --rooms 5000 --seconds 20 --interval 1
+  python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a setting
 
 Needs the Python environment that runs the app (Streamlit, tornado, protobuf).
 A simulated browser sends no cached-message hashes, so it receives a little more
@@ -81,11 +83,12 @@ def server_stats(pid: int):
 class Browser:
     """One simulated browser tab."""
 
-    def __init__(self, url: str, code: str):
+    def __init__(self, url: str, code: str, interval: float = None):
         self.url, self.code = url, code
         self.query = f"room={code}"
         self.fragment = None
-        self.interval = 1.0
+        self.forced_interval = interval  # None: poll as often as the page asks
+        self.interval = interval or 1.0
         self.latencies, self.skipped, self.sent = [], 0, 0
         self.full_runs = []
 
@@ -106,7 +109,8 @@ class Browser:
             fwd.ParseFromString(raw)
             kind = fwd.WhichOneof("type")
             if kind == "auto_rerun":
-                self.fragment, self.interval = fwd.auto_rerun.fragment_id, fwd.auto_rerun.interval or 1.0
+                self.fragment = fwd.auto_rerun.fragment_id
+                self.interval = self.forced_interval or fwd.auto_rerun.interval or 1.0
             elif kind == "page_info_changed" and fwd.page_info_changed.query_string:
                 self.query = fwd.page_info_changed.query_string
             elif kind == "script_finished" and fwd.script_finished in DONE:
@@ -123,8 +127,10 @@ class Browser:
     async def poll_until(self, stop_at: float, measure_from: float):
         next_poll = time.perf_counter() + random.random() * self.interval
         pending = None
-        while time.perf_counter() < stop_at:
-            await asyncio.sleep(max(0.0, next_poll - time.perf_counter()))
+        while True:
+            await asyncio.sleep(max(0.0, min(next_poll, stop_at) - time.perf_counter()))
+            if time.perf_counter() >= stop_at:
+                break
             next_poll += self.interval
             if pending is not None and not pending.done():
                 if time.perf_counter() >= measure_from:
@@ -152,7 +158,7 @@ def pct(values, q):
 
 async def main_async(args, codes, pid):
     url = f"ws://127.0.0.1:{args.port}/_stcore/stream"
-    browsers = [Browser(url, codes[i % len(codes)]) for i in range(args.clients)]
+    browsers = [Browser(url, codes[i % len(codes)], args.interval) for i in range(args.clients)]
     for b in browsers:  # open them one by one, as people arrive
         await b.open()
     opening = [r for b in browsers for r in b.full_runs[-1:]]
@@ -188,6 +194,9 @@ def main():
     parser.add_argument("--rooms", type=int, default=200, help="saved games loaded by the server (default 200)")
     parser.add_argument("--seconds", type=float, default=15, help="measurement window (default 15)")
     parser.add_argument("--warmup", type=float, default=5, help="seconds of polling before measuring (default 5)")
+    parser.add_argument("--interval", type=float, default=None,
+                        help="poll every this many seconds instead of as often as the page asks "
+                             "(1 = a page watching another player's turn online)")
     parser.add_argument("--port", type=int, default=8790)
     parser.add_argument("--set", action="append", default=[], metavar="SECTION.OPTION=VALUE",
                         help="extra Streamlit option for the server, e.g. runner.postScriptGC=true")
