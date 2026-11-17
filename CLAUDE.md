@@ -20,6 +20,9 @@ streamlit run abaka_ui.py                             # the app (port 8501, all 
 python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
 python -m unittest tests.test_rooms -v                # one test module
+python tools/simulate.py 200 40                       # random complete games with rule checks (2-3 min)
+python tools/loadtest.py --clients 100                # simulated browsers polling games: CPU, latency
+python tools/loadtest.py --clients 100 --set runner.postScriptGC=true   # compare a Streamlit option
 ```
 
 ### Notes for this machine
@@ -318,10 +321,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
     **Stage 0: stabilize (S, no new services or accounts)**
 
-    - [ ] 0.1 Config: `[runner] postScriptGC = false` (Streamlit's full
+    - [x] 0.1 Config: `[runner] postScriptGC = false` (Streamlit's full
       garbage collection after every run, polls included) and
-      `[browser] gatherUsageStats = false`.
-    - [ ] 0.2 Measurement tools in the repo (opt-in, under Commands):
+      `[browser] gatherUsageStats = false`. PR #27. Measured with
+      `tools/loadtest.py` (200 saved games, M1):
+      - 50 browsers: 86% CPU, 34 of 50 polls/s answered, 942 ms median
+        before; 18% CPU, all answered, 6 ms after;
+      - 100 browsers: 91% CPU, 17 of 100, 3.1 s before; 33% CPU, all
+        answered, 10 ms after;
+      - CPU per poll went from 25-53 ms to about 3.5 ms.
+    - [x] 0.2 Measurement tools in the repo (opt-in, under Commands). PR #27:
       - `tools/loadtest.py`: simulated browsers over websockets; reports
         server CPU, polls served and poll latency;
       - `tools/simulate.py`: random complete games with invariant checks.

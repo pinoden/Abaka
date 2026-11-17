@@ -1,0 +1,232 @@
+"""
+Load test: many browsers keeping an Abaka game open, simulated over websockets.
+
+Starts the app on a local port with a temporary save folder full of games, then
+opens N simulated browsers. Each one opens a saved same-device game (3 players,
+mid-game, dice on the table) and then polls it once a second, exactly like the
+page's `_watch_room` fragment does in a real browser. Reports server CPU and
+memory, polls answered per second, and poll latency.
+
+  python tools/loadtest.py --clients 100
+  python tools/loadtest.py --clients 100 --rooms 5000 --seconds 20
+  python tools/loadtest.py --clients 100 --set runner.postScriptGC=true   # compare a setting
+
+Needs the Python environment that runs the app (Streamlit, tornado, protobuf).
+A simulated browser sends no cached-message hashes, so it receives a little more
+data than a real one; it skips a poll while its previous one is unanswered (a
+real browser keeps firing), so real overload is somewhat worse than reported.
+"""
+
+import argparse
+import asyncio
+import os
+import random
+import shutil
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from tornado.websocket import websocket_connect  # noqa: E402
+
+from streamlit.proto.BackMsg_pb2 import BackMsg  # noqa: E402
+from streamlit.proto.ForwardMsg_pb2 import ForwardMsg  # noqa: E402
+
+from abaka.rooms import RoomStore  # noqa: E402
+
+DONE = {ForwardMsg.FINISHED_SUCCESSFULLY, ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY,
+        ForwardMsg.FINISHED_WITH_COMPILE_ERROR}
+
+
+def make_games(save_dir: str, rooms: int, seed: int = 1) -> list:
+    """Saved same-device games, 3 players each, a few turns in, dice rolled."""
+    random.seed(seed)
+    store = RoomStore(save_dir=save_dir)
+    codes = []
+    for _ in range(rooms):
+        code, key = store.create_local(["Ann", "Bob", "Cy"])
+        while store.view(code).engine.choosing_first_player:
+            store.throw_for_start(code, key)
+        for _ in range(random.randint(0, 6)):
+            store.roll(code, key)
+            store.score(code, key, *_any_cell(store, code))
+        store.roll(code, key)
+        codes.append(code)
+    return codes
+
+
+def _any_cell(store, code):
+    from ui_components.moves import cross_options, score_options
+    g = store.view(code).engine
+    move = (score_options(g) or cross_options(g))[0]
+    return move.category, move.slot
+
+
+def server_stats(pid: int):
+    """(cpu seconds, rss MB) of a process, from ps."""
+    out = subprocess.run(["ps", "-o", "cputime=,rss=", "-p", str(pid)], capture_output=True, text=True).stdout.split()
+    if len(out) < 2:
+        return 0.0, 0.0
+    parts = [float(p) for p in out[0].replace("-", ":").split(":")]
+    seconds = 0.0
+    for p in parts:
+        seconds = seconds * 60 + p
+    return seconds, int(out[1]) / 1024
+
+
+class Browser:
+    """One simulated browser tab."""
+
+    def __init__(self, url: str, code: str):
+        self.url, self.code = url, code
+        self.query = f"room={code}"
+        self.fragment = None
+        self.interval = 1.0
+        self.latencies, self.skipped, self.sent = [], 0, 0
+        self.full_runs = []
+
+    async def run_script(self, fragment=None) -> float:
+        msg = BackMsg()
+        state = msg.rerun_script
+        state.query_string = self.query
+        if fragment:
+            state.fragment_id = fragment
+            state.is_auto_rerun = True
+        t0 = time.perf_counter()
+        await self.conn.write_message(msg.SerializeToString(), binary=True)
+        while True:
+            raw = await self.conn.read_message()
+            if raw is None:
+                raise ConnectionError("closed")
+            fwd = ForwardMsg()
+            fwd.ParseFromString(raw)
+            kind = fwd.WhichOneof("type")
+            if kind == "auto_rerun":
+                self.fragment, self.interval = fwd.auto_rerun.fragment_id, fwd.auto_rerun.interval or 1.0
+            elif kind == "page_info_changed" and fwd.page_info_changed.query_string:
+                self.query = fwd.page_info_changed.query_string
+            elif kind == "script_finished" and fwd.script_finished in DONE:
+                return time.perf_counter() - t0
+
+    async def open(self):
+        self.conn = await websocket_connect(self.url, subprotocols=["streamlit"])
+        for _ in range(3):  # the invite page resumes the game and reruns into it
+            self.full_runs.append(await self.run_script())
+            if self.fragment:
+                return
+        raise RuntimeError(f"no polling fragment on the page for game {self.code}")
+
+    async def poll_until(self, stop_at: float, measure_from: float):
+        next_poll = time.perf_counter() + random.random() * self.interval
+        pending = None
+        while time.perf_counter() < stop_at:
+            await asyncio.sleep(max(0.0, next_poll - time.perf_counter()))
+            next_poll += self.interval
+            if pending is not None and not pending.done():
+                if time.perf_counter() >= measure_from:
+                    self.skipped += 1
+                continue
+            started = time.perf_counter()
+            pending = asyncio.ensure_future(self.run_script(self.fragment))
+
+            def record(task, started=started):
+                if not task.cancelled() and task.exception() is None and started >= measure_from:
+                    self.latencies.append(task.result())
+            pending.add_done_callback(record)
+            if started >= measure_from:
+                self.sent += 1
+        if pending is not None and not pending.done():
+            pending.cancel()
+
+
+def pct(values, q):
+    if not values:
+        return float("nan")
+    values = sorted(values)
+    return values[min(len(values) - 1, int(q / 100 * len(values)))]
+
+
+async def main_async(args, codes, pid):
+    url = f"ws://127.0.0.1:{args.port}/_stcore/stream"
+    browsers = [Browser(url, codes[i % len(codes)]) for i in range(args.clients)]
+    for b in browsers:  # open them one by one, as people arrive
+        await b.open()
+    opening = [r for b in browsers for r in b.full_runs[-1:]]
+    start = time.perf_counter()
+    measure_from = start + args.warmup
+    stop_at = measure_from + args.seconds
+    tasks = [asyncio.ensure_future(b.poll_until(stop_at, measure_from)) for b in browsers]
+    await asyncio.sleep(args.warmup)
+    cpu0, _ = server_stats(pid)
+    await asyncio.gather(*tasks)
+    cpu1, rss = server_stats(pid)
+    for b in browsers:
+        b.conn.close()
+    latencies = [x for b in browsers for x in b.latencies]
+    sent = sum(b.sent for b in browsers)
+    offered = args.clients * args.seconds / browsers[0].interval
+    served = len(latencies)
+    cpu = cpu1 - cpu0
+    return {
+        "clients": args.clients, "rooms": args.rooms,
+        "cpu %": round(100 * cpu / args.seconds), "rss MB": round(rss),
+        "polls/s offered": round(offered / args.seconds), "polls/s answered": round(served / args.seconds),
+        "skipped (still waiting)": sum(b.skipped for b in browsers),
+        "poll p50 ms": round(pct(latencies, 50) * 1000, 1), "poll p95 ms": round(pct(latencies, 95) * 1000, 1),
+        "cpu ms per poll": round(1000 * cpu / served, 1) if served else None,
+        "page run p50 ms": round(statistics.median(opening) * 1000, 1), "sent": sent,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--clients", type=int, default=50, help="simulated browsers (default 50)")
+    parser.add_argument("--rooms", type=int, default=200, help="saved games loaded by the server (default 200)")
+    parser.add_argument("--seconds", type=float, default=15, help="measurement window (default 15)")
+    parser.add_argument("--warmup", type=float, default=5, help="seconds of polling before measuring (default 5)")
+    parser.add_argument("--port", type=int, default=8790)
+    parser.add_argument("--set", action="append", default=[], metavar="SECTION.OPTION=VALUE",
+                        help="extra Streamlit option for the server, e.g. runner.postScriptGC=true")
+    args = parser.parse_args()
+
+    save_dir = tempfile.mkdtemp(prefix="abaka-loadtest-")
+    server = None
+    try:
+        codes = make_games(save_dir, args.rooms)
+        cmd = [sys.executable, "-m", "streamlit", "run", os.path.join(ROOT, "abaka_ui.py"),
+               "--server.port", str(args.port), "--server.address", "127.0.0.1", "--server.headless", "true",
+               "--browser.gatherUsageStats", "false"]
+        for option in args.set:
+            name, value = option.split("=", 1)
+            cmd += [f"--{name}", value]
+        env = dict(os.environ, ABAKA_SAVE_DIR=save_dir)
+        server = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import urllib.request
+        for _ in range(120):
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{args.port}/_stcore/health", timeout=1)
+                break
+            except OSError:
+                time.sleep(0.25)
+        else:
+            raise SystemExit("the app did not start")
+        result = asyncio.get_event_loop().run_until_complete(main_async(args, codes, server.pid))
+        width = max(len(k) for k in result)
+        for key, value in result.items():
+            print(f"{key:<{width}}  {value}")
+    finally:
+        if server is not None:
+            server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+        shutil.rmtree(save_dir, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()
