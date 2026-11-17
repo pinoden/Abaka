@@ -11,6 +11,14 @@ class PlayerState:
         self.school_balance = 0
         self.school_balance_loc = None  # (Category, slot_index)
 
+    def clone(self):
+        """An independent copy of this player's table (see GameEngine.clone)."""
+        p = PlayerState.__new__(PlayerState)
+        p.__dict__.update(self.__dict__)
+        p.table = {cat: list(cells) for cat, cells in self.table.items()}
+        p.column_bonus = list(self.column_bonus)
+        return p
+
     def record(self, category, slot_index, score):
         if slot_index not in (0, 1, 2):
             raise ValueError("Slot index must be 0,1,2")

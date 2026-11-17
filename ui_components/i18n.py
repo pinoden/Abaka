@@ -72,6 +72,7 @@ def and_join(names) -> str:
 # Messages from the engine and the rooms (RoomError / ValueError texts shown to players).
 _ERRORS_RU = {
     "This game is already full.": "Эта игра уже заполнена.",
+    "The app was just updated. Please try again.": "Приложение только что обновилось. Попробуйте ещё раз.",
     "Only the player who created the game can start it.": "Начать игру может только тот, кто её создал.",
     "The game has already started.": "Игра уже началась.",
     "Wait until at least one more player has joined.": "Дождитесь, пока подключится хотя бы ещё один игрок.",

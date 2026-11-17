@@ -60,9 +60,13 @@ class TestTurns(unittest.TestCase):
         store.roll(code, host)
         dice = [(d.value, d.is_joker) for d in store.view(code).engine.dice]
         self.assertEqual(len(dice), 5)
-        # A view is a copy: changing it must not touch the shared game.
-        store.view(code).engine.dice.clear()
-        self.assertEqual([(d.value, d.is_joker) for d in store.view(code).engine.dice], dice)
+        # Views share the room's engine (no copy), but a move installs a new engine
+        # (copy-on-write), so a view taken earlier never changes.
+        before = store.view(code).engine
+        self.assertIs(store.view(code).engine, before)
+        store.reroll(code, host, [0, 1, 2, 3, 4])
+        self.assertIsNot(store.view(code).engine, before)
+        self.assertEqual([(d.value, d.is_joker) for d in before.dice], dice)
 
     def test_only_the_current_player_can_act(self):
         store, code, host, guest = started_room()
