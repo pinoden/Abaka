@@ -42,10 +42,11 @@ the invite link the app shows. See `README_MULTIPLAYER.md`.
 ## Things to know
 
 - Games are saved on the server's disk, in `~/.abaka/games` or the folder named
-  by `ABAKA_SAVE_DIR`. They survive updates and restarts of the app. On
-  Streamlit Community Cloud they probably do not survive a reboot from the
-  dashboard or the app going to sleep after inactivity, because those start
-  from an empty disk.
+  by `ABAKA_SAVE_DIR`. They survive updates and restarts of the app,
+  including the restart after a change to `requirements.txt` (checked on the
+  live app). On Streamlit Community Cloud they probably do not survive a
+  reboot from the dashboard or the app going to sleep after inactivity, if
+  those start from an empty disk.
 - The app must run as a single process (Streamlit Community Cloud does this).
   If you host it elsewhere behind several workers, players may land on
   different workers and not find each other's games.
