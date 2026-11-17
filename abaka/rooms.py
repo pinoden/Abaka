@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import sys
 import tempfile
@@ -39,6 +40,14 @@ MAX_PLAYERS = 5
 MAX_NAME_LENGTH = 20
 ROOM_TTL_SECONDS = 7 * 24 * 60 * 60  # rooms nobody touched for a week are dropped
 
+# Rooms in memory (with a save folder; the files stay on disk and are loaded again on demand).
+IDLE_IN_MEMORY_SECONDS = 30 * 60      # no page has looked at the room for this long
+FINISHED_IN_MEMORY_SECONDS = 10 * 60  # a finished game, sooner
+MAX_ROOMS_IN_MEMORY = 2000            # beyond this, the rooms seen least recently leave first
+SWEEP_EVERY_SECONDS = 60
+DISK_SWEEP_EVERY_SECONDS = 60 * 60    # expired files are deleted this often
+_CODE_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, CODE_LENGTH))
+
 
 class RoomError(ValueError):
     """A request the room refused; the message is safe to show to the player."""
@@ -54,6 +63,22 @@ def clean_name(name: str, fallback: str) -> str:
 
 def normalize_code(code: str) -> str:
     return "".join((code or "").split()).upper()
+
+
+def within_limit(times: List[float], now: float, limit: int, window: float) -> "tuple[bool, List[float]]":
+    """
+    A simple rate limit: (allowed, the times to keep). Allowed while fewer than `limit` of
+    `times` fall in the last `window` seconds; an allowed event is added to the times.
+    """
+    recent = [x for x in times if now - x < window]
+    if len(recent) < limit:
+        return True, recent + [now]
+    return False, recent
+
+
+def is_valid_code(code: str) -> bool:
+    """A well-formed game code. Codes become file names, so nothing else ever reaches the disk."""
+    return bool(_CODE_PATTERN.match(code))
 
 
 class RoomView:
@@ -85,6 +110,7 @@ class _Room:
         self.version = 0
         self.games_played = 0
         self.updated_at = time.time()
+        self.last_seen = self.updated_at  # when a page last looked at it (not saved)
 
     def touch(self) -> None:
         self.version += 1
@@ -107,6 +133,7 @@ class _Room:
         room.version = int(d["version"])
         room.games_played = int(d["games_played"])
         room.updated_at = float(d["updated_at"])
+        room.last_seen = time.time()
         return room
 
 
@@ -123,7 +150,8 @@ class RoomStore:
     def __init__(self, starting_throw: bool = True, save_dir: Union[str, Path, None] = None) -> None:
         """
         starting_throw: each game opens with the starting throw (lowest total goes first).
-        save_dir: keep every room in a JSON file there, and load the rooms saved there now.
+        save_dir: keep every room in a JSON file there. Saved rooms are loaded when someone
+            opens them, and rooms nobody looks at leave memory (their files stay).
         """
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
@@ -134,8 +162,10 @@ class RoomStore:
         # make sure an older state of a room never replaces a newer file.
         self._save_lock = threading.Lock()
         self._saved_versions: Dict[str, float] = {}
+        self._last_sweep = time.time()
+        self._last_disk_sweep = 0.0
         if self.save_dir is not None:
-            self._load_saved_rooms()
+            self._clean_save_dir()
 
     def retire(self) -> None:
         """
@@ -155,7 +185,7 @@ class RoomStore:
         if not MIN_PLAYERS <= int(players) <= MAX_PLAYERS:
             raise RoomError(f"A game is for {MIN_PLAYERS} to {MAX_PLAYERS} players.")
         with self._lock:
-            self._drop_idle_rooms()
+            self._make_room_for_one_more()
             code = self._new_code()
             room = _Room(code, int(players))
             self._rooms[code] = room
@@ -172,7 +202,7 @@ class RoomStore:
         if not MIN_PLAYERS <= len(names) <= MAX_PLAYERS:
             raise RoomError(f"A game is for {MIN_PLAYERS} to {MAX_PLAYERS} players.")
         with self._lock:
-            self._drop_idle_rooms()
+            self._make_room_for_one_more()
             code = self._new_code()
             room = _Room(code, len(names), local=True)
             token = secrets.token_urlsafe(16)
@@ -234,7 +264,7 @@ class RoomStore:
         who left can rejoin from the link; this does nothing then.
         """
         with self._lock:
-            room = self._rooms.get(normalize_code(code))
+            room = self._room(code)
             if room is None or room.engine is not None or token not in room.tokens:
                 return
             seat = room.tokens.index(token)
@@ -269,12 +299,12 @@ class RoomStore:
     # ----- reading -----
     def exists(self, code: str) -> bool:
         with self._lock:
-            return normalize_code(code) in self._rooms
+            return self._room(code) is not None
 
     def seat_of(self, code: str, token: Optional[str]) -> Optional[int]:
         """Seat index for this token, or None if the token no longer controls a seat."""
         with self._lock:
-            room = self._rooms.get(normalize_code(code))
+            room = self._room(code)
             if room is None or not token or token not in room.tokens:
                 return None
             return room.tokens.index(token)
@@ -282,7 +312,7 @@ class RoomStore:
     def version(self, code: str) -> int:
         """Changes whenever the room changes; -1 if the room is gone. Cheap to poll."""
         with self._lock:
-            room = self._rooms.get(normalize_code(code))
+            room = self._room(code)
             return room.version if room else -1
 
     def view(self, code: str) -> RoomView:
@@ -368,9 +398,25 @@ class RoomStore:
     def _get(self, code: str) -> _Room:
         if self._retired:
             raise RoomError("The app was just updated. Please try again.")
-        room = self._rooms.get(normalize_code(code))
+        room = self._room(code)
         if room is None:
             raise RoomError("Game not found. Check the code, or ask for a new invite.")
+        return room
+
+    def _room(self, code: str) -> Optional[_Room]:
+        """
+        The room with this code: from memory, or loaded from its file if it left memory.
+        None if there is none. Marks it as just seen, so rooms people look at stay in memory.
+        Call with self._lock held.
+        """
+        if self._retired:
+            return None
+        code = normalize_code(code)
+        room = self._rooms.get(code)
+        if room is None and self.save_dir is not None and is_valid_code(code):
+            room = self._load_room(code)
+        if room is not None:
+            room.last_seen = time.time()
         return room
 
     @staticmethod
@@ -383,16 +429,47 @@ class RoomStore:
     def _new_code(self) -> str:
         while True:
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
-            if code not in self._rooms:
+            if code not in self._rooms and not (self.save_dir is not None and self._path(code).exists()):
                 with self._save_lock:
                     self._saved_versions.pop(code, None)  # a code freed earlier may be used again
                 return code
 
-    def _drop_idle_rooms(self) -> None:
-        cutoff = time.time() - ROOM_TTL_SECONDS
-        for code in [c for c, r in self._rooms.items() if r.updated_at < cutoff]:
-            del self._rooms[code]
-            self._unsave(code)
+    def _make_room_for_one_more(self) -> None:
+        """Before a new room: let unused rooms go; without a save folder, refuse past the cap."""
+        self._sweep()
+        if self.save_dir is None and len(self._rooms) >= MAX_ROOMS_IN_MEMORY:
+            raise RoomError("The server is busy right now. Please try again later.")
+
+    def _sweep(self, force: bool = False) -> None:
+        """
+        At most once a minute: drop expired rooms (from disk too); with a save folder, let
+        rooms nobody has looked at for a while leave memory (their files stay), and keep at
+        most MAX_ROOMS_IN_MEMORY. Once an hour, delete expired files of rooms not in memory.
+        """
+        now = time.time()
+        if not force and now - self._last_sweep < SWEEP_EVERY_SECONDS:
+            return
+        self._last_sweep = now
+        cutoff = now - ROOM_TTL_SECONDS
+        for code, room in list(self._rooms.items()):
+            if room.updated_at < cutoff:
+                del self._rooms[code]
+                self._unsave(code)
+                continue
+            if self.save_dir is None:
+                continue
+            idle = now - room.last_seen
+            finished = room.engine is not None and room.engine.is_game_over()
+            if idle > IDLE_IN_MEMORY_SECONDS or (finished and idle > FINISHED_IN_MEMORY_SECONDS):
+                del self._rooms[code]  # still on disk; loaded again when someone opens it
+        if self.save_dir is not None and len(self._rooms) > MAX_ROOMS_IN_MEMORY:
+            # Not the rooms seen in the last minute: their latest write may still be under way.
+            quiet = sorted((r.last_seen, c) for c, r in self._rooms.items() if now - r.last_seen > 60)
+            for _, code in quiet[:len(self._rooms) - MAX_ROOMS_IN_MEMORY]:
+                del self._rooms[code]
+        if self.save_dir is not None and (force or now - self._last_disk_sweep > DISK_SWEEP_EVERY_SECONDS):
+            self._last_disk_sweep = now
+            self._delete_expired_files(cutoff)
 
     # ----- saving (one JSON file per room) -----
     def _path(self, code: str) -> Path:
@@ -442,25 +519,53 @@ class RoomStore:
             except OSError:
                 pass
 
-    def _load_saved_rooms(self) -> None:
+    def _clean_save_dir(self) -> None:
+        """At start: remove temp files left by a crash and files of rooms that expired."""
         if not self.save_dir.is_dir():
             return
-        for leftover in self.save_dir.glob(".*.tmp"):  # from a write cut short by a crash
+        for leftover in self.save_dir.glob(".*.tmp"):
             try:
                 leftover.unlink()
             except OSError:
                 pass
-        cutoff = time.time() - ROOM_TTL_SECONDS
-        for path in sorted(self.save_dir.glob("*.json")):
+        self._delete_expired_files(time.time() - ROOM_TTL_SECONDS)
+
+    def _delete_expired_files(self, cutoff: float) -> None:
+        """Delete saved rooms not written since `cutoff` (every change rewrites a room's file)."""
+        with self._save_lock:
+            for path in self.save_dir.glob("*.json"):
+                if path.stem in self._rooms:
+                    continue
+                try:
+                    if path.stat().st_mtime < cutoff:
+                        path.unlink()
+                except OSError:
+                    pass
+
+    def _load_room(self, code: str) -> Optional[_Room]:
+        """Read a saved room into memory. Unreadable files are moved to quarantine/."""
+        path = self._path(code)
+        if not path.exists():
+            return None
+        try:
+            room = _Room.from_data(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
+            print(f"abaka: unreadable saved game {path.name} moved to quarantine/: {e}", file=sys.stderr)
             try:
-                room = _Room.from_data(json.loads(path.read_text(encoding="utf-8")))
-            except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
-                print(f"abaka: skipped unreadable saved game {path.name}: {e}", file=sys.stderr)
-                continue
-            if room.updated_at < cutoff or room.code != path.stem:
-                continue
-            self._rooms[room.code] = room
-            self._saved_versions[room.code] = room.version
+                (self.save_dir / "quarantine").mkdir(exist_ok=True)
+                os.replace(path, self.save_dir / "quarantine" / path.name)
+            except OSError:
+                pass
+            return None
+        if room.code != code:
+            return None
+        if room.updated_at < time.time() - ROOM_TTL_SECONDS:
+            self._unsave(code)
+            return None
+        self._rooms[code] = room
+        with self._save_lock:
+            self._saved_versions[code] = max(self._saved_versions.get(code, -1), room.version)
+        return room
 
 
 def _distinct(name: str, taken: List[str]) -> str:

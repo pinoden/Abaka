@@ -17,6 +17,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 from html import escape
 from pathlib import Path
 from typing import Optional
@@ -30,7 +31,8 @@ import code_version
 # commit pulled while nobody had the app open would otherwise leave old ones loaded).
 code_version.load_current()
 
-from abaka.rooms import MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code  # noqa: E402
+from abaka.rooms import (  # noqa: E402
+    MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code, within_limit)
 from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
     initialize_session_state, render_game, render_language_switch, render_top_bar, reset_turn_selection)
@@ -38,6 +40,8 @@ from ui_components.rules import rules_md  # noqa: E402
 from ui_components.style import brand_html, chip, inject_global_css  # noqa: E402
 
 POLL_SECONDS = 1.0  # how often a browser checks the room for the other player's moves
+GAMES_PER_SESSION = 10              # a browser may start this many games...
+GAMES_PER_SESSION_WINDOW = 10 * 60  # ...in this many seconds (a guard against scripts)
 
 
 def _save_dir() -> Optional[Path]:
@@ -162,9 +166,7 @@ def _render_home(store: RoomStore) -> None:
                                          use_container_width=True):
                     # Saved like an online game: it gets a code and can be continued from its link.
                     names = [name.strip() or t("Player {i}", i=i) for i, name in enumerate(typed, 1)]
-                    code, token = store.create_local(names)
-                    _enter_room(code, token)
-                    st.rerun()
+                    _start_game(lambda: store.create_local(names))
 
     with online_col:
         with st.container(border=True, key="card-online"):
@@ -174,9 +176,7 @@ def _render_home(store: RoomStore) -> None:
                 name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="create_name")
                 if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
                                          use_container_width=True):
-                    code, token = store.create(name.strip() or t("Player {i}", i=1), players)
-                    _enter_room(code, token)
-                    st.rerun()
+                    _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players))
             st.html(f'<div class="ab-or">{t("or open a game by its code")}</div>')
             with st.form("find_game", border=False):
                 typed = st.text_input(t("Game code"), placeholder=t("e.g. Q47CH"), max_chars=8, key="find_code",
@@ -193,6 +193,27 @@ def _render_home(store: RoomStore) -> None:
     with mid:
         with st.expander(t("How to play"), icon=":material/help:"):
             st.markdown(rules_md())
+
+
+def _start_game(create) -> None:
+    """Create a game (online or same-device) and go to it, within the per-browser limit."""
+    if not _may_start_a_game():
+        st.error(t("You started a lot of games just now. Please wait a few minutes."))
+        return
+    try:
+        code, token = create()
+    except RoomError as e:
+        st.error(error(str(e)))
+        return
+    _enter_room(code, token)
+    st.rerun()
+
+
+def _may_start_a_game() -> bool:
+    ss = st.session_state
+    allowed, ss.games_started = within_limit(ss.get("games_started", []), time.time(),
+                                             GAMES_PER_SESSION, GAMES_PER_SESSION_WINDOW)
+    return allowed
 
 
 def _player_count(key: str) -> int:
