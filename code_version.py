@@ -10,6 +10,10 @@ old modules (2026-11-16: "Start game" failed with a TypeError on the live app).
 abaka_ui calls load_current() at the top of every run: if the .py files of the
 game's packages differ from the code that is loaded, those modules are dropped
 and imported again from disk.
+
+The files' contents decide, not their times. To save reading them on every run,
+load_current() hashes them again only when a file's size or time changed, or
+a minute has passed since it last did.
 """
 
 import hashlib
@@ -17,25 +21,63 @@ import importlib
 import pathlib
 import sys
 import threading
+import time
 
 APP_DIR = pathlib.Path(__file__).resolve().parent
 PACKAGES = ("abaka", "ui_components")
+REHASH_EVERY_SECONDS = 60  # hash the files at least this often, even if sizes and times look the same
 _lock = threading.Lock()
+_last_hash = None  # (sizes and times of the files, their fingerprint, when it was taken)
+
+
+def _files() -> list:
+    return [path for package in PACKAGES for path in sorted((APP_DIR / package).rglob("*.py"))]
 
 
 def fingerprint() -> str:
     """Changes whenever any .py file of the game's packages changes."""
+    return _hash(_files())
+
+
+def _hash(files: list) -> str:
     digest = hashlib.sha1()
-    for package in PACKAGES:
-        for path in sorted((APP_DIR / package).rglob("*.py")):
-            digest.update(path.relative_to(APP_DIR).as_posix().encode() + b"\0")
+    for path in files:
+        digest.update(path.relative_to(APP_DIR).as_posix().encode() + b"\0")
+        try:
             digest.update(path.read_bytes())
+        except FileNotFoundError:  # deleted meanwhile (a checkout under way): the next run sees it
+            pass
     return digest.hexdigest()
+
+
+def _sizes_and_times(files: list) -> tuple:
+    out = []
+    for path in files:
+        try:
+            stat = path.stat()
+            out.append((str(path), stat.st_size, stat.st_mtime_ns))
+        except FileNotFoundError:
+            out.append((str(path), -1, -1))
+    return tuple(out)
+
+
+def current_fingerprint() -> str:
+    """fingerprint(), but read the files only when their sizes or times changed, or once a minute."""
+    global _last_hash
+    files = _files()
+    seen = _sizes_and_times(files)
+    now = time.monotonic()
+    last = _last_hash
+    if last is not None and last[0] == seen and now - last[2] < REHASH_EVERY_SECONDS:
+        return last[1]
+    current = _hash(files)
+    _last_hash = (seen, current, now)
+    return current
 
 
 def load_current() -> bool:
     """Reload the game's modules if their files changed since they were loaded. True if it reloaded."""
-    current = fingerprint()
+    current = current_fingerprint()
     with _lock:
         loaded = sys.modules.get(PACKAGES[0])
         if loaded is not None and getattr(loaded, "code_fingerprint", None) == current:

@@ -12,11 +12,16 @@ change and read back when a store is created, so games survive reloads,
 dropped sessions, code updates and server restarts (as long as the disk does).
 
 This module has no Streamlit dependency so it can be unit-tested directly.
+
+It logs to the "abaka" logger: warnings (a failed save, an unreadable file) and,
+with `report_every`, a stats line per period (the app: once a minute).
 """
 
 from __future__ import annotations
 
+import gc
 import json
+import logging
 import os
 import re
 import secrets
@@ -47,6 +52,8 @@ MAX_ROOMS_IN_MEMORY = 2000            # beyond this, the rooms seen least recent
 SWEEP_EVERY_SECONDS = 60
 DISK_SWEEP_EVERY_SECONDS = 60 * 60    # expired files are deleted this often
 _CODE_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, CODE_LENGTH))
+
+log = logging.getLogger("abaka")
 
 
 class RoomError(ValueError):
@@ -152,11 +159,14 @@ class RoomStore:
     the lock is released (_write), so a slow disk never holds up other games.
     """
 
-    def __init__(self, starting_throw: bool = True, save_dir: Union[str, Path, None] = None) -> None:
+    def __init__(self, starting_throw: bool = True, save_dir: Union[str, Path, None] = None,
+                 report_every: Optional[float] = None) -> None:
         """
         starting_throw: each game opens with the starting throw (lowest total goes first).
         save_dir: keep every room in a JSON file there. Saved rooms are loaded when someone
             opens them, and rooms nobody looks at leave memory (their files stay).
+        report_every: log a stats line this often, in seconds (None: never). It is
+            written by a poll, so a server nobody has open stays quiet.
         """
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
@@ -169,6 +179,13 @@ class RoomStore:
         self._saved_versions: Dict[str, float] = {}
         self._last_sweep = time.time()
         self._last_disk_sweep = 0.0
+        # The stats line: counts since the last one (_counts under self._lock, _saves under
+        # self._save_lock: count, seconds in total, slowest, failures).
+        self.report_every = report_every
+        self._counts: Dict[str, int] = {}
+        self._saves = [0, 0.0, 0.0, 0]
+        self._counted_since = time.time()
+        self._gc_full_runs = _full_collections()
         if self.save_dir is not None:
             self._clean_save_dir()
 
@@ -183,6 +200,7 @@ class RoomStore:
             self._rooms.clear()
         with self._save_lock:
             pass
+        log.info("store retired after a code update; the new store reads the games from disk")
 
     # ----- lobby -----
     def create(self, host_name: str, players: int = 2) -> "tuple[str, str]":
@@ -194,6 +212,7 @@ class RoomStore:
             code = self._new_code()
             room = _Room(code, int(players))
             self._rooms[code] = room
+            self._count("created")
             token = self._seat(room, clean_name(host_name, "Player 1"))
             pending = self._snapshot(room)
         self._write(pending)
@@ -215,6 +234,7 @@ class RoomStore:
             room.tokens = [token] * len(names)  # one browser holds every seat
             room.engine = _new_engine(room, self.starting_throw)
             self._rooms[code] = room
+            self._count("created")
             pending = self._snapshot(room)
         self._write(pending)
         return code, token
@@ -317,12 +337,16 @@ class RoomStore:
     def version(self, code: str) -> int:
         """Changes whenever the room changes; -1 if the room is gone. Cheap to poll."""
         with self._lock:
+            self._count("polls")
             room = self._room(code)
-            return room.version if room else -1
+            version = room.version if room else -1
+        self._report_if_due()
+        return version
 
     def view(self, code: str) -> RoomView:
         """The room as it is now. The engine is shared, not copied: do not change it."""
         with self._lock:
+            self._count("views")
             room = self._get(code)
             return RoomView(room.code, list(room.names), room.engine,
                             room.version, room.games_played, room.capacity, room.local)
@@ -404,8 +428,41 @@ class RoomStore:
             action(engine)
             room.engine = engine
             room.touch()
+            self._count("moves")
             pending = self._snapshot(room)
         self._write(pending)
+
+    def _count(self, what: str, n: int = 1) -> None:
+        """Add to a count for the stats line. Call with self._lock held."""
+        self._counts[what] = self._counts.get(what, 0) + n
+
+    def _report_if_due(self) -> None:
+        """Log the stats line if report_every has passed since the last one (call without the lock)."""
+        if self.report_every is None or time.time() - self._counted_since < self.report_every:
+            return
+        with self._lock:
+            now = time.time()
+            if now - self._counted_since < self.report_every:
+                return  # another thread has just written it
+            counts, self._counts = self._counts, {}
+            seconds, self._counted_since = now - self._counted_since, now
+            rooms = list(self._rooms.values())
+            playing = sum(1 for r in rooms if r.engine is not None and not r.engine.is_game_over())
+            local = sum(1 for r in rooms if r.local)
+        with self._save_lock:
+            (saves, save_seconds, slowest, failed), self._saves = self._saves, [0, 0.0, 0.0, 0]
+        full_runs = _full_collections()
+        gc_runs, self._gc_full_runs = full_runs - self._gc_full_runs, full_runs
+        memory = _memory_mb()
+        log.info(
+            "stats for %.0f s: rooms in memory %d (%d being played, %d on one device); polls %d, "
+            "page views %d, moves %d, new games %d; rooms loaded from disk %d, left memory %d; "
+            "saves %d (%.1f ms on average, slowest %.1f ms, failed %d); full garbage collections %d; "
+            "memory %s",
+            seconds, len(rooms), playing, local, counts.get("polls", 0), counts.get("views", 0),
+            counts.get("moves", 0), counts.get("created", 0), counts.get("loaded", 0),
+            counts.get("left memory", 0), saves, 1000 * save_seconds / saves if saves else 0.0,
+            1000 * slowest, failed, gc_runs, "%.0f MB" % memory if memory is not None else "unknown")
 
     def _get(self, code: str) -> _Room:
         if self._retired:
@@ -474,11 +531,13 @@ class RoomStore:
             finished = room.engine is not None and room.engine.is_game_over()
             if idle > IDLE_IN_MEMORY_SECONDS or (finished and idle > FINISHED_IN_MEMORY_SECONDS):
                 del self._rooms[code]  # still on disk; loaded again when someone opens it
+                self._count("left memory")
         if self.save_dir is not None and len(self._rooms) > MAX_ROOMS_IN_MEMORY:
             # Not the rooms seen in the last minute: their latest write may still be under way.
             quiet = sorted((r.last_seen, c) for c, r in self._rooms.items() if now - r.last_seen > 60)
             for _, code in quiet[:len(self._rooms) - MAX_ROOMS_IN_MEMORY]:
                 del self._rooms[code]
+                self._count("left memory")
         if self.save_dir is not None and (force or now - self._last_disk_sweep > DISK_SWEEP_EVERY_SECONDS):
             self._last_disk_sweep = now
             self._delete_expired_files(cutoff)
@@ -506,6 +565,7 @@ class RoomStore:
             if version <= self._saved_versions.get(code, -1):
                 return  # a newer state of this room is already on disk (or it was closed)
             tmp = None
+            started = time.perf_counter()
             try:
                 self.save_dir.mkdir(parents=True, exist_ok=True)
                 fd, tmp = tempfile.mkstemp(dir=self.save_dir, prefix=f".{code}-", suffix=".tmp")
@@ -513,8 +573,13 @@ class RoomStore:
                     f.write(text)
                 os.replace(tmp, self._path(code))  # atomic: a crash never leaves half a file
                 self._saved_versions[code] = version
+                took = time.perf_counter() - started
+                self._saves[0] += 1
+                self._saves[1] += took
+                self._saves[2] = max(self._saves[2], took)
             except Exception as e:  # noqa: BLE001 - saving must never break a move
-                print(f"abaka: could not save game {code}: {e}", file=sys.stderr)
+                self._saves[3] += 1
+                log.warning("could not save game %s: %s", code, e)
                 if tmp is not None:
                     try:
                         os.unlink(tmp)
@@ -562,7 +627,7 @@ class RoomStore:
         try:
             room = _Room.from_data(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
-            print(f"abaka: unreadable saved game {path.name} moved to quarantine/: {e}", file=sys.stderr)
+            log.warning("unreadable saved game %s moved to quarantine/: %s", path.name, e)
             try:
                 (self.save_dir / "quarantine").mkdir(exist_ok=True)
                 os.replace(path, self.save_dir / "quarantine" / path.name)
@@ -575,9 +640,30 @@ class RoomStore:
             self._unsave(code)
             return None
         self._rooms[code] = room
+        self._count("loaded")
         with self._save_lock:
             self._saved_versions[code] = max(self._saved_versions.get(code, -1), room.version)
         return room
+
+
+def _full_collections() -> int:
+    """How many full (generation 2) garbage collections Python has run in this process."""
+    return gc.get_stats()[-1]["collections"]
+
+
+def _memory_mb() -> Optional[float]:
+    """This process's resident memory in MB (Linux), or its peak where only that is known."""
+    try:
+        with open("/proc/self/statm") as f:
+            return int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 2 ** 20
+    except (OSError, ValueError, IndexError, AttributeError):
+        pass
+    try:
+        import resource
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    except (ImportError, OSError, ValueError):
+        return None
+    return peak / 2 ** 20 if sys.platform == "darwin" else peak / 1024  # bytes on macOS, KB on Linux
 
 
 def _distinct(name: str, taken: List[str]) -> str:

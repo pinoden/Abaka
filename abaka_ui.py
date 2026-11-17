@@ -12,6 +12,7 @@ browsers send moves to it and poll it, so both players see every roll and score
 as it happens.
 """
 
+import logging
 import os
 import socket
 import sys
@@ -46,6 +47,25 @@ POLL_CALM = 3.0    # your own turn (nobody else can move), or the game is over
 POLL_IDLE = 10.0   # a same-device game (only a second device could change it)
 GAMES_PER_SESSION = 10              # a browser may start this many games...
 GAMES_PER_SESSION_WINDOW = 10 * 60  # ...in this many seconds (a guard against scripts)
+MY_GAMES_KEPT = 10   # games a browser remembers for "Continue a game"...
+MY_GAMES_SHOWN = 4   # ...and how many unfinished ones it shows
+STATS_EVERY_SECONDS = 60  # the store logs a stats line this often while pages are open
+
+
+def _log_to_stderr() -> None:
+    """Send the game's log ("abaka": stats line, failed saves) to stderr, which Streamlit
+    Cloud shows under Manage app. Once per process: this script runs on every rerun."""
+    logger = logging.getLogger("abaka")
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+
+
+_log_to_stderr()
 
 
 def _save_dir() -> Optional[Path]:
@@ -96,7 +116,9 @@ def get_store() -> RoomStore:
         if store is None or (type(store) is not RoomStore and _running_current_code()):
             if store is not None:
                 store.retire()
-            store = registry["store"] = RoomStore(save_dir=_save_dir())
+            folder = _save_dir()
+            store = registry["store"] = RoomStore(save_dir=folder, report_every=STATS_EVERY_SECONDS)
+            logging.getLogger("abaka").info("store started; games are saved in %s", folder or "memory only")
         return store
 
 
@@ -248,14 +270,20 @@ def _show_lobby_notice() -> None:
 
 def _render_my_games(store: RoomStore) -> None:
     """Unfinished games this browser played: one tap to continue (they are saved after every move)."""
-    games = []
-    for code in st.session_state.my_games:
-        if not store.exists(code):
+    ss = st.session_state
+    games, kept = [], []
+    for code in ss.my_games:
+        if len(games) == MY_GAMES_SHOWN:
+            kept.append(code)  # not opened now: each look can load a game from disk
             continue
-        view = store.view(code)
-        if view.started and view.engine.is_game_over():
-            continue
-        games.append(view)
+        try:
+            view = store.view(code)
+        except RoomError:
+            continue  # the game is gone: forget it
+        kept.append(code)  # a finished game is kept: someone may start the next one
+        if not (view.started and view.engine.is_game_over()):
+            games.append(view)
+    ss.my_games = kept
     if not games:
         return
     _, mid, _ = st.columns([0.4, 10, 0.4])
@@ -264,7 +292,7 @@ def _render_my_games(store: RoomStore) -> None:
             st.html(f'<div class="ab-card-title">{t("Continue a game")}</div>'
                     f'<div class="ab-card-sub">{t("Your games are saved after every move.")}</div>')
             with st.container(horizontal=True, key="my-games-row"):
-                for view in games[:4]:
+                for view in games:
                     kind = t("Same device") if view.local else t("Online")
                     label = t("{code} · {kind} · {names}", code=view.code, kind=kind,
                               names=", ".join(md(n) for n in view.names))
@@ -526,7 +554,7 @@ def _enter_room(code: str, token: str) -> None:
     # Only the room code goes in the URL, so it is always safe to share. It also
     # brings the game back after a reload or a dropped session.
     st.query_params["room"] = code
-    ss.my_games = [code] + [c for c in ss.get("my_games", []) if c != code]
+    ss.my_games = ([code] + [c for c in ss.get("my_games", []) if c != code])[:MY_GAMES_KEPT]
 
 
 def _leave_room(notice: str = None, keep_link: bool = False, info: str = None) -> None:
