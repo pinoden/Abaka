@@ -64,7 +64,8 @@ class TestLostGameNotices(unittest.TestCase):
         self.assertEqual(len(warnings), 1, warnings)
         self.assertIn("opened in another tab", warnings[0])
         self.assertIsNone(old_tab.session_state["room_code"])
-        self.assertEqual(old_tab.query_params["room"], [code])
+        room = old_tab.query_params["room"]  # a list in AppTest 1.48, a string in later versions
+        self.assertEqual(room[0] if isinstance(room, list) else room, code)
         self.assertIsNone(old_tab.session_state["lobby_notice"])  # shown once, not again later
 
         # A tab whose game is gone (expired, server restarted) goes home with a notice.

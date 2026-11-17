@@ -1,41 +1,51 @@
 # How to deploy Abaka
 
 Hosting the app on Streamlit Community Cloud (free) gives you one public
-address that both players can open, which is all online play needs.
+address that every player can open, which is all online play needs. The live
+app is https://mipt-abaka.streamlit.app/.
 
 ## 1. Put the code on GitHub
 
 The app lives at https://github.com/pinoden/Abaka. Streamlit deploys straight
-from a branch of that repository, so make sure the branch you want to deploy
-is pushed.
+from a branch of that repository (`main` for the live app).
 
 The repository must contain, at the top level:
 
 ```
 abaka_ui.py        main entry point
-requirements.txt   streamlit and Pillow
-abaka/             game logic and online rooms
-ui_components/     UI
+code_version.py    reloads the game modules after an update
+requirements.txt   Streamlit, pinned to one version
+.streamlit/        server settings and colour theme
+abaka/             the game and its rooms
+ui_components/     the interface
 ```
 
 ## 2. Deploy
 
 1. Go to https://share.streamlit.io and sign in with your GitHub account.
 2. Click **Create app**, then choose to deploy from GitHub.
-3. Repository: `pinoden/Abaka`. Branch: the branch to deploy (usually `main`).
-   Main file path: `abaka_ui.py`.
-4. Click **Deploy**. After a minute or so you get an address such as
+3. Repository: `pinoden/Abaka`. Branch: `main`. Main file path: `abaka_ui.py`.
+4. Under **Advanced settings**, pick Python 3.11 or newer; the pinned Streamlit
+   needs it. The live app runs Python 3.13.
+5. Click **Deploy**. After a minute or so you get an address such as
    `https://your-app-name.streamlit.app`.
+
+A merge into the deployed branch updates the running app, usually within a few
+minutes, and games in progress carry on. A change to `requirements.txt` makes
+Streamlit install the packages again and restart the app.
 
 ## 3. Play
 
-Open the address, choose **Online (2 players)**, create a game and send your
-friend the invite link the app shows. See `README_MULTIPLAYER.md`.
+Open the address, create a game in the **Online** card and send your friends
+the invite link the app shows. See `README_MULTIPLAYER.md`.
 
 ## Things to know
 
-- Games are kept in the app's memory. If the app restarts, goes to sleep
-  after inactivity, or is redeployed, games in progress are lost.
+- Games are saved on the server's disk, in `~/.abaka/games` or the folder named
+  by `ABAKA_SAVE_DIR`. They survive updates and restarts of the app. On
+  Streamlit Community Cloud they probably do not survive a reboot from the
+  dashboard or the app going to sleep after inactivity, because those start
+  from an empty disk.
 - The app must run as a single process (Streamlit Community Cloud does this).
   If you host it elsewhere behind several workers, players may land on
   different workers and not find each other's games.

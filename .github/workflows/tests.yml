@@ -1,0 +1,42 @@
+# Tests on every pull request and on every push to main.
+# - app: Python 3.13 with the Streamlit pinned in requirements.txt, as on Streamlit Cloud.
+# - engine-py38: the engine must keep working on Python 3.8 (CLAUDE.md, Rules for
+#   changes). Streamlit is not installed there, so the app tests are skipped.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App on Python 3.13 (as on Streamlit Cloud)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Random complete games, with the scoreboard
+        run: python tools/simulate.py 40 10 --board
+
+  engine-py38:
+    name: Engine on Python 3.8
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: python:3.8-slim
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tests (those that need Streamlit are skipped)
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Random complete games
+        run: python tools/simulate.py 40 10
