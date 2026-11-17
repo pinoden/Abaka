@@ -214,12 +214,12 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 
 ## Backlog
 
-Nothing open. Requests 1-4 came from the owner after deploying (2026-11-15)
-and were merged in PR #13; request 5 (2026-11-16) was merged in PR #18 and
-went live with PR #19; request 6 (2026-11-16, reversing request 3) was
-merged in PR #20; requests 7 and 8 (2026-11-16) were merged in PR #21;
-request 9 (2026-11-16) was merged in PR #22; request 10 (2026-11-16) is in
-PR #24.
+Open: item 11, the scale-up plan (in progress). Requests 1-4 came from the
+owner after deploying (2026-11-15) and were merged in PR #13; request 5
+(2026-11-16) was merged in PR #18 and went live with PR #19; request 6
+(2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
+(2026-11-16) were merged in PR #21; request 9 (2026-11-16) was merged in
+PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 1. **Highlight the last move.** Done. The cell written by the most recent
    move, by any player, is outlined in orange, with a "Last move: ..." line
@@ -305,6 +305,98 @@ PR #24.
     - the preview crosses out both bonus cells;
     - the rules say both bonus cells are crossed out at once.
     > "Зачеркивание какой-то комбинации (не из школы) точно так же лишает бонуса по столбцу"
+
+11. **Scale-up plan: many games in parallel.** In progress.
+    - Source: the architecture review of 2026-11-16 (`docs/ARCHITECTURE_REVIEW.md`,
+      with measurements and file:line).
+    - Work goes stage by stage, one PR per step. Tick a step here when its
+      PR is merged, with the PR number.
+    - Effort scale: S is up to 2 days, M is 1-2 weeks, L is 3-6 weeks.
+    > "я хочу чтобы ты заустил агента в роли senior architect и перебрал весь проект целиком с точки зрения оптимальности и качества сборки для потенциально бОльшего проекта с несколькими партиями люде играющих параллельно"
+    >
+    > "Add this plan into md file and let's keep going"
+
+    **Stage 0: stabilize (S, no new services or accounts)**
+
+    - [ ] 0.1 Config: `[runner] postScriptGC = false` (Streamlit's full
+      garbage collection after every run, polls included) and
+      `[browser] gatherUsageStats = false`.
+    - [ ] 0.2 Measurement tools in the repo (opt-in, under Commands):
+      - `tools/loadtest.py`: simulated browsers over websockets; reports
+        server CPU, polls served and poll latency;
+      - `tools/simulate.py`: random complete games with invariant checks.
+    - [ ] 0.3 Cheap reads and trial moves:
+      - `GameEngine.clone()` instead of `deepcopy` in `_act` and
+        `score_options`;
+      - `view()` hands out the shared copy-on-write snapshot;
+      - the move list is cached per room version;
+      - a test proves rendering never changes the snapshot.
+    - [ ] 0.4 Saving outside the global lock: serialize under the lock and
+      write after it; a unique temp file per write; never overwrite a newer
+      version.
+    - [ ] 0.5 Retire old stores after a code update: the old store stops
+      answering, its pages move to the new code, and its rooms are freed.
+    - [ ] 0.6 Room lifecycle:
+      - finished and idle rooms leave memory and are loaded from disk on
+        demand;
+      - expired save files are deleted and unreadable ones quarantined;
+      - caps on rooms in memory and on room creation per session.
+    - [ ] 0.7 Fewer reruns:
+      - adaptive polling (1 s only while another player is acting);
+      - `on_click` callbacks instead of `st.rerun()` after actions.
+    - [ ] 0.8 Player names cannot inject Markdown (captions, toasts, button
+      labels).
+    - [ ] 0.9 Build:
+      - pin Streamlit;
+      - GitHub Actions CI: tests on the deploy Python, and engine tests on
+        3.8;
+      - the legacy test skipped with a reason;
+      - stray requirements files removed;
+      - the READMEs brought up to date.
+    - [ ] 0.10 Monitoring and small costs:
+      - `logging`, plus a stats line once a minute (rooms in memory, polls,
+        save time, GC, memory);
+      - a cap on the "Continue a game" list;
+      - a module-reload check that compares file stats before hashing.
+
+    **Stage 1: harden the single process (M)**
+
+    - [ ] A `RoomRepository` interface (load, save with an expected version,
+      delete, scan), with today's files behind it.
+    - [ ] Seat protection: personal per-seat rejoin links, with the key
+      stored hashed. Tap-to-rejoin only when the seat's holder has gone
+      quiet. An optional PIN for same-device games. The owner chooses the
+      exact scheme.
+    - [ ] Presence (who is online), rate limits, and longer game codes for
+      new games.
+    - [ ] A load-test baseline recorded for every release.
+
+    **Stage 2: durable shared store (M)**
+
+    - [ ] Postgres or Redis behind the repository, with a version check on
+      every write and change notifications.
+    - [ ] A one-time import of the JSON files, one release writing to both,
+      then reads switch over behind a flag.
+    - Games then survive Cloud sleeping and reboots. Needs the owner's
+      database account (Supabase or Neon for Postgres, Upstash for Redis)
+      and its URL in Streamlit secrets.
+
+    **Stage 3: scale out (M or L), only if hundreds of games become a target**
+
+    - 3a: several Streamlit replicas on paid hosting, with sticky sessions and
+      store notifications; or
+    - 3b: a game server (FastAPI + WebSockets, reusing `abaka/` unchanged)
+      with a thin client. Both UIs share the store during the migration.
+
+    **Owner decisions still open**
+
+    - The Python policy: keep 3.8 for the engine (today's rule), or move to
+      3.10+.
+    - Whether the CLI and `main.py` stay.
+    - How rejoining is protected.
+    - The limits: rooms, creations per session, how long finished games are
+      kept.
+    - The database (Stage 2) and the hosting budget (Stage 3).
 
 ## Status (2026-11-16)
 
@@ -451,45 +543,13 @@ From the architecture review (details and file:line in
 - **Build:** Streamlit is unpinned (Cloud runs a newer one than the tests),
   there is no CI, and expired or unreadable save files are never deleted.
 
-### Roadmap (from the architecture review)
+### Roadmap
 
-Effort scale: S is up to 2 days, M is 1-2 weeks, L is 3-6 weeks.
+The scale-up plan is Backlog item 11, as a checklist.
 
-- **Stage 0, stabilize (S, about 2-4 days, no accounts):**
-  - `[runner] postScriptGC = false` and `[browser] gatherUsageStats = false`;
-  - retire old stores after code updates;
-  - `GameEngine.clone()` instead of `deepcopy` (about 20 times faster), a
-    `view()` without copying, and a cached move list;
-  - write files outside the lock;
-  - unload finished and idle rooms from memory, delete expired files, and cap
-    room creation;
-  - adaptive polling and `on_click` callbacks;
-  - escape names for Markdown;
-  - pin Streamlit, add CI (GitHub Actions), remove dead files, fix the
-    READMEs, add logging and a stats line.
-- **Stage 1, harden the single process (M):**
-  - a `RoomRepository` interface;
-  - personal per-seat rejoin links (or PIN or host approval);
-  - presence;
-  - rate limits;
-  - a load-test baseline.
-- **Stage 2, durable shared store (M):** Postgres or Redis behind the
-  repository, so games survive Cloud sleep and reboots. The owner must create
-  the database account and put the URL in Streamlit secrets.
-- **Stage 3, scale out (M or L), only if hundreds of games become a target:**
-  - several Streamlit replicas on paid hosting with sticky sessions and store
-    notifications; or
-  - a separate game server (FastAPI + WebSockets, reusing `abaka/`) with a
-    thin client.
-- **Owner decisions needed:**
-  - the Python policy: keep 3.8 for the engine, or move to 3.10+;
-  - whether the CLI and the old docs stay;
-  - how rejoining should be protected;
-  - the limits;
-  - for Stage 2, the database; for Stage 3, hosting and a budget.
-- **Other ideas:**
-  - a dark theme (the scoreboard CSS colours would need to follow the theme);
-  - showing the opponent which dice the active player has picked.
+Other ideas, not planned:
+- a dark theme (the scoreboard CSS colours would need to follow the theme);
+- showing the opponent which dice the active player has picked.
 
 ## Decision log
 
