@@ -33,13 +33,17 @@ code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
     MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code, within_limit)
+from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
     initialize_session_state, render_game, render_language_switch, render_top_bar, reset_turn_selection)
 from ui_components.rules import rules_md  # noqa: E402
 from ui_components.style import brand_html, chip, inject_global_css  # noqa: E402
 
-POLL_SECONDS = 1.0  # how often a browser checks the room for the other player's moves
+# How often a page checks its room for changes (other players' moves):
+POLL_FAST = 1.0    # someone else is acting, or players are joining
+POLL_CALM = 3.0    # your own turn (nobody else can move), or the game is over
+POLL_IDLE = 10.0   # a same-device game (only a second device could change it)
 GAMES_PER_SESSION = 10              # a browser may start this many games...
 GAMES_PER_SESSION_WINDOW = 10 * 60  # ...in this many seconds (a guard against scripts)
 
@@ -295,7 +299,7 @@ def _render_online(store: RoomStore) -> None:
     view = store.view(code)
     if view.local:
         _render_local_game(store, view, token)
-        _watch_room(code, view.version)  # in step if the game is open on two devices
+        _watch_room(code, view.version, POLL_IDLE)  # in step if the game is open on two devices
         return
     status = chip(t("Online · {code}", code=code), "accent")
 
@@ -309,7 +313,7 @@ def _render_online(store: RoomStore) -> None:
         _render_waiting_room(store, view, seat, token, leave_waiting_room)
         ss.was_waiting = True
     else:
-        engine = RoomEngine(store, code, token, view.engine)
+        engine = RoomEngine(get_store, code, token, view.engine, view.version)
         my_turn = not view.engine.is_game_over() and view.engine.current == seat
         # Before the first round it is a turn to throw for who goes first.
         your_turn = t("Your throw!") if view.engine.choosing_first_player else t("Your turn!")
@@ -332,7 +336,10 @@ def _render_online(store: RoomStore) -> None:
         render_game(engine, me=seat, status_html=status, on_play_again=rematch,
                     on_leave=_leave_room, leave_label=t("Leave game"))
 
-    _watch_room(code, view.version)
+    # Check often only while someone else can change the room: players joining, or another
+    # player's turn. On your own turn, or once the game is over, nobody else moves.
+    others_can_act = not view.started or not (my_turn or view.engine.is_game_over())
+    _watch_room(code, view.version, POLL_FAST if others_can_act else POLL_CALM)
 
 
 def _render_local_game(store: RoomStore, view, token: str) -> None:
@@ -350,16 +357,34 @@ def _render_local_game(store: RoomStore, view, token: str) -> None:
         _leave_room(info=t("Game {code} is saved. To continue it, open it from this page or enter the code {code}.",
                            code=code) if unfinished else None)
 
-    render_game(RoomEngine(store, code, token, view.engine), me=None,
+    render_game(RoomEngine(get_store, code, token, view.engine, view.version), me=None,
                 status_html=chip(t("Same device · {code}", code=code)), on_play_again=rematch,
                 on_leave=leave, leave_label=t("Leave game"))
 
 
-@st.fragment(run_every=POLL_SECONDS)
-def _watch_room(code: str, seen_version: int) -> None:
-    """Re-draw the page as soon as the shared room changes (the other player moved)."""
+def _watch_room(code: str, seen_version: int, every: float) -> None:
+    """Re-draw the page as soon as the shared room changes, checking every `every` seconds."""
+    {POLL_FAST: _watch_fast, POLL_CALM: _watch_calm, POLL_IDLE: _watch_idle}[every](code, seen_version)
+
+
+def _check_room(code: str, seen_version: int) -> None:
     if get_store().version(code) != seen_version:
         st.rerun()
+
+
+@st.fragment(run_every=POLL_FAST)
+def _watch_fast(code: str, seen_version: int) -> None:
+    _check_room(code, seen_version)
+
+
+@st.fragment(run_every=POLL_CALM)
+def _watch_calm(code: str, seen_version: int) -> None:
+    _check_room(code, seen_version)
+
+
+@st.fragment(run_every=POLL_IDLE)
+def _watch_idle(code: str, seen_version: int) -> None:
+    _check_room(code, seen_version)
 
 
 def _announce_departures(view, seat: int) -> None:
@@ -497,6 +522,7 @@ def _enter_room(code: str, token: str) -> None:
     ss.was_waiting = False
     ss.waiting_names = None
     reset_turn_selection()
+    forget_action_error()
     # Only the room code goes in the URL, so it is always safe to share. It also
     # brings the game back after a reload or a dropped session.
     st.query_params["room"] = code
@@ -510,6 +536,7 @@ def _leave_room(notice: str = None, keep_link: bool = False, info: str = None) -
     ss.lobby_notice = notice
     ss.lobby_info = info
     reset_turn_selection()
+    forget_action_error()
     if not keep_link and "room" in st.query_params:
         del st.query_params["room"]
 

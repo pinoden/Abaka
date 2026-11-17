@@ -1,8 +1,9 @@
+import tempfile
 import unittest
 
 from abaka.engine import GameEngine
 from abaka.models import Category, Die
-from abaka.rooms import RoomEngine, RoomError, RoomStore
+from abaka.rooms import OutdatedPage, RoomEngine, RoomError, RoomStore
 
 
 def started_room():
@@ -319,6 +320,49 @@ class TestEngineTurnEnd(unittest.TestCase):
         g.record_score(Category.SUM, 0)
         self.assertEqual(g.dice, [])
         self.assertEqual(g.current, 1)
+
+
+class TestOutdatedPages(unittest.TestCase):
+    """A page's buttons make their move when the next click arrives (stage 0.7)."""
+
+    def page(self, store, code, token):
+        view = store.view(code)
+        return RoomEngine(store, code, token, view.engine, view.version)
+
+    def test_a_double_tap_makes_one_move(self):
+        store = RoomStore()
+        code, key = store.create_local(["Ann", "Bob"])  # no turn check on the same device
+        page = self.page(store, code, key)
+        page.throw_for_start()  # Ann's throw
+        with self.assertRaises(OutdatedPage):
+            page.throw_for_start()  # the second tap must not throw for Bob
+        self.assertEqual(len(store.view(code).engine.starting_throws), 1)
+        self.page(store, code, key).throw_for_start()  # the redrawn page can
+        self.assertEqual(len(store.view(code).engine.starting_throws), 2)
+
+    def test_a_page_drawn_before_the_latest_change_is_refused(self):
+        store, code, host, _ = started_room()
+        host_page = self.page(store, code, host)
+        store.roll(code, host)  # from the host's other tab
+        with self.assertRaises(OutdatedPage):  # rather than "You have already rolled this turn."
+            host_page.start_turn()
+        with self.assertRaises(OutdatedPage):
+            host_page.reroll([0, 1, 2, 3, 4])
+        self.assertEqual(store.view(code).engine.rolls_left, 2)
+        self.page(store, code, host).reroll([0])  # the redrawn page can
+        self.assertEqual(store.view(code).engine.rolls_left, 1)
+
+    def test_the_move_goes_to_the_store_that_is_current_when_it_is_made(self):
+        with tempfile.TemporaryDirectory() as folder:
+            stores = [RoomStore(save_dir=folder)]
+            code, key = stores[0].create_local(["Ann", "Bob"])
+            view = stores[0].view(code)
+            page = RoomEngine(lambda: stores[-1], code, key, view.engine, view.version)
+            stores[0].retire()  # a code update replaces the store between drawing and the click
+            stores.append(RoomStore(save_dir=folder))
+            page.throw_for_start()
+            self.assertEqual(stores[-1].version(code), view.version + 1)
+            self.assertEqual(len(stores[-1].view(code).engine.starting_throws), 1)
 
 
 if __name__ == "__main__":

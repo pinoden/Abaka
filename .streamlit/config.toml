@@ -7,10 +7,16 @@ port = 8501
 # app switched, tab in the background), instead of Streamlit's 2 minutes, so a
 # player who comes back finds the same page. Games are also saved to disk.
 disconnectedSessionTTL = 21600
+# Ping each open page every 30 s to keep its connection alive. That is
+# Streamlit's default with Tornado 6.5 or newer (as on Streamlit Cloud); with an
+# older Tornado it pings every second, which cost 8% of a CPU core for 100 open
+# pages that did nothing else (tools/loadtest.py).
+websocketPingInterval = 30
 
 [runner]
 # No full garbage collection after every script run. Streamlit does one by
-# default, and every browser's once-a-second poll is a script run, so it made
+# default, and every page's poll (once a second while another player acts)
+# is a script run, so it made
 # each poll cost 25-50 ms of CPU. With 50 browsers: 86% CPU and polls going
 # unanswered with it, 18% without (tools/loadtest.py). Python's own garbage
 # collector still runs as usual.

@@ -8,7 +8,8 @@ so it stays clickable and keyboard-accessible.
 import streamlit as st
 
 from abaka.engine import GameEngine
-from ui_components.i18n import error, reroll_dice, rerolls_left, t
+from ui_components.actions import reroll_all, reroll_picked
+from ui_components.i18n import reroll_dice, rerolls_left, t
 from ui_components.style import ACCENT, die_uri
 
 MAX_ROLLS = 3
@@ -92,19 +93,13 @@ def render_reroll(engine: GameEngine) -> None:
     if n == 0:
         st.caption(t("Tap the dice you want to roll again ({left} left), or choose a move below.", left=left))
 
-    which = None
+    # The moves run in on_click callbacks (ui_components/actions.py): one script run per move.
+    # A button whose label and key stay the same after its move would hand a second, fast tap
+    # the next page's move, so "Reroll all" has the rerolls left in its key ("Reroll 2 dice"
+    # becomes "Reroll picked" after its reroll anyway).
     with st.container(horizontal=True, key="reroll-row"):
         label = t("Reroll picked") if n == 0 else reroll_dice(n)
-        if st.button(label, key="reroll", icon=":material/refresh:", disabled=n == 0,
-                     type="primary" if n else "secondary", width="stretch"):
-            which = sorted(ss.selected_dice)
-        if st.button(t("Reroll all"), key="reroll-all", icon=":material/casino:", width="stretch"):
-            which = list(range(len(engine.dice)))
-    if which is not None:
-        try:
-            engine.reroll(which)
-        except (ValueError, RuntimeError, IndexError) as e:
-            st.error(error(str(e)))
-        else:
-            ss.selected_dice = set()
-            st.rerun()
+        st.button(label, key="reroll", icon=":material/refresh:", disabled=n == 0,
+                  type="primary" if n else "secondary", width="stretch", on_click=reroll_picked, args=(engine,))
+        st.button(t("Reroll all"), key=f"reroll-all-{engine.rolls_left}", icon=":material/casino:", width="stretch",
+                  on_click=reroll_all, args=(engine,))

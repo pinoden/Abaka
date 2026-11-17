@@ -93,6 +93,7 @@ _ERRORS_RU = {
     "This game is already full.": "Эта игра уже заполнена.",
     "The server is busy right now. Please try again later.": "Сервер сейчас занят. Попробуйте позже.",
     "The app was just updated. Please try again.": "Приложение только что обновилось. Попробуйте ещё раз.",
+    "This page was out of date, so the move was not made.": "Страница устарела, поэтому ход не сделан.",
     "Only the player who created the game can start it.": "Начать игру может только тот, кто её создал.",
     "The game has already started.": "Игра уже началась.",
     "Wait until at least one more player has joined.": "Дождитесь, пока подключится хотя бы ещё один игрок.",
