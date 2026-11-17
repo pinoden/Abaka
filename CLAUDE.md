@@ -62,7 +62,7 @@ Python + Streamlit.
 | `abaka/engine.py` | `GameEngine`: turn flow (`start_turn`, `reroll`, `record_score`, `record_cross`) |
 | `abaka/player.py` | `PlayerState`: score table, school balance, final score |
 | `abaka/scoring.py`, `school.py`, `bonus.py` | Combination scoring, school balance, row and column bonuses |
-| `abaka/rooms.py` | Every game: `RoomStore` (online and same-device rooms, saved to disk) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
+| `abaka/rooms.py` | Every game: `RoomStore` (online and same-device rooms, saved to disk, stats line) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
 | `abaka/saving.py` | `GameEngine` <-> plain JSON data (`engine_to_data`, `engine_from_data`) for saved games |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
 | `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
@@ -117,6 +117,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   loaded code (`abaka.code_fingerprint`), drops those modules so they are
   imported again from disk. Tests that patch modules before running the app
   call `code_version.mark_current()` first.
+  - The contents decide, but the files are read again only when a size or a
+    file time changed, or a minute has passed (`current_fingerprint`): 0.5
+    instead of 2.5 ms per full run.
 - A room has a 5-character code, a `capacity` of 2 to 5 players chosen by the
   creator (`rooms.MIN_PLAYERS`..`MAX_PLAYERS`), seats in join order (each a
   name plus a secret token; seat 0 is the creator) and one `GameEngine`,
@@ -169,8 +172,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   - Loading happens at startup and after every code update, so updates and
     restarts no longer end games.
   - `save_dir` is `$ABAKA_SAVE_DIR` (empty: no saving; tests use this) or
-    `~/.abaka/games` (or a temp folder). A failed write is printed and play
-    goes on.
+    `~/.abaka/games` (or a temp folder). A failed write is logged as a
+    warning and play goes on.
 - Room lifecycle, with a save folder (`RoomStore._sweep`, at most once a minute
   when a room is created):
   - a room no page has looked at for 30 minutes (a finished game: 10) leaves
@@ -188,6 +191,16 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   refused past the cap. One browser may start 10 games in 10 minutes
   (`abaka_ui.GAMES_PER_SESSION`, `rooms.within_limit`). All limits are
   constants at the top of `abaka/rooms.py` and `abaka_ui.py`.
+- Monitoring: the game logs to the `abaka` logger, and the app sends it to
+  stderr (`abaka_ui._log_to_stderr`; on Cloud: Manage app, then the logs).
+  - The app's store writes a stats line once a minute while pages poll
+    (`RoomStore(report_every=60)`). It gives rooms in memory (being played,
+    on one device), polls, page views, moves, new games, rooms loaded from
+    disk and leaving memory, saves (count, average and slowest time,
+    failures), full garbage collections, and memory (resident on Linux, the
+    peak elsewhere).
+  - Without `report_every` (tests, tools) there is no stats line. Failed
+    saves and unreadable files are warnings.
 - `.streamlit/config.toml` keeps a disconnected session for 6 hours
   (`server.disconnectedSessionTTL = 21600`, Streamlit's default is 2
   minutes), so a phone that was locked for a while comes back to the same
@@ -221,7 +234,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   - Widget values stay English (the Score / Cross out switch, keys); only
     their labels are translated.
 - Home: "Continue a game" lists the unfinished games this browser played
-  (`ss.my_games`). "Open game" takes a code for both joining and continuing.
+  (`ss.my_games`): it remembers the newest 10 (`MY_GAMES_KEPT`) and shows up
+  to 4 (`MY_GAMES_SHOWN`). It opens no game beyond the 4 it shows, since each
+  can be a read from disk, and it forgets games that no longer exist. "Open game" takes a code for both joining and continuing.
   Leaving a same-device game shows "Game CODE is saved..." (`ss.lobby_info`).
 - Widgets are styled through the `st-key-<key>` class Streamlit adds to keyed
   elements. Dice are buttons keyed `die-0` to `die-4`; containers keyed
@@ -473,11 +488,17 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         `abaka/ui_components/requirements.txt` are removed.
       - README.md, README_MULTIPLAYER.md, DEPLOYMENT_GUIDE.md and
         ui_components/README.md describe the app as it is now.
-    - [ ] 0.10 Monitoring and small costs:
-      - `logging`, plus a stats line once a minute (rooms in memory, polls,
-        save time, GC, memory);
-      - a cap on the "Continue a game" list;
-      - a module-reload check that compares file stats before hashing.
+    - [x] 0.10 Monitoring and small costs. PR #33.
+      - `logging` (the `abaka` logger, to stderr) and a stats line once a
+        minute (see Online play, Monitoring). Checked on a local server: one
+        line a minute, with the counts of the browser checks it served.
+      - "Continue a game" remembers at most 10 games, and opens only the
+        games it shows (it used to look at every game the browser ever
+        played, loading each from disk, on every view of the home page).
+      - The module-reload check reads the files only when their sizes or
+        times changed, or once a minute.
+      - Load test, 100 pages polling every second, back to back: 27-29% CPU
+        on the branch, 30-31% on `main`.
 
     **Stage 1: harden the single process (M)**
 
@@ -524,7 +545,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   the role of senior architect, reviewed the whole project for running many
   games in parallel. The full report is in `docs/ARCHITECTURE_REVIEW.md`:
   verdict, measurements, findings with file:line, quick wins and a staged
-  roadmap. Its plan is Backlog item 11; Stage 0 is nearly done.
+  roadmap. Its plan is Backlog item 11; Stage 0 is done (PR #27 to #33).
+  Stages 1-3 wait for the owner's decisions listed there.
 - **Fewer reruns (Stage 0.7):** merged in PR #31, live 16 s later. Checked on
   the live app in headless Chromium:
   - a same-device page polled twice in 21 s;
@@ -557,8 +579,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 136 pass and 4 are skipped;
-  on 3.8, 122 pass and 18 are skipped. CI runs them on 3.13 with Streamlit
+- **Tests:** on Python 3.9 with Streamlit 1.48, 143 pass and 4 are skipped;
+  on 3.8, 127 pass and 20 are skipped. CI runs them on 3.13 with Streamlit
   1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
@@ -570,7 +592,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
-  rooms, rematch), 4 module-reload tests (`test_code_version.py`), 11 older
+  rooms, rematch), 5 module-reload tests (`test_code_version.py`), 6
+  monitoring tests (`test_monitoring.py`: the stats line, failed saves, the
+  "Continue a game" list), 11 older
   rule tests, the original engine's 15 tests (`test_abaka_engine.py`, 4 of
   them skipped because they expect older rules), 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
   and their preview) and 7 app tests (`test_ui_notices.py`,
@@ -695,6 +719,21 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-17: Stage 0.10, monitoring and small costs (PR #33)**
+
+- The stats line comes from the store, because the store sees every poll,
+  view, move and save. It is written by a poll once the minute is up, so it
+  needs no timer thread, and a server nobody has open writes nothing.
+- Only the app asks for it (`report_every`), and only the app attaches a
+  handler: the `abaka` package configures no logging of its own.
+- Memory is the resident size from `/proc` on Linux (Cloud). Elsewhere only
+  the peak is available without extra packages.
+- "Continue a game" keeps finished games in the list (another player may
+  start the next game in that room) but forgets games that no longer exist.
+- The module-reload check still compares contents, because the first fix
+  chose contents over file times (2026-11-16). It reads them again at least
+  once a minute, so even a change that kept every size and time is picked up.
 
 **2026-11-16: Stage 0.9, build (PR #32)**
 

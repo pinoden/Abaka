@@ -70,6 +70,35 @@ class TestFingerprint(unittest.TestCase):
                 (root / "abaka" / "new.py").write_text("")
                 self.assertNotEqual(code_version.fingerprint(), second)
 
+    def test_files_are_read_again_only_when_they_change_or_a_minute_passed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for package in code_version.PACKAGES:
+                (root / package).mkdir()
+                (root / package / "a.py").write_text("x = 1\n")
+            clock = [1000.0]
+            hashes = []
+            real_hash = code_version._hash
+
+            def counted_hash(files):
+                hashes.append(1)
+                return real_hash(files)
+
+            with mock.patch.object(code_version, "APP_DIR", root), \
+                    mock.patch.object(code_version, "_hash", counted_hash), \
+                    mock.patch.object(code_version.time, "monotonic", lambda: clock[0]):
+                first = code_version.current_fingerprint()
+                self.assertEqual(code_version.current_fingerprint(), first)
+                self.assertEqual(len(hashes), 1)  # nothing changed: the files were not read again
+                (root / "abaka" / "a.py").write_text("x = 22\n")  # another size
+                second = code_version.current_fingerprint()
+                self.assertNotEqual(second, first)
+                self.assertEqual(second, real_hash(code_version._files()))
+                self.assertEqual(len(hashes), 2)
+                clock[0] += code_version.REHASH_EVERY_SECONDS + 1
+                self.assertEqual(code_version.current_fingerprint(), second)
+                self.assertEqual(len(hashes), 3)  # a minute later: read again anyway
+
 
 if __name__ == "__main__":
     unittest.main()
