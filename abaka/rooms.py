@@ -23,6 +23,7 @@ import sys
 import tempfile
 import threading
 import time
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
@@ -44,7 +45,10 @@ class RoomError(ValueError):
 
 
 def clean_name(name: str, fallback: str) -> str:
-    name = " ".join((name or "").split())[:MAX_NAME_LENGTH]
+    """Spaces collapsed, at most MAX_NAME_LENGTH characters, no control or invisible format
+    characters (such as right-to-left overrides); `fallback` if nothing is left."""
+    visible = "".join(ch for ch in (name or "") if unicodedata.category(ch) not in ("Cc", "Cf"))
+    name = " ".join(visible.split())[:MAX_NAME_LENGTH]
     return name or fallback
 
 

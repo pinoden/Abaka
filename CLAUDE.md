@@ -225,8 +225,12 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - Engine code must keep working on Python 3.8 (no `X | None` at runtime).
 - Every new text shown to players goes through `t("...")` and gets a Russian
   version in `ui_components/i18n.py`; `tests/test_i18n.py` fails otherwise.
-- Player names reach other players' browsers. `scoreboard.py` and other
-  modules build raw HTML, so names must go through `html.escape`.
+- Player names reach other players' browsers. In raw HTML (`st.html`,
+  `scoreboard.py`) names go through `html.escape`. In places Streamlit renders
+  as Markdown (captions, toasts, button labels) they go through `i18n.md()`:
+  backslash escapes, plus a zero-width space after ":", "." and "@" because
+  captions and toasts turn bare addresses into links even when escaped.
+  `rooms.clean_name` also removes control and invisible format characters.
 - Every new online action goes through `RoomStore._act`, so it gets the turn
   check, the lock and the version bump.
 - The game rules are the owner's own. Do not change them, or copy rule details
@@ -381,8 +385,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - [ ] 0.7 Fewer reruns:
       - adaptive polling (1 s only while another player is acting);
       - `on_click` callbacks instead of `st.rerun()` after actions.
-    - [ ] 0.8 Player names cannot inject Markdown (captions, toasts, button
-      labels).
+    - [x] 0.8 Player names cannot inject Markdown. PR #29.
+      - `i18n.md()` is used in the 7 Markdown places that show names.
+      - `clean_name` drops control and invisible characters.
+      - Checked in a browser: with names `![i](http://e.vil/a)` and
+        `[x](http://e.vil)`, no element on any page links or loads from
+        e.vil. Escaping alone was not enough: captions and toasts still
+        auto-linked the bare URL.
     - [ ] 0.9 Build:
       - pin Streamlit;
       - GitHub Actions CI: tests on the deploy Python, and engine tests on
@@ -467,7 +476,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 103 pass: 5 clone tests (`test_clone.py`: same game as
+- **Tests:** 106 pass: 3 name tests (`test_names.py`: Markdown escaping,
+  invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
   Russian version with the same placeholders, room errors, plurals, per-thread
   language), 15 saving tests (`test_saving.py`, including writes outside the
@@ -583,9 +593,9 @@ From the architecture review (details and file:line in
 - **Security, "friends only":**
   - anyone with a game's code can take any seat or empty a waiting room;
   - 5-character codes can be guessed;
-  - room creation is unlimited;
-  - player names reach Markdown unescaped (captions, toasts, button labels),
-    so a name can be a link or an image.
+  - room creation is unlimited.
+  - (Fixed in PR #29: player names reached Markdown unescaped, so a name
+    could be a link or an image.)
 - **Build:** Streamlit is unpinned (Cloud runs a newer one than the tests),
   there is no CI, and expired or unreadable save files are never deleted.
 

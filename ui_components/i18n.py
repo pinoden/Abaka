@@ -61,6 +61,25 @@ def players_count(n: int) -> str:
     return f"{n} players"
 
 
+_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~$:])")
+_LINK_BREAK = re.compile(r"(\\[.:]|@)")
+_ZERO_WIDTH_SPACE = "​"
+
+
+def md(text: str) -> str:
+    """
+    Text a player typed (a name), made safe for places Streamlit renders as Markdown:
+    captions, toasts and button labels. Links, images, formatting and bare URLs stay
+    plain text. HTML places use html.escape instead.
+
+    Backslash escapes stop Markdown syntax, but captions and toasts still turn bare
+    addresses (http://..., www...., name@host) into links, so a zero-width space
+    after every ":", "." and "@" breaks them up. It is invisible.
+    """
+    escaped = _MD_SPECIAL.sub(r"\\\1", text)
+    return _LINK_BREAK.sub(lambda m: m.group(1) + _ZERO_WIDTH_SPACE, escaped)
+
+
 def and_join(names) -> str:
     """'Ann and Bob', 'Ann, Bob and Cy'."""
     names = list(names)

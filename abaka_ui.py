@@ -31,7 +31,7 @@ import code_version
 code_version.load_current()
 
 from abaka.rooms import MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code  # noqa: E402
-from ui_components.i18n import LANGUAGES, error, players_count, set_language, t  # noqa: E402
+from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
     initialize_session_state, render_game, render_language_switch, render_top_bar, reset_turn_selection)
 from ui_components.rules import rules_md  # noqa: E402
@@ -241,7 +241,8 @@ def _render_my_games(store: RoomStore) -> None:
             with st.container(horizontal=True, key="my-games-row"):
                 for view in games[:4]:
                     kind = t("Same device") if view.local else t("Online")
-                    label = t("{code} · {kind} · {names}", code=view.code, kind=kind, names=", ".join(view.names))
+                    label = t("{code} · {kind} · {names}", code=view.code, kind=kind,
+                              names=", ".join(md(n) for n in view.names))
                     if st.button(label, key=f"continue-{view.code}", icon=":material/play_arrow:"):
                         st.query_params["room"] = view.code
                         st.rerun()
@@ -294,7 +295,7 @@ def _render_online(store: RoomStore) -> None:
         if ss.get("was_waiting"):
             # The game just started; this browser was on the waiting screen.
             others = [n for i, n in enumerate(view.names) if i != seat]
-            joined = t("{name} joined.", name=others[0]) if len(others) == 1 else t("Everyone's here.")
+            joined = t("{name} joined.", name=md(others[0])) if len(others) == 1 else t("Everyone's here.")
             st.toast(f"{joined} {your_turn}" if my_turn else joined, icon="\U0001F3B2")
         elif my_turn and ss.get("was_my_turn") is False:
             st.toast(your_turn, icon="\U0001F3B2")
@@ -350,7 +351,7 @@ def _announce_departures(view, seat: int) -> None:
     gone = [n for n in before if n not in view.names]
     if not gone:
         return
-    message = t("{names} left.", names=", ".join(gone))
+    message = t("{names} left.", names=", ".join(md(n) for n in gone))
     if seat == 0 and before[0] != view.names[0]:
         message += t(" You're the host now.")
     st.toast(message, icon="\U0001F44B")
@@ -448,7 +449,7 @@ def _render_invite(store: RoomStore, code: str) -> None:
             st.caption(rejoin_text)
             with st.container(horizontal=True, key="rejoin-row"):
                 for i, name in enumerate(view.names):
-                    if st.button(name, key=f"rejoin-{i}", icon=":material/person:"):
+                    if st.button(md(name), key=f"rejoin-{i}", icon=":material/person:"):
                         try:
                             token = store.reclaim(code, i)
                         except RoomError as e:

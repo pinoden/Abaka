@@ -14,7 +14,7 @@ import streamlit as st
 
 from abaka.engine import GameEngine
 from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
-from ui_components.i18n import LANGUAGES, and_join, error, t
+from ui_components.i18n import LANGUAGES, and_join, error, md, t
 from ui_components.move_selection import render_move_picker
 from ui_components.rules import rules_dialog
 from ui_components.scoreboard import render_scoreboard
@@ -124,7 +124,7 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
 
     render_dice(engine, interactive=can_act)
     if not can_act:
-        st.caption(t("{name} is choosing a move. You will see it here as it happens.", name=player.name))
+        st.caption(t("{name} is choosing a move. You will see it here as it happens.", name=md(player.name)))
         return None
     render_reroll(engine)
     return render_move_picker(engine)
@@ -142,9 +142,9 @@ def _render_starting_throw(engine: GameEngine, me: Optional[int]) -> None:
     st.html(f'<div class="ab-turn-title">{t("Who goes first?")}</div><div class="ab-turn-sub">{sub}</div>'
             + _throws_html(engine, me))
     if not can_act:
-        st.caption(t("Waiting for {name} to throw…", name=thrower.name))
+        st.caption(t("Waiting for {name} to throw…", name=md(thrower.name)))
         return
-    label = t("Throw the dice") if me is not None else t("Throw for {name}", name=thrower.name)
+    label = t("Throw the dice") if me is not None else t("Throw for {name}", name=md(thrower.name))
     if st.button(label, key="start-throw", type="primary", icon=":material/casino:", use_container_width=True):
         try:
             engine.throw_for_start()
