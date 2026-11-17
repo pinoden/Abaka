@@ -64,6 +64,7 @@ Python + Streamlit.
 | `abaka/scoring.py`, `school.py`, `bonus.py` | Combination scoring, school balance, row and column bonuses |
 | `abaka/rooms.py` | Every game: `RoomStore` (online and same-device rooms, saved to disk, stats line) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
 | `abaka/saving.py` | `GameEngine` <-> plain JSON data (`engine_to_data`, `engine_from_data`) for saved games |
+| `abaka/repository.py` | Where rooms are kept between runs: the repository methods, and `FileRepository` (one JSON file per room). No Streamlit |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
 | `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
@@ -161,14 +162,19 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   They get a code and `?room=CODE` like online games. Opening that link (a
   reload, a dropped session, another device) or typing the code on the home
   page continues the game at once (`store.resume_local`, no seat to pick).
-- Saving: the app's store (`RoomStore(save_dir=...)`) writes each room to
-  `<save_dir>/<CODE>.json` after every change and loads all saved rooms when
-  it is created.
-  - The data is taken under the lock (`_snapshot`) and written after it
-    (`_write`), so the disk never holds up other games.
-  - Each write uses its own temp file and an atomic replace.
-  - An older state never replaces a newer file (`_saved_versions`), and a
-    closed room is never written back.
+- Saving: the store keeps rooms through a repository (`abaka/repository.py`).
+  The app's store (`RoomStore(save_dir=...)`) uses `FileRepository`, which
+  writes each room to `<save_dir>/<CODE>.json` after every change.
+  - The repository methods are `claim`, `load`, `save(code, version, data)`,
+    `delete`, `prune`, `quarantine` and `wait`. `RoomStore` uses nothing
+    else, so a database (Stage 2) is another class with those methods
+    (`RoomStore(repository=...)`; `tests/test_repository.py` runs a store on
+    an in-memory one).
+  - The data is taken under the lock (`_snapshot`) and saved after it
+    (`_write`), so storage never holds up other games.
+  - Each file write uses its own temp file and an atomic replace.
+  - An older state never replaces a newer one (the repository refuses a
+    version that is not newer), and a closed room is never written back.
   - Loading happens at startup and after every code update, so updates and
     restarts no longer end games.
   - `save_dir` is `$ABAKA_SAVE_DIR` (empty: no saving; tests use this) or
@@ -502,8 +508,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
     **Stage 1: harden the single process (M)**
 
-    - [ ] A `RoomRepository` interface (load, save with an expected version,
-      delete, scan), with today's files behind it.
+    - [x] A repository interface, with today's files behind it. PR #35.
+      - `abaka/repository.py`: `claim`, `load`, `save(code, version, data)`
+        (refuses a version that is not newer, and a deleted room), `delete`,
+        `prune`, `quarantine`, `wait`.
+      - `FileRepository` holds the file code that was in `RoomStore`.
+      - A store runs the same on an in-memory repository (tested), which is
+        what a database needs.
     - [ ] Seat protection: personal per-seat rejoin links, with the key
       stored hashed. Tap-to-rejoin only when the seat's holder has gone
       quiet. An optional PIN for same-device games. The owner chooses the
@@ -589,8 +600,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 143 pass and 4 are skipped;
-  on 3.8, 127 pass and 20 are skipped. CI runs them on 3.13 with Streamlit
+- **Tests:** on Python 3.9 with Streamlit 1.48, 152 pass and 4 are skipped;
+  on 3.8, 136 pass and 20 are skipped. CI runs them on 3.13 with Streamlit
   1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
@@ -602,8 +613,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
-  rooms, rematch), 5 module-reload tests (`test_code_version.py`), 6
-  monitoring tests (`test_monitoring.py`: the stats line, failed saves, the
+  rooms, rematch), 5 module-reload tests (`test_code_version.py`), 9
+  repository tests (`test_repository.py`: the file repository's contract, a
+  store on an in-memory repository), 6 monitoring tests (`test_monitoring.py`: the stats line, failed saves, the
   "Continue a game" list), 11 older
   rule tests, the original engine's 15 tests (`test_abaka_engine.py`, 4 of
   them skipped because they expect older rules), 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
@@ -730,6 +742,23 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-17: Stage 1, the repository (PR #35)**
+
+- The interface follows what `RoomStore` already did with files, so the
+  refactor changes no behaviour (every existing test passed unchanged before
+  the new ones were added).
+- Saving keeps its version rule: the repository refuses a version that is
+  not newer than the one it stored, and a deleted room. A database does the
+  same with a conditional write. `claim` frees a deleted room's code for a
+  new room.
+- The repository gets the room's data as a plain dict and does not look
+  inside it. `RoomStore` turns data into rooms, and quarantines data it
+  cannot use (a missing field), as the files did before.
+- A failed read is no longer quarantined: it may be passing (a disk hiccup).
+  Only data that cannot be parsed or used is.
+- The in-memory repository is a test double only. A real second backend
+  waits for the owner's database account (Stage 2).
 
 **2026-11-17: Stage 0.10, monitoring and small costs (PR #33)**
 

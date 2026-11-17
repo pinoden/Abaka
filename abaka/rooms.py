@@ -7,9 +7,10 @@ RoomStore held in that process is the source of truth for all games. Each
 browser only sends actions ("roll", "reroll", "score", "cross") and renders a
 copy of the shared state; nothing game-related lives in a browser session.
 
-With a save directory, every room is written to its own JSON file after each
-change and read back when a store is created, so games survive reloads,
-dropped sessions, code updates and server restarts (as long as the disk does).
+With a repository (abaka/repository.py; the app uses one JSON file per room in
+a save folder), every room is saved after each change and read back when someone
+opens it, so games survive reloads, dropped sessions, code updates and server
+restarts (as long as the storage does).
 
 This module has no Streamlit dependency so it can be unit-tested directly.
 
@@ -20,13 +21,11 @@ with `report_every`, a stats line per period (the app: once a minute).
 from __future__ import annotations
 
 import gc
-import json
 import logging
 import os
 import re
 import secrets
 import sys
-import tempfile
 import threading
 import time
 import unicodedata
@@ -35,6 +34,7 @@ from typing import Dict, List, Optional, Union
 
 from .engine import GameEngine
 from .models import Category
+from .repository import FileRepository
 from .saving import engine_from_data, engine_to_data
 
 # No 0/O or 1/I, so codes are easy to read aloud and type.
@@ -155,39 +155,41 @@ class RoomStore:
 
     One lock guards the rooms. Engines are copy-on-write: a move works on a clone and
     installs it, and an installed engine is never changed again, so view() hands it
-    out without copying (readers must not change it either). Files are written after
-    the lock is released (_write), so a slow disk never holds up other games.
+    out without copying (readers must not change it either). Rooms are saved after
+    the lock is released (_write), so slow storage never holds up other games.
     """
 
     def __init__(self, starting_throw: bool = True, save_dir: Union[str, Path, None] = None,
-                 report_every: Optional[float] = None) -> None:
+                 report_every: Optional[float] = None, repository=None) -> None:
         """
         starting_throw: each game opens with the starting throw (lowest total goes first).
-        save_dir: keep every room in a JSON file there. Saved rooms are loaded when someone
-            opens them, and rooms nobody looks at leave memory (their files stay).
+        save_dir: keep every room in a JSON file there (a FileRepository). Saved rooms are
+            loaded when someone opens them, and rooms nobody looks at leave memory.
         report_every: log a stats line this often, in seconds (None: never). It is
             written by a poll, so a server nobody has open stays quiet.
+        repository: where rooms are kept, instead of save_dir (see abaka/repository.py).
+            Without either, rooms live in memory only.
         """
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
         self._retired = False
         self.starting_throw = starting_throw
-        self.save_dir = Path(save_dir) if save_dir is not None else None
-        # Writes happen outside self._lock; this lock orders them, and the versions
-        # make sure an older state of a room never replaces a newer file.
-        self._save_lock = threading.Lock()
-        self._saved_versions: Dict[str, float] = {}
+        if repository is None and save_dir is not None:
+            repository = FileRepository(save_dir)
+        self._repository = repository
+        self.save_dir = getattr(repository, "folder", None)  # for files: the save folder
         self._last_sweep = time.time()
         self._last_disk_sweep = 0.0
-        # The stats line: counts since the last one (_counts under self._lock, _saves under
-        # self._save_lock: count, seconds in total, slowest, failures).
+        # The stats line: counts since the last one (_counts under self._lock; _saves, the
+        # count, seconds in total, slowest and failures, under self._stats_lock).
         self.report_every = report_every
         self._counts: Dict[str, int] = {}
+        self._stats_lock = threading.Lock()
         self._saves = [0, 0.0, 0.0, 0]
         self._counted_since = time.time()
         self._gc_full_runs = _full_collections()
-        if self.save_dir is not None:
-            self._clean_save_dir()
+        if repository is not None:
+            self._clean_up_at_start()
 
     def retire(self) -> None:
         """
@@ -198,8 +200,8 @@ class RoomStore:
         with self._lock:
             self._retired = True
             self._rooms.clear()
-        with self._save_lock:
-            pass
+        if self._repository is not None:
+            self._repository.wait()
         log.info("store retired after a code update; the new store reads the games from disk")
 
     # ----- lobby -----
@@ -449,7 +451,7 @@ class RoomStore:
             rooms = list(self._rooms.values())
             playing = sum(1 for r in rooms if r.engine is not None and not r.engine.is_game_over())
             local = sum(1 for r in rooms if r.local)
-        with self._save_lock:
+        with self._stats_lock:
             (saves, save_seconds, slowest, failed), self._saves = self._saves, [0, 0.0, 0.0, 0]
         full_runs = _full_collections()
         gc_runs, self._gc_full_runs = full_runs - self._gc_full_runs, full_runs
@@ -474,7 +476,7 @@ class RoomStore:
 
     def _room(self, code: str) -> Optional[_Room]:
         """
-        The room with this code: from memory, or loaded from its file if it left memory.
+        The room with this code: from memory, or loaded from the repository if it left memory.
         None if there is none. Marks it as just seen, so rooms people look at stay in memory.
         Call with self._lock held.
         """
@@ -482,7 +484,7 @@ class RoomStore:
             return None
         code = normalize_code(code)
         room = self._rooms.get(code)
-        if room is None and self.save_dir is not None and is_valid_code(code):
+        if room is None and self._repository is not None and is_valid_code(code):
             room = self._load_room(code)
         if room is not None:
             room.last_seen = time.time()
@@ -498,22 +500,21 @@ class RoomStore:
     def _new_code(self) -> str:
         while True:
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
-            if code not in self._rooms and not (self.save_dir is not None and self._path(code).exists()):
-                with self._save_lock:
-                    self._saved_versions.pop(code, None)  # a code freed earlier may be used again
+            if code not in self._rooms and (self._repository is None or self._repository.claim(code)):
                 return code
 
     def _make_room_for_one_more(self) -> None:
-        """Before a new room: let unused rooms go; without a save folder, refuse past the cap."""
+        """Before a new room: let unused rooms go; without a repository, refuse past the cap."""
         self._sweep()
-        if self.save_dir is None and len(self._rooms) >= MAX_ROOMS_IN_MEMORY:
+        if self._repository is None and len(self._rooms) >= MAX_ROOMS_IN_MEMORY:
             raise RoomError("The server is busy right now. Please try again later.")
 
     def _sweep(self, force: bool = False) -> None:
         """
-        At most once a minute: drop expired rooms (from disk too); with a save folder, let
-        rooms nobody has looked at for a while leave memory (their files stay), and keep at
-        most MAX_ROOMS_IN_MEMORY. Once an hour, delete expired files of rooms not in memory.
+        At most once a minute: drop expired rooms (from the repository too); with a
+        repository, let rooms nobody has looked at for a while leave memory (they stay
+        saved), and keep at most MAX_ROOMS_IN_MEMORY. Once an hour, delete expired rooms
+        that are not in memory from the repository.
         """
         now = time.time()
         if not force and now - self._last_sweep < SWEEP_EVERY_SECONDS:
@@ -525,114 +526,74 @@ class RoomStore:
                 del self._rooms[code]
                 self._unsave(code)
                 continue
-            if self.save_dir is None:
+            if self._repository is None:
                 continue
             idle = now - room.last_seen
             finished = room.engine is not None and room.engine.is_game_over()
             if idle > IDLE_IN_MEMORY_SECONDS or (finished and idle > FINISHED_IN_MEMORY_SECONDS):
-                del self._rooms[code]  # still on disk; loaded again when someone opens it
+                del self._rooms[code]  # still saved; loaded again when someone opens it
                 self._count("left memory")
-        if self.save_dir is not None and len(self._rooms) > MAX_ROOMS_IN_MEMORY:
+        if self._repository is not None and len(self._rooms) > MAX_ROOMS_IN_MEMORY:
             # Not the rooms seen in the last minute: their latest write may still be under way.
             quiet = sorted((r.last_seen, c) for c, r in self._rooms.items() if now - r.last_seen > 60)
             for _, code in quiet[:len(self._rooms) - MAX_ROOMS_IN_MEMORY]:
                 del self._rooms[code]
                 self._count("left memory")
-        if self.save_dir is not None and (force or now - self._last_disk_sweep > DISK_SWEEP_EVERY_SECONDS):
+        if self._repository is not None and (force or now - self._last_disk_sweep > DISK_SWEEP_EVERY_SECONDS):
             self._last_disk_sweep = now
-            self._delete_expired_files(cutoff)
+            self._repository.prune(cutoff, keep=set(self._rooms))
 
-    # ----- saving (one JSON file per room) -----
-    def _path(self, code: str) -> Path:
-        return self.save_dir / f"{code}.json"
-
+    # ----- saving (through the repository) -----
     def _snapshot(self, room: _Room):
-        """What to write for this room: taken under the lock, written after it by _write."""
-        if self.save_dir is None:
+        """What to save for this room: taken under the lock, saved after it by _write."""
+        if self._repository is None:
             return None
         return room.code, room.version, room.to_data()
 
     def _write(self, pending) -> None:
         """
-        Write a room's file (call it without holding self._lock). It never replaces a newer
-        version, and a failed write is reported but never stops the game.
+        Save a room (call it without holding self._lock). The repository never lets an
+        older version replace a newer one; a failed save is logged but never stops the game.
         """
         if pending is None:
             return
         code, version, data = pending
-        text = json.dumps(data, separators=(",", ":"))
-        with self._save_lock:
-            if version <= self._saved_versions.get(code, -1):
-                return  # a newer state of this room is already on disk (or it was closed)
-            tmp = None
-            started = time.perf_counter()
-            try:
-                self.save_dir.mkdir(parents=True, exist_ok=True)
-                fd, tmp = tempfile.mkstemp(dir=self.save_dir, prefix=f".{code}-", suffix=".tmp")
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write(text)
-                os.replace(tmp, self._path(code))  # atomic: a crash never leaves half a file
-                self._saved_versions[code] = version
-                took = time.perf_counter() - started
+        started = time.perf_counter()
+        try:
+            saved = self._repository.save(code, version, data)
+        except Exception as e:  # noqa: BLE001 - saving must never break a move
+            with self._stats_lock:
+                self._saves[3] += 1
+            log.warning("could not save game %s: %s", code, e)
+            return
+        if saved:
+            took = time.perf_counter() - started
+            with self._stats_lock:
                 self._saves[0] += 1
                 self._saves[1] += took
                 self._saves[2] = max(self._saves[2], took)
-            except Exception as e:  # noqa: BLE001 - saving must never break a move
-                self._saves[3] += 1
-                log.warning("could not save game %s: %s", code, e)
-                if tmp is not None:
-                    try:
-                        os.unlink(tmp)
-                    except OSError:
-                        pass
 
     def _unsave(self, code: str) -> None:
-        if self.save_dir is None:
-            return
-        with self._save_lock:
-            self._saved_versions[code] = float("inf")  # a late write must not bring it back
-            try:
-                self._path(code).unlink()
-            except OSError:
-                pass
+        """Delete a room for good: a late save of it is refused."""
+        if self._repository is not None:
+            self._repository.delete(code)
 
-    def _clean_save_dir(self) -> None:
-        """At start: remove temp files left by a crash and files of rooms that expired."""
-        if not self.save_dir.is_dir():
-            return
-        for leftover in self.save_dir.glob(".*.tmp"):
-            try:
-                leftover.unlink()
-            except OSError:
-                pass
-        self._delete_expired_files(time.time() - ROOM_TTL_SECONDS)
-
-    def _delete_expired_files(self, cutoff: float) -> None:
-        """Delete saved rooms not written since `cutoff` (every change rewrites a room's file)."""
-        with self._save_lock:
-            for path in self.save_dir.glob("*.json"):
-                if path.stem in self._rooms:
-                    continue
-                try:
-                    if path.stat().st_mtime < cutoff:
-                        path.unlink()
-                except OSError:
-                    pass
+    def _clean_up_at_start(self) -> None:
+        """Leftovers of writes a crash interrupted, and rooms that expired."""
+        remove_leftovers = getattr(self._repository, "remove_leftovers", None)
+        if remove_leftovers is not None:
+            remove_leftovers()
+        self._repository.prune(time.time() - ROOM_TTL_SECONDS)
 
     def _load_room(self, code: str) -> Optional[_Room]:
-        """Read a saved room into memory. Unreadable files are moved to quarantine/."""
-        path = self._path(code)
-        if not path.exists():
+        """Load a saved room into memory. Data the store cannot use is quarantined."""
+        data = self._repository.load(code)
+        if data is None:
             return None
         try:
-            room = _Room.from_data(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, ValueError, KeyError, TypeError, IndexError) as e:
-            log.warning("unreadable saved game %s moved to quarantine/: %s", path.name, e)
-            try:
-                (self.save_dir / "quarantine").mkdir(exist_ok=True)
-                os.replace(path, self.save_dir / "quarantine" / path.name)
-            except OSError:
-                pass
+            room = _Room.from_data(data)
+        except (ValueError, KeyError, TypeError, IndexError, AttributeError) as e:
+            self._repository.quarantine(code, e)
             return None
         if room.code != code:
             return None
@@ -641,8 +602,6 @@ class RoomStore:
             return None
         self._rooms[code] = room
         self._count("loaded")
-        with self._save_lock:
-            self._saved_versions[code] = max(self._saved_versions.get(code, -1), room.version)
         return room
 
 
