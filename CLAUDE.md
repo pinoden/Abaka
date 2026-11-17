@@ -149,8 +149,23 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   - `save_dir` is `$ABAKA_SAVE_DIR` (empty: no saving; tests use this) or
     `~/.abaka/games` (or a temp folder). A failed write is printed and play
     goes on.
-- Rooms nobody touched for 7 days are dropped (from disk too) the next time
-  a room is created.
+- Room lifecycle, with a save folder (`RoomStore._sweep`, at most once a minute
+  when a room is created):
+  - a room no page has looked at for 30 minutes (a finished game: 10) leaves
+    memory, and its file stays;
+  - opening it again (`_room`, used by every lookup) loads it from disk;
+  - at most 2,000 rooms stay in memory; beyond that the rooms seen least
+    recently leave first, but never one seen in the last minute;
+  - rooms not changed for 7 days are deleted, files too: at start, when
+    opened, and in an hourly sweep by file time;
+  - unreadable files move to `quarantine/`;
+  - nothing is loaded at start;
+  - game codes are checked (`is_valid_code`) before they become file names;
+  - a new code is never one that is saved on disk.
+  Without a save folder (tests), rooms stay in memory and creation is
+  refused past the cap. One browser may start 10 games in 10 minutes
+  (`abaka_ui.GAMES_PER_SESSION`, `rooms.within_limit`). All limits are
+  constants at the top of `abaka/rooms.py` and `abaka_ui.py`.
 - `.streamlit/config.toml` keeps a disconnected session for 6 hours
   (`server.disconnectedSessionTTL = 21600`, Streamlit's default is 2
   minutes), so a phone that was locked for a while comes back to the same
@@ -377,11 +392,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       - Checked on a real server: a game created before a code change on disk
         was still there afterwards, and the page opened before the change saw
         the second player join without being touched.
-    - [ ] 0.6 Room lifecycle:
-      - finished and idle rooms leave memory and are loaded from disk on
-        demand;
-      - expired save files are deleted and unreadable ones quarantined;
-      - caps on rooms in memory and on room creation per session.
+    - [x] 0.6 Room lifecycle. PR #30.
+      - Finished and idle rooms leave memory and are loaded again on
+        demand; nothing is loaded at start.
+      - Expired files are deleted, unreadable ones quarantined.
+      - At most 2,000 rooms in memory; 10 games per browser per 10 minutes.
+      - Codes are validated before they become file names (with rooms now
+        read on demand, `?room=../...` would otherwise reach outside the
+        save folder).
+      - Load test with 5,000 saved games: 100 browsers at 33% CPU, 15 ms
+        median poll.
     - [ ] 0.7 Fewer reruns:
       - adaptive polling (1 s only while another player is acting);
       - `on_click` callbacks instead of `st.rerun()` after actions.
@@ -476,7 +496,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 106 pass: 3 name tests (`test_names.py`: Markdown escaping,
+- **Tests:** 119 pass: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
   Russian version with the same placeholders, room errors, plurals, per-thread
@@ -584,20 +604,21 @@ From the architecture review (details and file:line in
     which is about 6-10 actively played 3-player games. Cloud is 1.5-3
     times slower.
   - `postScriptGC = false` cut CPU per poll 5-10 times in the same test.
-- **Memory only grows.** Finished games stay in memory for 7 days. After
-  every code update, the previous `RoomStore` (with all its rooms) stays in
-  `st.cache_resource`, and the old and new stores can both write a room's
-  file.
+- (Fixed in PR #28 and PR #30: memory only grew. Finished games stayed in
+  memory for 7 days, and every code update left the previous store behind.)
 - **Shared lock.** The global lock is held across deep copies and file writes;
   every poll and render waits behind any room's save.
 - **Security, "friends only":**
   - anyone with a game's code can take any seat or empty a waiting room;
   - 5-character codes can be guessed;
-  - room creation is unlimited.
+  - room creation was unlimited (now 10 per browser per 10 minutes, and
+    rooms beyond 2,000 leave memory; a script opening new sessions is not
+    stopped yet).
   - (Fixed in PR #29: player names reached Markdown unescaped, so a name
     could be a link or an image.)
 - **Build:** Streamlit is unpinned (Cloud runs a newer one than the tests),
-  there is no CI, and expired or unreadable save files are never deleted.
+  and there is no CI. Expired and unreadable save files are now deleted or
+  quarantined (PR #30).
 
 ### Roadmap
 

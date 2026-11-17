@@ -91,6 +91,7 @@ def and_join(names) -> str:
 # Messages from the engine and the rooms (RoomError / ValueError texts shown to players).
 _ERRORS_RU = {
     "This game is already full.": "Эта игра уже заполнена.",
+    "The server is busy right now. Please try again later.": "Сервер сейчас занят. Попробуйте позже.",
     "The app was just updated. Please try again.": "Приложение только что обновилось. Попробуйте ещё раз.",
     "Only the player who created the game can start it.": "Начать игру может только тот, кто её создал.",
     "The game has already started.": "Игра уже началась.",
@@ -164,6 +165,8 @@ RU = {
     "Join a friend's game, or continue a saved game.": "Присоединиться к игре друга или продолжить сохранённую.",
     "Open game": "Открыть игру",
     "No game with that code. Check it and try again.": "Игры с таким кодом нет. Проверьте код и попробуйте ещё раз.",
+    "You started a lot of games just now. Please wait a few minutes.":
+        "Вы только что начали много игр. Подождите несколько минут.",
     "How to play": "Как играть",
     "Same device · {code}": "Одно устройство · {code}",
     "Online · {code}": "Онлайн · {code}",
