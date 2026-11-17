@@ -717,6 +717,9 @@ Other ideas, not planned:
   reason rather than changed, because the owner decides the rules.
 - The AppTest workaround for single-choice button groups only applies where
   AppTest needs it (1.48; 1.67 handles them).
+- CI's first run found one more difference, in a test: AppTest 1.67 returns a
+  query parameter as a string, 1.48 as a list. The app itself passed every
+  test on 1.67.
 
 **2026-11-16: Stage 0.7, fewer reruns (PR #31)**
 
