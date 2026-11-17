@@ -15,7 +15,7 @@ Update the Backlog, Status and Decision log whenever work is done.
 ## Commands
 
 ```bash
-pip install -r requirements.txt                       # streamlit >= 1.48
+pip install -r requirements.txt                       # streamlit 1.67.0 (pinned; needs Python 3.11+)
 streamlit run abaka_ui.py                             # the app (port 8501, all interfaces)
 python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
@@ -30,17 +30,26 @@ python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=tr
 - The base `python3` is Anaconda 3.8 without Streamlit. The conda env
   `~/opt/anaconda3/envs/Python39` has Streamlit 1.48:
   `~/opt/anaconda3/envs/Python39/bin/python -m streamlit run abaka_ui.py`.
+  - That is older than the pinned 1.67, which needs Python 3.11+, and no
+    newer Python is installed here.
+  - Local runs check 1.48; CI (`.github/workflows/tests.yml`) checks 1.67 on
+    Python 3.13, as on Cloud. The app works on both.
+- Streamlit 1.48 runs on Tornado. 1.67 runs on Starlette and uvicorn, with
+  the `websockets` package. `tools/loadtest.py` uses whichever websocket
+  client is installed.
 - `gh` is not installed. Pull requests are created and merged through the
   GitHub REST API with the credential git already stores in the macOS keychain
   (`git credential fill`).
 - Headless Chromium for browser checks is cached in
   `~/Library/Caches/ms-playwright`. Use it through `playwright-core` installed
   in a scratch folder, never in the repo.
-- Streamlit Cloud installs the newest Streamlit (requirements say
-  `streamlit>=1.48`), which is newer than the local 1.48. There, segmented
-  controls and pills are `role="radio"` buttons, so browser checks should
-  find them by text, not by role. On Cloud the app runs inside an iframe
-  (`iframe[title="streamlitApp"]`, path `/~/+/`).
+- Streamlit Cloud runs Python 3.13 and the pinned Streamlit 1.67.0. The
+  first message of a page's session (`NewSession.initialize.environment_info`)
+  names both; read it with headless Chromium to see what Cloud runs.
+  - There, segmented controls and pills are `role="radio"` buttons, so
+    browser checks should find them by text, not by role.
+  - On Cloud the app runs inside an iframe (`iframe[title="streamlitApp"]`,
+    path `/~/+/`).
 
 ## Architecture
 
@@ -449,13 +458,21 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         `[x](http://e.vil)`, no element on any page links or loads from
         e.vil. Escaping alone was not enough: captions and toasts still
         auto-linked the bare URL.
-    - [ ] 0.9 Build:
-      - pin Streamlit;
-      - GitHub Actions CI: tests on the deploy Python, and engine tests on
-        3.8;
-      - the legacy test skipped with a reason;
-      - stray requirements files removed;
-      - the READMEs brought up to date.
+    - [x] 0.9 Build. PR #32.
+      - Streamlit pinned to 1.67.0, the version the live app ran (read from
+        its session message), on Python 3.13.
+      - GitHub Actions (`.github/workflows/tests.yml`), on every pull request
+        and on `main`:
+        - all tests plus random games with the scoreboard, on Python 3.13
+          with the pinned Streamlit;
+        - all tests (the Streamlit ones skip) plus random games, on Python 3.8
+          in a `python:3.8-slim` container.
+      - `tests/test_abaka_engine.py` imports the `abaka` package. 11 of its 15
+        tests run; the 4 that expect older rules are skipped, with the reason.
+      - The stray `ui_components/requirements.txt` and
+        `abaka/ui_components/requirements.txt` are removed.
+      - README.md, README_MULTIPLAYER.md, DEPLOYMENT_GUIDE.md and
+        ui_components/README.md describe the app as it is now.
     - [ ] 0.10 Monitoring and small costs:
       - `logging`, plus a stats line once a minute (rooms in memory, polls,
         save time, GC, memory);
@@ -507,7 +524,14 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   the role of senior architect, reviewed the whole project for running many
   games in parallel. The full report is in `docs/ARCHITECTURE_REVIEW.md`:
   verdict, measurements, findings with file:line, quick wins and a staged
-  roadmap. Nothing from it has been implemented yet; see "Roadmap" below.
+  roadmap. Its plan is Backlog item 11; Stage 0 is nearly done.
+- **Fewer reruns (Stage 0.7):** merged in PR #31, live 16 s later. Checked on
+  the live app in headless Chromium:
+  - a same-device page polled twice in 21 s;
+  - in an online game the thrower polled 3 times in 9 s and the watcher 9,
+    and they swapped after the throw;
+  - throw, roll and reroll all each took one script run;
+  - the other screen offered the next throw 0.2 s after the click.
 - **Crossed-out combinations show the lost column bonus (owner request 10):**
   merged in PR #24, checked on the live app in Russian.
 - **Russian language (owner request 9):** merged in PR #22, live within
@@ -533,7 +557,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** 125 pass: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
+- **Tests:** on Python 3.9 with Streamlit 1.48, 136 pass and 4 are skipped;
+  on 3.8, 122 pass and 18 are skipped. CI runs them on 3.13 with Streamlit
+  1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
   Russian version with the same placeholders, room errors, plurals, per-thread
@@ -545,7 +571,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 4 module-reload tests (`test_code_version.py`), 11 older
-  rule tests, 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
+  rule tests, the original engine's 15 tests (`test_abaka_engine.py`, 4 of
+  them skipped because they expect older rules), 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
   and their preview) and 7 app tests (`test_ui_notices.py`,
   `test_ui_store.py` with the old store retired and rendering that never
   changes the shared engine, `test_ui_saved_games.py`, `test_ui_reruns.py`:
@@ -607,11 +634,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ### Known issues
 
-- `tests/test_abaka_engine.py` fails to import: the `abaka_engine` module no
-  longer exists. With the import fixed, 4 of its 15 tests fail because they
-  expect older straight and first-roll rules. Left alone until the owner says
-  which rules are right.
-- `abaka/ui_components/requirements.txt` is a leftover file that nothing uses.
+- 4 of the original engine's tests (`tests/test_abaka_engine.py`) expect
+  older rules, and are skipped until the owner says which rules are right:
+  - a first roll doubles only the bonus (the engine doubles score and bonus);
+  - any run of 4 or 5 is a straight (the engine: exactly 1-5 and 2-6).
+- README.md links to a LICENSE file (MIT) that the repository does not have.
 - On screens around 1024px wide, a 5-player game has small dice (about 34px),
   and with 4 or 5 players the scoreboard scrolls sideways inside its card.
 - Saved games live on the server's disk. On Streamlit Community Cloud that
@@ -656,9 +683,8 @@ From the architecture review (details and file:line in
     stopped yet).
   - (Fixed in PR #29: player names reached Markdown unescaped, so a name
     could be a link or an image.)
-- **Build:** Streamlit is unpinned (Cloud runs a newer one than the tests),
-  and there is no CI. Expired and unreadable save files are now deleted or
-  quarantined (PR #30).
+- (Fixed in PR #32: Streamlit was unpinned and there was no CI. Expired and
+  unreadable save files are deleted or quarantined since PR #30.)
 
 ### Roadmap
 
@@ -669,6 +695,28 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-16: Stage 0.9, build (PR #32)**
+
+- Pinned to the version the live app already ran, 1.67.0, rather than the
+  local 1.48.1. Pinning 1.48 would have downgraded the live app, and every
+  live check so far was made on 1.67.
+  - 1.67 needs Python 3.11+, so this machine's 3.9 environment cannot install
+    it. CI is the check for 1.67; local runs check 1.48.
+  - Read from the source of the 1.67 wheel, the settings this app relies on
+    still hold there: `postScriptGC` (on by default), the 128-session cap,
+    `disconnectedSessionTTL`, and `websocketPingInterval` (30 s by default
+    now).
+  - Changing `requirements.txt` restarts the Cloud app once, to install the
+    same version.
+- The Python 3.8 job runs in the `python:3.8-slim` container, so it does not
+  depend on GitHub's runner images still offering Python 3.8, which reached
+  its end of life in 2024.
+- The original engine's tests now run against the `abaka` package instead of
+  failing to import. 4 of them expect older rules; they are skipped with the
+  reason rather than changed, because the owner decides the rules.
+- The AppTest workaround for single-choice button groups only applies where
+  AppTest needs it (1.48; 1.67 handles them).
 
 **2026-11-16: Stage 0.7, fewer reruns (PR #31)**
 

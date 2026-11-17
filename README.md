@@ -2,145 +2,87 @@
 
 A dice game of combinations for 2 to 5 players, built in Python and Streamlit.
 Play on one screen, or online with each player on their own device.
- 
-## Project Layout
 
-```
-Abaka/
-├── abaka/                    # Game engine core
-│   ├── __init__.py
-│   ├── engine.py            # Main game logic
-│   ├── models.py            # Game models and enums
-│   ├── player.py            # Player state management
-│   ├── scoring.py           # Scoring logic
-│   ├── school.py            # School category logic
-│   ├── bonus.py             # Bonus calculation
-│   ├── constants.py         # Game constants
-│   ├── render.py            # Text-based scoreboard
-│   ├── rooms.py             # Shared rooms for online 2-player games
-│   └── __main__.py          # CLI entry point
-├── ui_components/            # Streamlit UI
-│   ├── main_ui.py           # Game screen: top bar, play panel, scoreboard
-│   ├── dice.py              # Tappable dice, reroll
-│   ├── move_selection.py    # Score / Cross out picker with previews
-│   ├── moves.py             # Which moves are possible and what they score (no Streamlit)
-│   ├── scoreboard.py        # Scoreboard table
-│   ├── rules.py             # "How to play" text
-│   ├── style.py             # CSS, dice artwork
-│   └── README.md            # UI component documentation
-├── .streamlit/config.toml   # Server settings and colour theme
-├── tests/                    # Test suite
-│   ├── test_rooms.py        # Online room tests
-│   ├── test_moves.py        # Move preview tests
-│   └── ...
-├── abaka_ui.py              # Main Streamlit application
-├── main.py                  # Alternative entry point
-├── requirements.txt          # Core dependencies
-└── README.md                # This file
-```
+Live app: https://mipt-abaka.streamlit.app/
 
 ## Features
 
-- **Two ways to play**: on one screen, or online with an invite link (see `README_MULTIPLAYER.md`),
-  for 2 to 5 players
-- **Tap-to-pick dice**: tap the dice to reroll, or reroll all five; the joker is marked, and so is a wild joker
-- **Moves with previews**: every option shows its score ("Full house · 46"), the target cell
-  lights up on the scoreboard, and the button says exactly what happens
-- **Clean scoreboard**: full row names, totals and school balance in each player's header;
-  the last move is highlighted in orange until the next one
-- **Live updates**: in online games both screens update within about a second
+- **Two ways to play**, for 2 to 5 players: on one screen, or online with an
+  invite link or a game code (see `README_MULTIPLAYER.md`)
+- **Starting throw**: before the first round everyone throws all five dice, and
+  the lowest total goes first
+- **Tap-to-pick dice**: tap the dice to reroll, or reroll all five; the joker is
+  marked
+- **Moves with previews**: every option shows its score ("Full house · 46"), the
+  target cell lights up on the scoreboard, and the button says exactly what
+  happens, including a bonus the move gives up
+- **Clear scoreboard**: full row names, totals and school balance in each
+  player's header; the last move is outlined in orange until the next one
+- **Saved games**: every game is saved after every move and comes back from its
+  link, its code or "Continue a game" on the home page
+- **English and Russian**: a Russian browser starts in Russian; the EN/RU switch
+  is on the home page and in the game menu
 - **Works on phones**: the layout stacks on narrow screens
-- **How to play**: rules on the home screen and in the in-game menu
+- **How to play**: the rules are on the home page and in the game menu
 
-## Quick Start
+## Quick start
 
-### Prerequisites
+Needs Python 3.11 or newer (for the pinned Streamlit 1.67).
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-```
-
-### Install Dependencies
-```bash
 pip install -r requirements.txt
+
+streamlit run abaka_ui.py   # the app, on port 8501, reachable from your local network
+python -m abaka             # the same game in the terminal (python main.py does the same)
 ```
 
-### Run the Game
-```bash
-# Main Streamlit interface (recommended)
-streamlit run abaka_ui.py
+## Project layout
 
-# Alternative entry points
-python -m abaka              # CLI version
-python main.py               # Alternative main
 ```
-
-## Game Rules
-
-Abaka is a dice game where players:
-1. **Roll Dice**: 4 regular dice + 1 joker die
-2. **Score Categories**: Fill slots in various scoring categories
-3. **School Categories**: Numbers 1-6 with multiple slots
-4. **Combination Categories**: Pair, Two Pairs, Three of a Kind, etc.
-5. **Bonus Slots**: Earn bonuses for completing rows/columns
-
-## UI Components
-
-See `ui_components/README.md`.
+abaka/                 the game itself, no Streamlit
+  engine.py            GameEngine: turns, the starting throw, scoring and crossing out
+  models.py            dice and categories
+  player.py            a player's table, school balance and final score
+  scoring.py           what each combination scores
+  school.py, bonus.py  School rows and their balance; row and column bonuses
+  rooms.py             every game, online and on one device: RoomStore, saved to disk
+  saving.py            games to and from JSON
+  cli.py, render.py    the terminal version
+ui_components/         the Streamlit interface (see ui_components/README.md)
+abaka_ui.py            the app: home, invite and waiting screens, online updates
+code_version.py        reloads the game modules when their files change (app updates)
+.streamlit/            server settings and colour theme
+tests/                 unittest tests
+tools/                 simulate.py: random complete games with rule checks;
+                       loadtest.py: simulated browsers, server CPU and latency
+docs/                  ARCHITECTURE_REVIEW.md: review for many games at once
+```
 
 ## Development
 
-### Running Tests
 ```bash
-python -m unittest
-# or:
-python -m unittest discover -s tests -p "test_*.py"
+python -m unittest discover -s tests -p "test_*.py"   # all tests
+python tools/simulate.py 200 40                        # random complete games (2-3 min)
+python tools/loadtest.py --clients 100 --interval 1    # 100 open pages polling every second
 ```
 
-### Code Structure
-The new modular structure provides:
-- **Maintainability**: Each component has a single responsibility
-- **Testability**: Individual components can be tested separately
-- **Reusability**: Components can be used in other interfaces
-- **Scalability**: Easy to add new features and components
-
-### Adding New Components
-1. Create a new file in `ui_components/`
-2. Implement the component logic
-3. Import and use in `ui_components/main_ui.py`
-4. Update this README with documentation
-
-## Import Examples
-
-```python
-# Game engine
-from abaka.engine import GameEngine
-from abaka.models import Category
-from abaka.scoring import score_category
-
-# UI components
-from ui_components.main_ui import render_game
-from ui_components.moves import score_options, cross_options
-```
-
-## Requirements
-
-### Core Dependencies
-- Python 3.9+
-- See `requirements.txt` for full list
-
-### UI Dependencies
-- Streamlit >= 1.48
+- The engine (`abaka/`) also runs on Python 3.8. There, the tests that need
+  Streamlit are skipped.
+- GitHub Actions runs the tests on every pull request and on `main`
+  (`.github/workflows/tests.yml`):
+  - on Python 3.13 with the pinned Streamlit, as on Streamlit Cloud;
+  - on Python 3.8 without Streamlit.
+- `CLAUDE.md` is the project's working log: open requests, status, decisions
+  and the conventions for changes.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+1. Create a branch
+2. Make your changes, with tests
+3. Open a pull request (`main` is protected)
 
 ## License
 
 This project is open source and available under the [MIT License](LICENSE).
-

@@ -76,14 +76,16 @@ class TestReruns(unittest.TestCase):
         self.patch(st, "fragment", recording_fragment)
 
         # AppTest 1.48 reads every button group's value as a list, but the app's single-choice
-        # segmented controls (the language, Score / Cross out) hold one value.
-        group_value = element_tree.ButtonGroup.value.fget
+        # segmented controls (the language, Score / Cross out) hold one value. Later versions
+        # know single-choice groups (ButtonGroup._is_single_select).
+        if not hasattr(element_tree.ButtonGroup, "_is_single_select"):
+            group_value = element_tree.ButtonGroup.value.fget
 
-        def one_or_more(group):
-            value = group_value(group)
-            return [] if value is None else value if isinstance(value, list) else [value]
+            def one_or_more(group):
+                value = group_value(group)
+                return [] if value is None else value if isinstance(value, list) else [value]
 
-        self.patch(element_tree.ButtonGroup, "value", property(one_or_more))
+            self.patch(element_tree.ButtonGroup, "value", property(one_or_more))
 
     def patch(self, target, name, value):
         patcher = mock.patch.object(target, name, value)

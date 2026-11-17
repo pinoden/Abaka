@@ -13,7 +13,9 @@ CPU and memory, polls answered per second, and poll latency.
   python tools/loadtest.py --clients 100 --rooms 5000 --seconds 20 --interval 1
   python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a setting
 
-Needs the Python environment that runs the app (Streamlit, tornado, protobuf).
+Needs the Python environment that runs the app: Streamlit and its protobuf, and
+a websocket client, `websockets` (a dependency of Streamlit 1.5x and later) or
+Tornado (Streamlit 1.4x runs on it).
 A simulated browser sends no cached-message hashes, so it receives a little more
 data than a real one; it skips a poll while its previous one is unanswered (a
 real browser keeps firing), so real overload is somewhat worse than reported.
@@ -32,8 +34,6 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-
-from tornado.websocket import websocket_connect  # noqa: E402
 
 from streamlit.proto.BackMsg_pb2 import BackMsg  # noqa: E402
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg  # noqa: E402
@@ -80,6 +80,44 @@ def server_stats(pid: int):
     return seconds, int(out[1]) / 1024
 
 
+class Stream:
+    """The app's websocket, through `websockets` if it is installed, else Tornado."""
+
+    @classmethod
+    async def open(cls, url: str) -> "Stream":
+        stream = cls()
+        try:
+            import websockets
+        except ImportError:
+            from tornado.websocket import websocket_connect
+            stream.ws, stream.tornado = None, await websocket_connect(url, subprotocols=["streamlit"])
+        else:
+            stream.closed_error = websockets.ConnectionClosed
+            stream.ws = await websockets.connect(url, subprotocols=["streamlit"], max_size=None)
+        return stream
+
+    async def send(self, data: bytes) -> None:
+        if self.ws is not None:
+            await self.ws.send(data)
+        else:
+            await self.tornado.write_message(data, binary=True)
+
+    async def recv(self):
+        """The next message, or None once the connection is closed."""
+        if self.ws is None:
+            return await self.tornado.read_message()
+        try:
+            return await self.ws.recv()
+        except self.closed_error:
+            return None
+
+    async def close(self) -> None:
+        if self.ws is not None:
+            await self.ws.close()
+        else:
+            self.tornado.close()
+
+
 class Browser:
     """One simulated browser tab."""
 
@@ -100,9 +138,9 @@ class Browser:
             state.fragment_id = fragment
             state.is_auto_rerun = True
         t0 = time.perf_counter()
-        await self.conn.write_message(msg.SerializeToString(), binary=True)
+        await self.conn.send(msg.SerializeToString())
         while True:
-            raw = await self.conn.read_message()
+            raw = await self.conn.recv()
             if raw is None:
                 raise ConnectionError("closed")
             fwd = ForwardMsg()
@@ -117,7 +155,7 @@ class Browser:
                 return time.perf_counter() - t0
 
     async def open(self):
-        self.conn = await websocket_connect(self.url, subprotocols=["streamlit"])
+        self.conn = await Stream.open(self.url)
         for _ in range(3):  # the invite page resumes the game and reruns into it
             self.full_runs.append(await self.run_script())
             if self.fragment:
@@ -171,7 +209,7 @@ async def main_async(args, codes, pid):
     await asyncio.gather(*tasks)
     cpu1, rss = server_stats(pid)
     for b in browsers:
-        b.conn.close()
+        await b.conn.close()
     latencies = [x for b in browsers for x in b.latencies]
     sent = sum(b.sent for b in browsers)
     offered = args.clients * args.seconds / browsers[0].interval
@@ -223,7 +261,7 @@ def main():
                 time.sleep(0.25)
         else:
             raise SystemExit("the app did not start")
-        result = asyncio.get_event_loop().run_until_complete(main_async(args, codes, server.pid))
+        result = asyncio.run(main_async(args, codes, server.pid))
         width = max(len(k) for k in result)
         for key, value in result.items():
             print(f"{key:<{width}}  {value}")
