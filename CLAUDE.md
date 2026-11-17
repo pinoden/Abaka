@@ -558,6 +558,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   verdict, measurements, findings with file:line, quick wins and a staged
   roadmap. Its plan is Backlog item 11; Stage 0 is done (PR #27 to #33).
   Stages 1-3 wait for the owner's decisions listed there.
+- **Repository (Stage 1, first step):** merged in PR #35. Afterwards the live
+  smoke test passed, and S6VSZ, saved by the older code, loaded with its
+  state through the new `FileRepository`.
 - **Build (Stage 0.9):** merged in PR #32.
   - The open page's connection dropped 10 s after the merge: Cloud restarted
     the app to install the pinned packages. It came back on the same
