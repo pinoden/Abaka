@@ -4,6 +4,10 @@ Repository guidance and the project's working log for owner requests, current
 status, and past decisions. Update the Backlog, Status and Decision log
 whenever work is done.
 
+Two coding agents work on this project, Codex and Claude Code. AGENTS.md says
+how they share it (branches, pull requests, this log); both read it, and both
+keep this file. Claude Code loads the two through CLAUDE.md.
+
 - **Repository:** https://github.com/pinoden/Abaka (git remote `origin`). Finished
   work goes there. `main` is protected: every change goes in through a pull
   request.
@@ -23,6 +27,8 @@ python -m unittest tests.test_rooms -v                # one test module
 python tools/simulate.py 200 40                       # random complete games with rule checks (2-3 min)
 python tools/loadtest.py --clients 100 --interval 1   # simulated pages polling every second: CPU, latency
 python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a Streamlit option
+python tools/pr.py status                             # open pull requests and their branches
+python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR, wait for CI, merge
 ```
 
 ### Notes for this machine
@@ -37,9 +43,10 @@ python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=tr
 - Streamlit 1.48 runs on Tornado. 1.67 runs on Starlette and uvicorn, with
   the `websockets` package. `tools/loadtest.py` uses whichever websocket
   client is installed.
-- `gh` is not installed. Pull requests are created and merged through the
-  GitHub REST API with the credential git already stores in the macOS keychain
-  (`git credential fill`).
+- `gh` is not installed. `tools/pr.py` opens, checks and merges pull
+  requests through the GitHub REST API, with the credential git already
+  stores in the macOS keychain (`git credential fill`). Pushes and pull
+  requests therefore come from the owner's GitHub account.
 - Headless Chromium for browser checks is cached in
   `~/Library/Caches/ms-playwright`. Use it through `playwright-core` installed
   in a scratch folder, never in the repo.
@@ -573,9 +580,10 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 - **Gameplay and results requests:** Backlog items 12–15, made with Codex,
   were reviewed and merged in PR #37.
-- **Guidance file:** this file was renamed from CLAUDE.md to
-  ProjectLibrary.md. CLAUDE.md now only imports it (`@ProjectLibrary.md`),
-  so Claude Code still loads it in every session.
+- **Two agents, one repository:** AGENTS.md holds the working agreement
+  for Codex and Claude Code (branches `codex/...` and `claude/...`, pull
+  requests through `tools/pr.py`, this file as the shared log). CLAUDE.md
+  loads AGENTS.md and this file. Merged in PR #38.
 
 - **Architecture review (owner's request, 2026-11-16):** a separate agent, in
   the role of senior architect, reviewed the whole project for running many
@@ -628,8 +636,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 153 pass and 4 are skipped;
-  on 3.8, 136 pass and 21 are skipped. CI runs them on 3.13 with Streamlit
+- **Tests:** on Python 3.9 with Streamlit 1.48, 155 pass and 4 are skipped;
+  on 3.8, 138 pass and 21 are skipped (2 of them test `tools/pr.py`). CI runs them on 3.13 with Streamlit
   1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
@@ -770,6 +778,23 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-18: two agents, one repository (Claude Code, PR #38)**
+
+- The owner asked for a structure in which Codex and Claude Code can both work
+  on the project.
+- One shared guide and log (this file), one shared working agreement
+  (AGENTS.md), and one loader for Claude Code (CLAUDE.md). AGENTS.md stays
+  short: Codex loads at most 32 KiB of it by default, and this file is about
+  67 KB.
+- Each agent works on its own branch prefix and ships through pull requests,
+  because `main` is protected. Codex's earlier commit went to local `main` and
+  could not be pushed (PR #37 carried it).
+- `tools/pr.py` replaces the private script Claude Code used, so every agent
+  (and the owner) opens, checks and merges pull requests the same way, and
+  sees the other agent's open pull requests before starting.
+- Agents' memories are private, so anything the other agent needs goes into
+  this file.
 
 **2026-11-17: scoreboard, dice and results updates (items 12–15)**
 

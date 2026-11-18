@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-The project guidance and working log live in ProjectLibrary.md, shared with other
-coding agents. Read it first, and keep its Backlog, Status and Decision log up to date.
+Claude Code loads this file. The instructions are shared with the other coding
+agents, so they live in two files that every agent reads: AGENTS.md (how agents
+work together) and ProjectLibrary.md (the project guide and working log).
 
+@AGENTS.md
 @ProjectLibrary.md

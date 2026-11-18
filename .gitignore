@@ -6,3 +6,6 @@ __pycache__/*
 *.pyo
 *.pyd
 *.py[cod]
+# Agent settings that stay on one machine
+.claude/settings.local.json
+.DS_Store
