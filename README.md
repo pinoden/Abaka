@@ -74,7 +74,7 @@ python tools/loadtest.py --clients 100 --interval 1    # 100 open pages polling 
   (`.github/workflows/tests.yml`):
   - on Python 3.13 with the pinned Streamlit, as on Streamlit Cloud;
   - on Python 3.8 without Streamlit.
-- `CLAUDE.md` is the project's working log: open requests, status, decisions
+- `ProjectLibrary.md` is the project's working log: open requests, status, decisions
   and the conventions for changes.
 
 ## Contributing

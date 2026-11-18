@@ -304,8 +304,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 
 ## Backlog
 
-Item 11 (the scale-up plan) is in progress. Items 12–15 were requested and
-implemented locally on 2026-11-17. Requests 1-4 came from the
+Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
+merged in PR #37. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -551,27 +551,31 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       kept.
     - The database (Stage 2) and the hosting budget (Stage 3).
 
-12. **Cross out a claimed bonus for the other players immediately.** Implemented.
+12. **Cross out a claimed bonus for the other players immediately.** Done in PR #37.
     When a player earns a shared row or column bonus, show a cross in the
     corresponding bonus cell for every other player on the updated scoreboard.
 
 13. **Cross out a shared bonus when the first player completes the row or
-    column.** Implemented. Completion closes the bonus for every other player, even
+    column.** Done in PR #37. Completion closes the bonus for every other player, even
     if the completed row or column contains crossed-out cells and the first
     player earns no bonus.
     - Items 12 and 13 apply to rows and the first two columns. Each player's
       final-column bonus depends only on their own scores and crosses.
 
-14. **Disable dice selection after the third throw.** Implemented. Once the third
+14. **Disable dice selection after the third throw.** Done in PR #37. Once the third
     throw of a turn is complete, the active player can no longer select or
     deselect dice.
 
-15. **Hide the trophy from losing players.** Implemented. The trophy appears
+15. **Hide the trophy from losing players.** Done in PR #37. The trophy appears
     only on the outright online winner's results screen.
 
 ## Status (2026-11-17)
 
-- **Gameplay and results requests:** Backlog items 12–15 are implemented locally.
+- **Gameplay and results requests:** Backlog items 12–15, made with Codex,
+  were reviewed and merged in PR #37.
+- **Guidance file:** this file was renamed from CLAUDE.md to
+  ProjectLibrary.md. CLAUDE.md now only imports it (`@ProjectLibrary.md`),
+  so Claude Code still loads it in every session.
 
 - **Architecture review (owner's request, 2026-11-16):** a separate agent, in
   the role of senior architect, reviewed the whole project for running many
@@ -624,8 +628,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 152 pass and 4 are skipped;
-  on 3.8, 136 pass and 20 are skipped. CI runs them on 3.13 with Streamlit
+- **Tests:** on Python 3.9 with Streamlit 1.48, 153 pass and 4 are skipped;
+  on 3.8, 136 pass and 21 are skipped. CI runs them on 3.13 with Streamlit
   1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a

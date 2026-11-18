@@ -4,7 +4,7 @@ Where games are kept between server runs: the storage behind RoomStore.
 RoomStore keeps the rooms being played in memory. After every change it hands the
 room's data to its repository (outside its own lock), and when someone opens a
 room that is not in memory, it asks the repository for it. FileRepository keeps
-one JSON file per room in a folder. A database (Stage 2 of the plan in CLAUDE.md)
+one JSON file per room in a folder. A database (Stage 2 of the plan in ProjectLibrary.md)
 would be another class with the same methods:
 
     claim(code)               may a new room use this code? (nothing is saved under it)

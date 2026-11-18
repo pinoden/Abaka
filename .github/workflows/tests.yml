@@ -1,6 +1,6 @@
 # Tests on every pull request and on every push to main.
 # - app: Python 3.13 with the Streamlit pinned in requirements.txt, as on Streamlit Cloud.
-# - engine-py38: the engine must keep working on Python 3.8 (CLAUDE.md, Rules for
+# - engine-py38: the engine must keep working on Python 3.8 (ProjectLibrary.md, Rules for
 #   changes). Streamlit is not installed there, so the app tests are skipped.
 name: tests
 
