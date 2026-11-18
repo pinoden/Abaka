@@ -195,7 +195,8 @@ def _render_results(engine: GameEngine, me: Optional[int], on_play_again: Callab
         f'<div class="{"win" if s == best else ""}"><span>{escape(n)}</span><span>{s}</span></div>'
         for n, s, _ in sorted(scores, key=lambda row: -row[1])
     )
-    st.html(f'<div class="ab-result"><div class="trophy">\U0001F3C6</div><h2>{headline}</h2>'
+    trophy = '<div class="trophy">\U0001F3C6</div>' if len(winners) == 1 and me == winners[0] else ""
+    st.html(f'<div class="ab-result">{trophy}<h2>{headline}</h2>'
             f'<div class="ab-scores">{rows}</div></div>')
     if st.button(t("Play again"), key="big-again", type="primary", icon=":material/replay:",
                  use_container_width=True):

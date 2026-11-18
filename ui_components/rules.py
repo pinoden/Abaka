@@ -44,8 +44,10 @@ per point below zero.
 
 **Bonuses.** The first player to complete a row decides its bonus: 3 x the number
 for school rows, the best cell for combinations, nothing if they crossed out a
-cell in it or paid from the balance in it. Complete a column with no crossed-out combinations for its best value;
-columns I and II go only to the first player to complete them.
+cell in it or paid from the balance in it. A column with no crossed-out combinations
+awards its best value. The first player to complete a row or column I or II closes
+that bonus for everyone else, even if they earn nothing. Each player can earn
+their own bonus for column III.
 
 **The end.** When every cell is filled, the highest total wins.
 """
@@ -90,8 +92,9 @@ RULES_MD_RU = """
 
 **Бонусы.** Бонус строки определяет тот, кто первым её заполнит: 3 × число строки для школы,
 лучшая клетка для комбинаций и ничего, если в этой строке игрок что-то зачеркнул или платил
-из баланса. Заполните столбец без зачёркнутых комбинаций — получите его лучшее значение;
-бонусы столбцов I и II достаются только тому, кто заполнит их первым.
+из баланса. Столбец без зачёркнутых комбинаций приносит бонус, равный его лучшему значению.
+Как только кто-то заполняет строку или столбец I или II, бонус у остальных зачёркивается,
+даже если первый игрок ничего не получил. Бонус столбца III каждый игрок зарабатывает сам.
 
 **Конец игры.** Когда все клетки заполнены, побеждает тот, у кого больше очков.
 """

@@ -1,8 +1,8 @@
-# CLAUDE.md
+# Project Library
 
-Guidance for Claude Code in this repository and the project's working log:
-the owner's open requests, current status, and the decisions made so far.
-Update the Backlog, Status and Decision log whenever work is done.
+Repository guidance and the project's working log for owner requests, current
+status, and past decisions. Update the Backlog, Status and Decision log
+whenever work is done.
 
 - **Repository:** https://github.com/pinoden/Abaka (git remote `origin`). Finished
   work goes there. `main` is protected: every change goes in through a pull
@@ -275,8 +275,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   ("Throw for Ann"); online only the thrower's screen has it ("Throw the
   dice"). Until the first move, `_starter_note` shows "Ann threw the lowest
   (9) and goes first."
-- Bonus cells: "✕" when the player gave the bonus up themselves, "–" when
-  the bonus went to or was decided by another player.
+- Bonus cells show "✕" when the player gives up the bonus or another player
+  closes a shared bonus by completing its row or column.
   - Row bonus: a School row paid from the balance, or a crossed-out
     combination cell (`engine.row_bonus_blocked`).
   - Column bonus: a crossed-out combination cell in that column.
@@ -304,7 +304,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 
 ## Backlog
 
-Open: item 11, the scale-up plan (in progress). Requests 1-4 came from the
+Item 11 (the scale-up plan) is in progress. Items 12–15 were requested and
+implemented locally on 2026-11-17. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -550,7 +551,27 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       kept.
     - The database (Stage 2) and the hosting budget (Stage 3).
 
-## Status (2026-11-16)
+12. **Cross out a claimed bonus for the other players immediately.** Implemented.
+    When a player earns a shared row or column bonus, show a cross in the
+    corresponding bonus cell for every other player on the updated scoreboard.
+
+13. **Cross out a shared bonus when the first player completes the row or
+    column.** Implemented. Completion closes the bonus for every other player, even
+    if the completed row or column contains crossed-out cells and the first
+    player earns no bonus.
+    - Items 12 and 13 apply to rows and the first two columns. Each player's
+      final-column bonus depends only on their own scores and crosses.
+
+14. **Disable dice selection after the third throw.** Implemented. Once the third
+    throw of a turn is complete, the active player can no longer select or
+    deselect dice.
+
+15. **Hide the trophy from losing players.** Implemented. The trophy appears
+    only on the outright online winner's results screen.
+
+## Status (2026-11-17)
+
+- **Gameplay and results requests:** Backlog items 12–15 are implemented locally.
 
 - **Architecture review (owner's request, 2026-11-16):** a separate agent, in
   the role of senior architect, reviewed the whole project for running many
@@ -745,6 +766,19 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-17: scoreboard, dice and results updates (items 12–15)**
+
+- The scoreboard renders stored lost bonuses as crosses as soon as it draws
+  the updated game. The engine already closes shared bonuses on completion.
+- Dice picking is available while the active player has a reroll left.
+- The trophy is reserved for the outright online winner's screen. Draws and
+  shared screens show the result and scores without a trophy.
+
+**2026-11-17: final-column bonus (owner clarification)**
+
+- Each player earns or loses their final-column bonus independently. The
+  first player to complete that column has no effect on anyone else's bonus.
 
 **2026-11-17: Stage 1, the repository (PR #35)**
 

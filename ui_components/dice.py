@@ -24,7 +24,8 @@ def _toggle_die(i: int) -> None:
 
 
 def render_dice(engine: GameEngine, interactive: bool) -> None:
-    """The five dice on the table. Only the player whose turn it is can pick them."""
+    """The active player can pick dice while a reroll remains."""
+    interactive = interactive and engine.rolls_left > 0
     ss = st.session_state
     picked = ss.selected_dice if interactive else set()
     dice = list(engine.dice)
@@ -51,7 +52,7 @@ def render_dice(engine: GameEngine, interactive: bool) -> None:
         for i, d in enumerate(dice):
             label = t("{value} (joker)", value=d.value) if d.is_joker else str(d.value)
             st.button(label, key=f"die-{i}", disabled=not interactive,
-                      on_click=_toggle_die, args=(i,))
+                      on_click=_toggle_die if interactive else None, args=(i,))
 
 
 def _roll_animation(dice) -> list:
