@@ -1,13 +1,13 @@
 """
 The original engine's tests (the engine was one module, `abaka_engine`; it is the `abaka`
 package now). Four of them expect older rules than the engine's, and are skipped until the
-owner says which rules are right (CLAUDE.md, Known issues).
+owner says which rules are right (ProjectLibrary.md, Known issues).
 """
 import unittest
 from abaka import Die, Category, score_category, PlayerState, GameEngine
 
 OLDER_RULE = ("expects an older rule: {}. The current rule is tested in {}. Skipped until the owner "
-              "says which rule is right (CLAUDE.md, Known issues).")
+              "says which rule is right (ProjectLibrary.md, Known issues).")
 FIRST_ROLL = OLDER_RULE.format("a first roll doubles only the bonus (now: score and bonus)", "test_moves.py")
 STRAIGHTS = OLDER_RULE.format("any run of 4 or 5 is a straight (now: exactly 1-5 and 2-6)",
                               "test_straights_strict.py")

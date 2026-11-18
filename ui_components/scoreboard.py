@@ -21,7 +21,6 @@ from ui_components.style import die_uri
 CROSS = "✕"
 CHECK = "✓"
 EMPTY = "·"
-NONE = "–"
 
 
 def render_scoreboard(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None) -> None:
@@ -45,16 +44,11 @@ def _score_cell(value, category, classes, target_text=None, last=False) -> str:
     return f'<td class="{classes} {cls}">{value}</td>'
 
 
-def _bonus_cell(value, classes, given_up: bool = False) -> str:
-    """`given_up`: the player crossed out this row's bonus themselves (a crossed-out
-    combination cell, or a School row paid from the balance); otherwise an X means
-    the bonus went to, or was decided by, another player."""
+def _bonus_cell(value, classes) -> str:
     if value is None:
         return f'<td class="{classes} ab-none">{EMPTY}</td>'
-    if value == "X" and given_up:
-        return f'<td class="{classes} ab-x" title="{t("Bonus crossed out")}">{CROSS}</td>'
     if value == "X":
-        return f'<td class="{classes} ab-none" title="{t("No bonus")}">{NONE}</td>'
+        return f'<td class="{classes} ab-x" title="{t("Bonus crossed out")}">{CROSS}</td>'
     return f'<td class="{classes} ab-bval">{value}</td>'
 
 
@@ -64,7 +58,6 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
     active = None if over else engine.current
     span = 1 + 5 * len(players)  # row label + (gap + 3 cells + bonus) per player
     last = getattr(engine, "last_move", None)  # (player, category, slot) of the latest move
-    given_up = getattr(engine, "row_bonus_blocked", {})  # (player, row) bonuses crossed out by the player
     many = len(players) > 2
 
     def act(i: int) -> str:
@@ -106,7 +99,7 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
                     h.append(f'<td class="ab-bonus{act(i)} ab-target" '
                              f'title="{t("This move crosses out the row bonus")}">{CROSS}</td>')
                 else:
-                    h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i), given_up.get((i, cat), False)))
+                    h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i)))
             h.append("</tr>")
 
     h.append(f'<tr class="ab-section"><td colspan="{span}">{escape(t("Bonuses & total"))}</td></tr>')
@@ -121,9 +114,7 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
                 h.append(f'<td class="{act(i).strip()} ab-target" '
                          f'title="{t("This move crosses out the column bonus")}">{CROSS}</td>')
             else:
-                # The player crossed out a combination cell in this column: they gave the bonus up.
-                crossed = any(p.table[cat][col] == "X" for cat in COMBO_CATS)
-                h.append(_bonus_cell(value, act(i).strip(), crossed))
+                h.append(_bonus_cell(value, act(i).strip()))
         h.append(f'<td class="ab-bonus{act(i)}"></td>')
     h.append(f'</tr><tr class="ab-total"><th class="ab-row">{t("Total")}</th>')
     for i, p in enumerate(players):

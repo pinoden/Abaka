@@ -1,7 +1,5 @@
 """
-Scoreboard bonus cells: a bonus the player crossed out themselves (a School row paid
-from the balance, or a crossed-out combination) shows a cross; a bonus that went to
-another player shows a dash. Skipped where Streamlit is not installed.
+Scoreboard bonus cells show a cross as soon as the bonus is lost.
 """
 
 import re
@@ -53,15 +51,15 @@ class TestBonusCells(unittest.TestCase):
         self.assertIn("ab-target", cells[4][0])
         self.assertEqual(cells[4][1], "✕")
 
-    def test_a_bonus_taken_by_another_player_shows_a_dash(self):
-        g = GameEngine(["Ann", "Bob"])
+    def test_a_bonus_taken_by_another_player_shows_a_cross(self):
+        g = GameEngine(["Ann", "Bob", "Cy"])
         for hand in (dice(4, 4, 4, 1), dice(4, 4, 4, 2), dice(4, 4, 4, 3)):
             g.current = 0
             g.dice = hand
             g.record_score(Category.SCHOOL_4, g.leftmost_slot(g.players[0], Category.SCHOOL_4))
         cells = row_cells(build_scoreboard_html(g), "School 4")
         self.assertEqual(cells[4][1], "12")  # Ann completed it first: 3 x 4
-        self.assertEqual(cells[9][1], "–")   # Bob: no bonus, but he did not cross it out
+        self.assertEqual([cells[i][1] for i in (9, 14)], ["✕", "✕"])
 
 
 @unittest.skipIf(build_scoreboard_html is None, "Streamlit is not installed")
@@ -94,11 +92,27 @@ class TestColumnBonusCells(unittest.TestCase):
         self.assertEqual(cells[1][1], "✕")
         self.assertNotIn("ab-target", cells[2][0])
 
-    def test_a_column_bonus_taken_by_someone_else_shows_a_dash(self):
-        g = GameEngine(["Ann", "Bob"])
-        g.players[1].column_bonus[0] = "X"  # Ann completed column I first
-        cells = self.column_bonus_cells(build_scoreboard_html(g))
-        self.assertEqual(cells[6][1], "–")
+    def test_completing_a_column_updates_the_other_players_bonus_cells(self):
+        for col in range(3):
+            for crossed in (False, True):
+                with self.subTest(col=col, crossed=crossed):
+                    g = GameEngine(["Ann", "Bob", "Cy"])
+                    for cat in Category:
+                        for slot in range(col + 1):
+                            if cat != Category.SUM or slot != col:
+                                g.players[0].table[cat][slot] = 6
+                    g.dice = dice(6, 6, 6, 6)
+                    if crossed:
+                        g.record_cross(Category.SUM, col)
+                    else:
+                        g.record_score(Category.SUM, col)
+                    html = build_scoreboard_html(g)
+                    cells = self.column_bonus_cells(html)
+                    expected = "·" if col == 2 else "✕"
+                    self.assertEqual([cells[i + col][1] for i in (6, 11)], [expected] * 2)
+                    if crossed and col == 2:
+                        row = row_cells(html, "Sum")
+                        self.assertEqual([row[i][1] for i in (4, 9, 14)], ["✕"] * 3)
 
 
 if __name__ == "__main__":

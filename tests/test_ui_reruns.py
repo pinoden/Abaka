@@ -125,10 +125,17 @@ class TestReruns(unittest.TestCase):
             self.click(at, "start-throw")
         self.assertFalse(self.store.view(code).engine.choosing_first_player)
         self.click(at, "roll")
+        self.assertFalse(at.button(key="die-0").disabled)
         # "Reroll all" keeps its label, so its key changes with every reroll: a second, fast
         # tap on the old page's button can never pick up the next page's reroll.
         self.click(at, "reroll-all-2")
         self.assertEqual([b.key for b in at.button if b.key.startswith("reroll-all")], ["reroll-all-1"])
+        self.assertFalse(at.button(key="die-0").disabled)
+        at.button(key="die-0").click().run()
+        self.assertEqual(at.session_state["selected_dice"], {0})
+        self.click(at, "reroll-all-1")
+        self.assertTrue(all(at.button(key=f"die-{i}").disabled for i in range(5)))
+        self.assertFalse(at.session_state["selected_dice"])
         self.assertEqual(len(at.error), 0, [e.value for e in at.error])
 
     def test_a_click_on_an_outdated_page_makes_no_move(self):
@@ -143,6 +150,22 @@ class TestReruns(unittest.TestCase):
         self.assertEqual(len(at.error), 0, [e.value for e in at.error])
         self.assertEqual(at.button(key="start-throw").label, "Throw for Bob")  # the game as it is now
         self.click(at, "start-throw")  # and the redrawn button works
+
+    def test_only_the_online_winner_sees_the_trophy(self):
+        from abaka.engine import GameEngine
+        from abaka.models import Category
+        from ui_components.main_ui import _render_results
+
+        game = GameEngine(["Ann", "Bob", "Cy"])
+        game.players[0].table[Category.SUM][0] = 10
+        with mock.patch.object(st, "html") as html, mock.patch.object(st, "button", return_value=False):
+            for seat in (0, 1, 2, None):
+                with self.subTest(seat=seat):
+                    _render_results(game, seat, None, None, "Leave")
+                    self.assertEqual('class="trophy"' in html.call_args.args[0], seat == 0)
+            game.players[1].table[Category.SUM][0] = 10
+            _render_results(game, 0, None, None, "Leave")
+            self.assertNotIn('class="trophy"', html.call_args.args[0])
 
     def test_pages_check_their_room_only_as_often_as_needed(self):
         self.page()
