@@ -280,8 +280,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   first?", each player's latest throw (small dice + total) and the
   `start-throw` button. On the same device the button names the player
   ("Throw for Ann"); online only the thrower's screen has it ("Throw the
-  dice"). Until the first move, `_starter_note` shows "Ann threw the lowest
-  (9) and goes first."
+  dice"). Until the first move, `_starter_summary` shows "Ann threw the lowest
+  (9) and goes first." and every starting throw, so the last thrower's total
+  stays visible after the decision (Backlog item 16).
 - Bonus cells show "✕" when the player gives up the bonus or another player
   closes a shared bonus by completing its row or column.
   - Row bonus: a School row paid from the balance, or a crossed-out
@@ -312,7 +313,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -576,8 +577,22 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 15. **Hide the trophy from losing players.** Done in PR #37. The trophy appears
     only on the outright online winner's results screen.
 
-## Status (2026-11-17)
+16. **Starting throws stay on screen after the first player is decided.** Done in
+    PR #39. Before, the last thrower's total vanished as soon as the lowest was
+    known: the screen showed only "Ann threw the lowest (9) and goes first.", so
+    nobody could tell how much the others threw. Now the note comes with every
+    player's starting throw (dice and total) until the first move, and nobody is
+    dimmed once the decision is made.
+    > "Сыграли сегодня втроём на одном телефоне … если второй выкидывает больше
+    > первого, его результат не показывается вообще, сразу сообщается, что первым
+    > ходит другой. Это вносит сумятицу и вопросы, сколько же он выбросил"
 
+## Status (2026-11-18)
+
+- **Starting throws stay on screen (owner's report, Backlog item 16):** PR #39.
+  In a same-device game for three, the last thrower's total no longer vanishes
+  when the first player is decided. Checked in headless Chromium on a local
+  server at 1300px and 390px, with 3 and 5 players.
 - **Gameplay and results requests:** Backlog items 12–15, made with Codex,
   were reviewed and merged in PR #37.
 - **Two agents, one repository:** AGENTS.md holds the working agreement
@@ -636,8 +651,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 155 pass and 4 are skipped;
-  on 3.8, 138 pass and 21 are skipped (2 of them test `tools/pr.py`). CI runs them on 3.13 with Streamlit
+- **Tests:** on Python 3.9 with Streamlit 1.48, 157 pass and 4 are skipped;
+  on 3.8, 138 pass and 23 are skipped (2 of them test `tools/pr.py`; the 2
+  starting-throw screen tests, `test_ui_starting_throws.py`, need Streamlit). CI runs them on 3.13 with Streamlit
   1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
@@ -778,6 +794,24 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-18: starting throws stay on screen (Claude Code, PR #39)**
+
+- The owner's same-device game for three: after the last starting throw, the
+  screen moved on at once and showed only the first player's total. A last
+  thrower who threw more than the first never saw the result, and nobody could
+  tell how much he had thrown (Backlog item 16).
+- The note "X threw the lowest (N) and goes first." now comes with every
+  player's starting throw (dice and total) until the first move. The totals
+  are the ones the round used; no rule changed.
+- Players are dimmed ("out") only while the starting throw is still going on
+  (a player knocked out of a tie). After the decision, every row shows in full.
+- Checked with `tests/test_ui_starting_throws.py` (a three-player game through
+  the app script, and the online wording; both fail on `main`), and in
+  headless Chromium on a local server at 1300px and 390px with 3 and 5
+  players: every total visible, no sideways scrolling. With 5 players on a
+  phone the table adds about five rows above the dice; the Roll button stays
+  on the first phone screen.
 
 **2026-11-18: two agents, one repository (Claude Code, PR #38)**
 

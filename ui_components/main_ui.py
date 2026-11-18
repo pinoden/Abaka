@@ -109,7 +109,7 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
         sub = t("Roll the dice to start the turn.")
     else:
         sub = t("Waiting for {name} to roll…", name=name)
-    st.html(f'{title}<div class="ab-turn-sub">{sub}</div>{_starter_note(engine, me)}')
+    st.html(f'{title}<div class="ab-turn-sub">{sub}</div>{_starter_summary(engine, me)}')
 
     if not engine.dice:
         render_dice_placeholder()
@@ -158,15 +158,19 @@ def _throws_html(engine: GameEngine, me: Optional[int]) -> str:
         else:
             waiting = t("throws next") if i == engine.current else t("waiting")
             result = f'<span class="ab-throw-wait">{waiting}</span>'
-        cls = "next" if i == engine.current else ("out" if not in_round else "")
+        cls = "next" if i == engine.current else ("out" if engine.choosing_first_player and not in_round else "")
         you = f'<span class="ab-you">{t("You")}</span>' if i == me else ""
         rows.append(f'<div class="ab-throw {cls}"><span class="ab-throw-name">{escape(p.name)}{you}</span>'
                     f'<span class="ab-throw-res">{result}</span></div>')
     return f'<div class="ab-throws">{"".join(rows)}</div>'
 
 
-def _starter_note(engine: GameEngine, me: Optional[int]) -> str:
-    """Until the first move: who won the starting throw."""
+def _starter_summary(engine: GameEngine, me: Optional[int]) -> str:
+    """Until the first move: who won the starting throw, and everyone's starting throws.
+
+    The throws stay on screen after the decision, so every player's total stays visible
+    (the last thrower's included) until the game moves on.
+    """
     first = getattr(engine, "first_player", None)
     if first is None or engine.last_move is not None:
         return ""
@@ -176,7 +180,7 @@ def _starter_note(engine: GameEngine, me: Optional[int]) -> str:
     else:
         note = t("{name} threw the lowest ({total}) and goes first.", name=escape(engine.players[first].name),
                  total=total)
-    return f'<div class="ab-start-note">{note}</div>'
+    return f'<div class="ab-start-note">{note}</div>' + _throws_html(engine, me)
 
 
 def _render_results(engine: GameEngine, me: Optional[int], on_play_again: Callable[[], None],
