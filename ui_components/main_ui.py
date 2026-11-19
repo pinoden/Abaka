@@ -65,7 +65,8 @@ def render_top_bar(status_html: str, on_leave: Optional[Callable[[], None]] = No
 def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: str = "",
                 on_play_again: Callable[[], None], on_leave: Callable[[], None],
                 leave_label: str, board_note_html: str = "", results_note_html: str = "",
-                after_results: Optional[Callable[[], None]] = None) -> None:
+                after_results: Optional[Callable[[], None]] = None,
+                below_play: Optional[Callable[[], None]] = None) -> None:
     """
     Args:
         engine: A GameEngine, or anything shaped like one (see abaka.rooms.RoomEngine).
@@ -73,6 +74,7 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
         board_note_html: shown under the scoreboard (the running score at this table).
         results_note_html: shown on the results screen under the scores (a club game's ratings).
         after_results: draws more buttons on the results screen, under "Play again".
+        below_play: draws more at the foot of the play card (the reactions of an online game).
     """
     render_top_bar(status_html, on_leave, leave_label)
     # Up to 4 players fit the usual layout; with 5 the scoreboard gets more room and the dice shrink a little.
@@ -90,6 +92,8 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
                     target = None
                 else:
                     target = _render_play_panel(engine, me)
+                if below_play is not None:
+                    below_play()
         with right:
             with st.container(border=True, key="card-board"):
                 render_scoreboard(engine, me=me, target=target)

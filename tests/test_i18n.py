@@ -43,7 +43,12 @@ class TestRussianText(unittest.TestCase):
         self.assertGreater(len(texts), 100)  # the scan found the code's texts
         missing = {text: where for text, where in texts.items() if text not in RU}
         self.assertEqual(missing, {})
-        for text in list(_COMBO_NAMES.values()) + list(ROW_HINTS.values()):  # passed to t() through variables
+        try:
+            from ui_components.effects import REACTIONS  # needs Streamlit
+            labels = [label for _, label in REACTIONS.values()]
+        except ImportError:
+            labels = []
+        for text in list(_COMBO_NAMES.values()) + list(ROW_HINTS.values()) + labels:  # passed to t() through variables
             self.assertIn(text, RU)
 
     def test_placeholders_match(self):
