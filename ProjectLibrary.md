@@ -95,6 +95,7 @@ Python + Streamlit.
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
 | `ui_components/moves.py` | Possible moves with exact score previews (tries each on a copy of the engine). No Streamlit |
 | `ui_components/actions.py` | `on_click` callbacks of the game buttons: make the move, keep a refusal to show once |
+| `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
 | `ui_components/i18n.py` | Interface text in English and Russian: `t("...")`, plurals, error messages. No Streamlit |
@@ -172,8 +173,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   `room.version`.
 - Live updates: `_watch_room` draws a polling fragment
   (`st.fragment(run_every=...)`) that compares `store.seen(code)` with the
-  value the page was drawn from (`RoomView.seen`: the room version and a
-  count of dice-pick changes), and calls `st.rerun()` when they differ.
+  value the page was drawn from (`RoomView.seen`: the room version, a
+  count of dice-pick changes and the id of the room's latest event), and
+  calls `st.rerun()` when they differ.
 - Picked dice (Backlog item 18): a tap on a die in an online game also calls
   `store.pick` (`RoomEngine.pick`), which keeps the picks in the room
   (`room.picked`, with `room.picks` counting changes) for the other pages.
@@ -182,6 +184,23 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   is saved. Only the player whose turn it is can pick, and only while a
   reroll remains. Every move clears the picks; a reroll records its dice in
   `room.rerolled`, which `dice._roll_animation` spins.
+- Reactions and celebrations (Backlog item 22, `ui_components/effects.py`):
+  the room keeps its last 20 events in memory (`room.events`, never saved,
+  cleared by a rematch). Each has an id from the clock in milliseconds, so
+  ids keep growing after a room is loaded again.
+  - `store.react(code, token, reaction, to=None)`: anyone seated in an
+    online game, at any time, one of `rooms.REACTIONS`, to everyone or one
+    seat; one per seat every 2 s (`TooFast`). Not a move: no version bump,
+    no turn check. Same-device rooms ignore it.
+  - `_act` adds an effect after a move that earned one (`_celebration`):
+    fireworks for Abaka scored (any roll), sparkles for a straight, four of a
+    kind or the royal full house (1-1-1-2-2, recognised by its score above
+    60) scored on the first roll. Online and on one device.
+  - `effects.render_events` shows each event once per page: events from
+    before the page first drew the game, or more than 15 s old when first
+    seen, are skipped; the rest are drawn for their length from the moment
+    this page first drew them, with a negative CSS animation delay, so a
+    redraw continues the animation instead of starting it again.
   - It checks every second while someone else can change the room (players
     joining, another player's turn), every 3 s on the player's own turn or
     after the game, and every 10 s in a same-device game (`POLL_FAST`,
@@ -406,14 +425,15 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - Every new online action goes through `RoomStore._act`, so it gets the turn
   check, the lock and the version bump. (The one exception is `pick`, which
   shows picked dice and is not a move: it takes the lock and the same turn
-  check, `_check_turn`, but changes no version.)
+  check, `_check_turn`, but changes no version. `react` is not a move either:
+  it takes the lock and a seat check, no turn check, and changes no version.)
 - The game rules are the owner's own. Do not change them, or copy rule details
   from the upstream `abaka_cc` repo, unless the owner asks.
 
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 (chat: next PR). Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -762,7 +782,35 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       member.
     - A club with no games yet keeps the plain text boxes.
 
+22. **Reactions, fireworks and a chat.** Reactions and effects done in
+    PR #52; the chat comes in the next PR.
+    > "I want to create a set of emojies, kind of like on GG poker - where one
+    > player can send the other player emojies - for example if one get's
+    > lucky - you send send him "lucky", or so on. If someone scores Abaka we
+    > can do fireworks in general - so all the players could see it. If good
+    > combination from first attempt (straights, care or 11122 full - smaller
+    > effect). Also is it hard to add a chat during the game? The chat should
+    > be deleted once the game is over"
+    - Online, every seated player has eight reaction buttons under the play
+      panel: Lucky! 🍀, Nice! 👏, Wow! 😮, Ouch 😬, Hurry up ⏳, GG 🤝,
+      Haha 😂, On fire! 🔥. With 3+ players a picker sends one to everyone
+      or to one player ("Ann → Bob"; "Ann → you" on Bob's screen). Every
+      screen shows a bubble at the top for 3.5 s. One reaction every 2 s
+      per player. Same-device games have none.
+    - Fireworks with "Abaka! Ann · +160" on every screen when someone
+      scores Abaka; sparkles with "Large straight! Ann · +40 · first roll"
+      for a straight, four of a kind or the royal full house on the first
+      roll. Online and on one device, the mover's screen included, once.
+
 ## Status (2026-11-19)
+
+- **Reactions and fireworks (owner, Backlog item 22):** PR #52. Checked in
+  headless Chromium on a local server, a desktop (1300px) and a phone
+  (390px) in one online game: a reaction reached the other screen in under
+  2 s, both ways, no sideways scrolling. The fireworks and sparkles were
+  checked on a scratch page at both widths (an Abaka cannot be rolled on
+  purpose in the app); the AppTest test drives them through the app.
+  Load-test row: no slowdown (25% CPU, 6.1 ms median poll).
 
 - **Club player picker (owner, Backlog item 21):** PR #51. Checked in
   headless Chromium on a local server at 1300px and 390px: the club's
@@ -882,10 +930,14 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 207
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 225
   pass but one step skipped (a typed-in club name, which AppTest 1.48
-  cannot send); on 3.8, 171 pass and 36 are skipped (2 of them test `tools/pr.py`, 9
-  need a database or psycopg; the others need Streamlit). 6 picked-dice tests
+  cannot send); on 3.8, 186 pass and 39 are skipped (2 of them test `tools/pr.py`, 9
+  need a database or psycopg; the others need Streamlit). 18 reaction and
+  celebration tests (`test_reactions.py`: a reaction is not a move, aimed
+  reactions, the rate limit, never saved, which moves celebrate, rematch,
+  and the screens through the app: bubbles, fireworks shown once, escaped
+  names). 6 picked-dice tests
   (`test_shown_dice.py`: picks are shown but are not a move, only the
   player whose turn it is picks, a reroll right after a pick, the other
   screen through the app). 4 baseline tests
@@ -1029,6 +1081,37 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-19: reactions and fireworks (Claude Code, PR #52)**
+
+- The owner asked for poker-style reactions, fireworks for Abaka, a smaller
+  effect for a straight, four of a kind or 1-1-1-2-2 on the first roll, and a
+  chat that is deleted when the game ends. Reactions and effects are this PR;
+  the chat is the next.
+- Same pattern as the picked dice (PR #48): events live in the room's memory,
+  not in the game and not saved; a reaction changes what pages poll but not
+  `room.version`, so it never makes a move look outdated. Pages poll
+  `(version, picks, latest event id)`; a page still on the old code polls a
+  pair, which never equals the triple, so it redraws once with the new code.
+- Effects are worked out by the store in `_act`, from the game before and
+  after the move, so every mode (online, same device) gets them with no
+  per-browser logic, and they cannot be faked from a page.
+- "Smaller effect" for 1-1-1-2-2 is read as the royal full house scored in
+  Full house on the first roll, as the owner listed it with first-roll
+  combinations. Abaka gets fireworks on any roll. A crossed-out row gets
+  nothing.
+- Ids come from the clock in milliseconds, not a counter, so a room loaded
+  again after leaving memory (events are not saved) cannot reuse an id a page
+  has already shown.
+- Shown once: a page that opens a game (a reload, a new session) skips what
+  happened before; a redraw carries an animation on from where it was
+  (negative animation delay) rather than starting it again. The effects are
+  CSS only, over the page with `pointer-events: none`, and the sparks are
+  hidden for people who ask their system for reduced motion.
+- With 3+ players a reaction can be aimed at one player; it is still shown to
+  everyone (a table talk, like poker), marked "→ you" for its target.
+- On your own turn a page polls every 3 s, so a reaction can take up to 3 s
+  to reach the player whose turn it is; the poll rates were not changed.
 
 **2026-11-19: picking a club's players (Claude Code, PR #51)**
 

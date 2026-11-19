@@ -134,6 +134,8 @@ _ERRORS_RU = {
     "Slot already filled": "Эта клетка уже заполнена.",
     "Row already complete": "Эта строка уже заполнена.",
     "Give the club a name.": "Дайте клубу название.",
+    "Unknown reaction.": "Такой реакции нет.",
+    "One reaction every two seconds, please.": "Не больше одной реакции в две секунды.",
 }
 _ERROR_PATTERNS_RU = [
     (re.compile(r"Not enough school balance to write this row \(need (\d+), have (-?\d+)\)"),
@@ -155,6 +157,22 @@ def error(message: str) -> str:
 
 
 RU = {
+    # ----- reactions and celebrations -----
+    "Lucky!": "Повезло!",
+    "Nice!": "Красиво!",
+    "Wow!": "Ого!",
+    "Ouch": "Ой",
+    "Hurry up": "Побыстрее",
+    "GG": "GG",
+    "Haha": "Ха-ха",
+    "On fire!": "В ударе!",
+    "Send to": "Кому",
+    "Everyone": "Всем",
+    "{name} → you": "{name} → вам",
+    "One reaction every two seconds, please.": "Не больше одной реакции в две секунды.",
+    "Abaka!": "Абака!",
+    "Royal full house!": "Королевский фулл-хаус!",
+    "first roll": "с первого броска",
     # ----- general -----
     "and": "и",
     "You": "Вы",

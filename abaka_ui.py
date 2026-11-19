@@ -37,6 +37,7 @@ from abaka.rooms import (  # noqa: E402
 from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from abaka.repository import FileRepository, MirroredRepository, PostgresRepository  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
+from ui_components.effects import render_events, render_reaction_bar  # noqa: E402
 from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
     initialize_session_state, render_game, render_language_switch, render_top_bar, reset_turn_selection)
@@ -602,9 +603,14 @@ def _render_online(store: RoomStore) -> None:
             except RoomError:
                 pass  # the other player already started the next game
 
+        def react(reaction: str, to: Optional[int]) -> None:
+            get_store().react(code, token, reaction, to)
+
         render_game(engine, me=seat, status_html=status, on_play_again=rematch,
                     on_leave=_leave_room, leave_label=t("Leave game"), board_note_html=_series_html(view),
-                    results_note_html=_club_result_html(view), after_results=lambda: _club_button(view))
+                    results_note_html=_club_result_html(view), after_results=lambda: _club_button(view),
+                    below_play=lambda: render_reaction_bar(view.names, seat, react))
+        render_events(code, view.events, view.names, seat)
 
     # Check often only while someone else can change the room: players joining, or another
     # player's turn. On your own turn, or once the game is over, nobody else moves.
@@ -632,6 +638,7 @@ def _render_local_game(store: RoomStore, view, token: str) -> None:
                 status_html=chip(t("Same device · {code}", code=code)), on_play_again=rematch,
                 on_leave=leave, leave_label=t("Leave game"), board_note_html=_series_html(view),
                 results_note_html=_club_result_html(view), after_results=lambda: _club_button(view))
+    render_events(code, view.events, view.names, None)  # fireworks and sparkles; no reactions here
 
 
 def _series_html(view) -> str:

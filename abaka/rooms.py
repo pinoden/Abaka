@@ -52,6 +52,15 @@ MAX_ROOMS_IN_MEMORY = 2000            # beyond this, the rooms seen least recent
 SWEEP_EVERY_SECONDS = 60
 DISK_SWEEP_EVERY_SECONDS = 60 * 60    # expired files are deleted this often
 RESULTS_KEPT = 100                    # finished games a room remembers for its running score
+
+# Reactions players send each other in an online game, and the effects everyone sees
+# after a great move. Both live in the room's memory only (never saved).
+REACTIONS = ("lucky", "nice", "wow", "ouch", "hurry", "gg", "haha", "fire")
+REACTION_EVERY_SECONDS = 2.0          # one reaction per seat this often
+EVENTS_KEPT = 20                      # recent reactions and effects a room keeps for the pages
+FIREWORKS = "fireworks"               # Abaka scored: fireworks for everyone
+SPARKLES = "sparkles"                 # a straight, four of a kind or the royal full house on the first roll
+_FIRST_ROLL_HITS = (Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT, Category.KARE, Category.FULL)
 _CODE_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, CODE_LENGTH))
 
 log = logging.getLogger("abaka")
@@ -59,6 +68,10 @@ log = logging.getLogger("abaka")
 
 class RoomError(ValueError):
     """A request the room refused; the message is safe to show to the player."""
+
+
+class TooFast(RoomError):
+    """A reaction sent too soon after the last one from the same seat. Nothing was sent."""
 
 
 class OutdatedPage(RoomError):
@@ -100,7 +113,7 @@ class RoomView:
     def __init__(self, code: str, names: List[str], engine: Optional[GameEngine],
                  version: int, games_played: int, capacity: int, local: bool = False,
                  club: Optional[str] = None, results: Optional[List[dict]] = None,
-                 picked: tuple = (), rerolled: tuple = (), picks: int = 0) -> None:
+                 picked: tuple = (), rerolled: tuple = (), picks: int = 0, events: tuple = ()) -> None:
         self.code = code
         self.names = names            # seated players, in seat order (seat 0 created the game)
         self.engine = engine
@@ -112,7 +125,9 @@ class RoomView:
         self.results = results or []  # finished games, oldest first: {"game": n, "scores": [...]}
         self.picked = picked          # dice the player whose turn it is has picked to roll again
         self.rerolled = rerolled      # dice the last move rolled again (empty if it was not a reroll)
-        self.seen = (version, picks)  # changes with the room or the picked dice: what pages poll
+        self.events = events          # recent reactions and effects, oldest first (see _Room.events)
+        # Changes with the room, the picked dice or a new event: what pages poll.
+        self.seen = (version, picks, events[-1]["id"] if events else 0)
 
     @property
     def started(self) -> bool:
@@ -157,6 +172,17 @@ class _Room:
         self.picked: tuple = ()           # dice the player whose turn it is has picked
         self.rerolled: tuple = ()         # dice the latest move rolled again, if it was a reroll
         self.picks = 0                    # counts changes of `picked`, so pages notice them
+        # Reactions and effects (not saved; a rematch clears them). Each is a dict with an
+        # increasing "id" (from the clock in ms, so ids keep growing after the room is loaded
+        # again), "kind" ("reaction" or "effect"), "seat", "at" and its details. Never changed.
+        self.events: List[dict] = []
+        self.last_event_id = 0
+        self.reacted_at: Dict[int, List[float]] = {}  # per seat: when it sent its latest reaction
+
+    def add_event(self, event: dict) -> None:
+        now = time.time()
+        self.last_event_id = max(self.last_event_id + 1, int(now * 1000))
+        self.events = (self.events + [dict(event, id=self.last_event_id, at=now)])[-EVENTS_KEPT:]
 
     def touch(self) -> None:
         self.version += 1
@@ -417,17 +443,21 @@ class RoomStore:
             room = self._get(code)
             return RoomView(room.code, list(room.names), room.engine, room.version, room.games_played,
                             room.capacity, room.local, room.club, list(room.results),
-                            room.picked, room.rerolled, room.picks)
+                            room.picked, room.rerolled, room.picks, tuple(room.events))
 
     def seen(self, code: str):
         """
-        (version, picks): changes when the room changes or the player whose turn it is picks
-        other dice. Pages poll it (RoomView.seen is the value they were drawn from). Cheap.
+        (version, picks, latest event id): changes when the room changes, the player whose turn
+        it is picks other dice, or a reaction or effect arrives. Pages poll it (RoomView.seen is
+        the value they were drawn from). Cheap.
         """
         with self._lock:
             self._count("polls")
             room = self._room(code)
-            seen = (room.version, room.picks) if room else (-1, 0)
+            if room is None:
+                seen = (-1, 0, 0)
+            else:
+                seen = (room.version, room.picks, room.events[-1]["id"] if room.events else 0)
         self._report_if_due()
         return seen
 
@@ -483,6 +513,30 @@ class RoomStore:
                 room.picked = picked
                 room.picks += 1
 
+    def react(self, code: str, token: str, reaction: str, to: Optional[int] = None) -> None:
+        """
+        A reaction (one of REACTIONS) from this player to everyone at the table, or aimed at
+        the player in seat `to`. Online games only; anyone seated may react, at any time. Not
+        a move: the room version stays as it is and nothing is saved. One per seat every
+        REACTION_EVERY_SECONDS (TooFast otherwise).
+        """
+        if reaction not in REACTIONS:
+            raise RoomError("Unknown reaction.")
+        with self._lock:
+            room = self._get(code)
+            if token not in room.tokens:
+                raise RoomError("You are not seated in this game.")
+            if room.local:
+                return  # everyone shares one screen
+            seat = room.tokens.index(token)
+            if to is not None and not (0 <= to < len(room.names) and to != seat):
+                to = None
+            allowed, room.reacted_at[seat] = within_limit(room.reacted_at.get(seat, []), time.time(), 1,
+                                                          REACTION_EVERY_SECONDS)
+            if not allowed:
+                raise TooFast("One reaction every two seconds, please.")
+            room.add_event({"kind": "reaction", "seat": seat, "to": to, "reaction": reaction})
+
     def score(self, code: str, token: str, category: Category, slot_index: int,
               expected_version: Optional[int] = None) -> None:
         def action(engine: GameEngine) -> None:
@@ -507,6 +561,7 @@ class RoomStore:
                 raise RoomError("The current game is not finished yet.")
             room.games_played += 1
             room.engine = _new_engine(room, self.starting_throw)
+            room.events = []  # last_event_id stays, so ids keep growing
             room.touch()
             pending = self._snapshot(room)
         self._write(pending)
@@ -534,12 +589,16 @@ class RoomStore:
             room = self._get(code)
             # Work on a copy so a rejected move can never leave the room half-updated, and so the
             # engine that views have handed out never changes (copy-on-write).
-            engine = self._check_turn(room, token, expected_version).clone()
+            before = self._check_turn(room, token, expected_version)
+            engine = before.clone()
             action(engine)
             room.engine = engine
             room.picked, room.rerolled = (), ()
             if after is not None:
                 after(room)
+            effect = _celebration(before, engine)
+            if effect is not None:
+                room.add_event(effect)
             finished = None
             if engine.is_game_over():  # this move ended the game
                 scores = [p.calculate_score() for p in engine.players]
@@ -766,6 +825,32 @@ def _new_engine(room: _Room, starting_throw: bool) -> GameEngine:
         # Without the starting throw, alternate who goes first from one game to the next.
         engine.current = room.games_played % len(room.names)
     return engine
+
+
+def _celebration(before: GameEngine, after: GameEngine) -> Optional[dict]:
+    """
+    The effect every player sees after this move, if it earned one: fireworks for Abaka,
+    sparkles for a straight, four of a kind or the royal full house (1-1-1-2-2) scored on the
+    first roll. `before` is the game as it was before the move (installed engines never change).
+    """
+    move = after.last_move
+    if move is None or move == before.last_move or not before.dice:
+        return None  # no cell written: a roll, a reroll or a starting throw
+    seat, category, slot = move
+    score = after.players[seat].table[category][slot]
+    if not isinstance(score, int) or isinstance(score, bool) or score <= 0:
+        return None  # crossed out
+    if category == Category.ABAKA:
+        effect = FIREWORKS
+    elif before.first_roll and category in _FIRST_ROLL_HITS:
+        # The royal full house's +50 makes it 114 on the first roll; any other full house
+        # (Abaka counted as one included) scores at most 60 there.
+        if category == Category.FULL and score <= 60:
+            return None
+        effect = SPARKLES
+    else:
+        return None
+    return {"kind": "effect", "effect": effect, "seat": seat, "category": category.name, "score": score}
 
 
 def _require_rolled(engine: GameEngine) -> None:
