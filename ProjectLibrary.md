@@ -413,7 +413,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -748,8 +748,26 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       says so.
     - Four of a kind is still not a full house.
 
+21. **Pick a club's players by name.** Done in PR #51.
+    > "for existing clubs if there were some games played already - I want
+    > the options to be provided - so you can type a new name or select of
+    > the existing players"
+    - Once a club has players, every name field of a club game (same device,
+      online host, and someone joining an online club game) is a list of the
+      club's players, the most recently played first, that also takes a new
+      name typed in ("Add: Zed"). Joiners are offered only players not
+      seated yet.
+    - A same-device club game with the same player twice is refused ("Each
+      player needs a different name."), since both would count as one
+      member.
+    - A club with no games yet keeps the plain text boxes.
+
 ## Status (2026-11-19)
 
+- **Club player picker (owner, Backlog item 21):** PR #51. Checked in
+  headless Chromium on a local server at 1300px and 390px: the club's
+  players offered, one picked and one typed in, the game started with both;
+  no sideways scrolling.
 - **Abaka as a full house (owner, Backlog item 20):** PR #50, with the
   rules text in English and Russian.
 - **Two pairs from four of a kind (owner's report, Backlog item 19):** PR #49.
@@ -864,14 +882,15 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 206
-  pass; on 3.8, 171 pass and 35 are skipped (2 of them test `tools/pr.py`, 9
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 207
+  pass but one step skipped (a typed-in club name, which AppTest 1.48
+  cannot send); on 3.8, 171 pass and 36 are skipped (2 of them test `tools/pr.py`, 9
   need a database or psycopg; the others need Streamlit). 6 picked-dice tests
   (`test_shown_dice.py`: picks are shown but are not a move, only the
   player whose turn it is picks, a reroll right after a pick, the other
   screen through the app). 4 baseline tests
   (`test_loadtest_baseline.py`: rows read back, a slowdown flagged, only
-  comparable rows compared). 10 club tests
+  comparable rows compared). 11 club tests
   (`test_clubs.py`: ratings, the running score, club tables, saving, the
   club pages through the app). CI runs them on 3.13 with
   Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 21 database
@@ -1011,6 +1030,18 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: picking a club's players (Claude Code, PR #51)**
+
+- A Streamlit select box that accepts new options (`accept_new_options`,
+  available in 1.48 and 1.67) does both things the owner asked in one
+  field, so names already in the club are picked with their exact spelling.
+- The list comes from `ClubStore.member_names` (no club copy), most recent
+  players first, so regulars are at the top.
+- The select box has its own key (`<key>-pick`), because Streamlit keeps a
+  widget's value by key and would clash with the text box the same field
+  shows before the club's first game.
+- AppTest 1.48 cannot send a typed-in option, so that step of the app test
+  is skipped there and runs on 1.67 in CI; the browser check covered it.
 **2026-11-19: Abaka as a full house, pairs in every combination (Claude Code, PR #50)**
 
 - The owner asked for both while PR #49 was going live. Abaka counts in

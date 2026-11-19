@@ -236,5 +236,40 @@ class TestClubPages(unittest.TestCase):
         self.assertTrue(any(b.label == "Club table" for b in results.button))
 
 
+    def test_club_players_are_offered_by_name(self):
+        """Owner (2026-11-19): in a club with games, pick a player or type a new name."""
+        self.page()
+        store = self.stores[-1]
+        clubs = store.on_game_over.__self__
+        club = clubs.create("Friday dice")
+        page = self.page(club=club)
+        self.assertTrue(any(w.key == "club_p1" for w in page.text_input))  # no players yet: a text box
+        code, key = store.create_local(["Ann", "Bob"], club=club)
+        finish_game(store, code, key)
+
+        page = self.page(club=club)
+        first, second = page.selectbox(key="club_p1-pick"), page.selectbox(key="club_p2-pick")
+        self.assertEqual(sorted(first.options), ["Ann", "Bob"])
+        first.select("Ann")
+        second.select("Ann")
+        next(b for b in page.button if b.label == "Start game").click().run()
+        self.assertIn("Each player needs a different name.", [e.value for e in page.error])
+        self.assertEqual(len(store._rooms), 1)  # no game started
+
+        # Someone joining an online club game is offered the players not seated yet.
+        online, _ = store.create("Bob", players=2, club=club)
+        invite = self.page(room=online)
+        self.assertEqual(invite.selectbox(key="join_name-pick").options, ["Ann"])
+
+        page.selectbox(key="club_p2-pick").set_value("Zed")  # a new player, typed in
+        try:
+            next(b for b in page.button if b.label == "Start game").click().run()
+        except ValueError:  # AppTest 1.48 cannot send a typed-in option (1.67 can; checked in a browser)
+            self.skipTest("this AppTest cannot type a new option into a select box")
+        self.assertFalse(page.exception, [e.value for e in page.exception])
+        room = store.view(page.session_state["room_code"])
+        self.assertEqual((room.names, room.club), (["Ann", "Zed"], club))
+
+
 if __name__ == "__main__":
     unittest.main()

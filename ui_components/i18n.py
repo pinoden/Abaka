@@ -294,6 +294,9 @@ RU = {
     "Choose a row to cross out": "Выберите строку, чтобы зачеркнуть",
     # ----- rows and moves -----
     "Pair": "Пара",
+    "Pick the club's players, or type a new name.": "Выберите игроков клуба или введите новое имя.",
+    "Pick a player or type a new name": "Выберите игрока или введите новое имя",
+    "Each player needs a different name.": "У каждого игрока должно быть своё имя.",
     "Two pairs": "Две пары",
     "Three of a kind": "Тройка",
     "Small straight": "Малый стрит",
