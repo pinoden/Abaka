@@ -39,9 +39,32 @@ Streamlit install the packages again and restart the app.
 Open the address, create a game in the **Online** card and send your friends
 the invite link the app shows. See `README_MULTIPLAYER.md`.
 
+## 4. Keep games in a database (recommended)
+
+Without a database, games live on the server's disk only (see below). To keep
+them through reboots and sleep, give the app a Postgres database. Neon's free
+plan is enough:
+
+1. In the Neon console, open the project, then **Connect**, and copy the
+   connection string (it starts with `postgresql://`).
+2. In Streamlit Community Cloud, open the app's **Settings**, then **Secrets**,
+   and add one line, with your string in the quotes:
+
+   ```toml
+   ABAKA_DATABASE_URL = "postgresql://..."
+   ```
+3. Save. The app restarts and creates its table (`abaka_rooms`) by itself.
+   Games already saved on the disk are copied into the database when it
+   starts. The log (**Manage app**) then says "games are saved in Postgres at
+   ...".
+
+Elsewhere, set the environment variable `ABAKA_DATABASE_URL` instead. Never
+commit the string: `.streamlit/secrets.toml` is ignored by git.
+
 ## Things to know
 
-- Games are saved on the server's disk, in `~/.abaka/games` or the folder named
+- With a database, every game is saved there and, as a copy, on the disk.
+  Without one, games are saved only on the server's disk, in `~/.abaka/games` or the folder named
   by `ABAKA_SAVE_DIR`. They survive updates and restarts of the app,
   including the restart after a change to `requirements.txt` (checked on the
   live app). On Streamlit Community Cloud they probably do not survive a

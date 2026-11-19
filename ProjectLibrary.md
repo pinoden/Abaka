@@ -19,7 +19,8 @@ keep this file. Claude Code loads the two through CLAUDE.md.
 ## Commands
 
 ```bash
-pip install -r requirements.txt                       # streamlit 1.67.0 (pinned; needs Python 3.11+)
+pip install -r requirements.txt                       # streamlit 1.67.0 (pinned; needs Python 3.11+), psycopg 3.3.6
+ABAKA_TEST_DATABASE_URL=postgresql://... python -m unittest tests.test_postgres   # database tests (else skipped)
 streamlit run abaka_ui.py                             # the app (port 8501, all interfaces)
 python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
@@ -38,6 +39,11 @@ python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR
   `~/opt/anaconda3/envs/Python39/bin/python -m streamlit run abaka_ui.py`.
   - That is older than the pinned 1.67, which needs Python 3.11+, and no
     newer Python is installed here.
+- No Postgres is installed here. For the database tests, a throwaway one:
+  `pip install pgserver "psycopg[binary]"` in a scratch venv (psycopg 3.2 on
+  Python 3.9), then its bundled `initdb -D <dir> -U abaka --auth=trust` and
+  `pg_ctl -D <dir> -o "-p 55432 -k '' -c listen_addresses=127.0.0.1" -w start`.
+  `-k ''` is needed because the scratch path is too long for a Unix socket.
   - Local runs check 1.48; CI (`.github/workflows/tests.yml`) checks 1.67 on
     Python 3.13, as on Cloud. The app works on both.
 - Streamlit 1.48 runs on Tornado. 1.67 runs on Starlette and uvicorn, with
@@ -71,7 +77,7 @@ Python + Streamlit.
 | `abaka/scoring.py`, `school.py`, `bonus.py` | Combination scoring, school balance, row and column bonuses |
 | `abaka/rooms.py` | Every game: `RoomStore` (online and same-device rooms, saved to disk, stats line) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
 | `abaka/saving.py` | `GameEngine` <-> plain JSON data (`engine_to_data`, `engine_from_data`) for saved games |
-| `abaka/repository.py` | Where rooms are kept between runs: the repository methods, and `FileRepository` (one JSON file per room). No Streamlit |
+| `abaka/repository.py` | Where rooms are kept between runs: the repository methods; `FileRepository` (one JSON file per room), `PostgresRepository` (one row per room; Neon on the live app) and `MirroredRepository` (both). No Streamlit |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
 | `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
@@ -169,14 +175,31 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   They get a code and `?room=CODE` like online games. Opening that link (a
   reload, a dropped session, another device) or typing the code on the home
   page continues the game at once (`store.resume_local`, no seat to pick).
-- Saving: the store keeps rooms through a repository (`abaka/repository.py`).
-  The app's store (`RoomStore(save_dir=...)`) uses `FileRepository`, which
-  writes each room to `<save_dir>/<CODE>.json` after every change.
+- Saving: the store keeps rooms through a repository (`abaka/repository.py`,
+  chosen by `abaka_ui._repository()`).
+  - Without a database, the app uses `FileRepository`, which writes each room
+    to `<save_dir>/<CODE>.json` after every change.
+  - With a database URL (`ABAKA_DATABASE_URL`: the environment variable, or
+    the Streamlit secret of that name; Neon on the live app), it uses
+    `MirroredRepository`: every save goes to Postgres
+    (`PostgresRepository`, table `abaka_rooms`) and to the files; a load takes
+    whichever has the newer version. When the store starts, a background
+    thread copies files the database lacks into it (`import_files`).
   - The repository methods are `claim`, `load`, `save(code, version, data)`,
     `delete`, `prune`, `quarantine` and `wait`. `RoomStore` uses nothing
-    else, so a database (Stage 2) is another class with those methods
-    (`RoomStore(repository=...)`; `tests/test_repository.py` runs a store on
-    an in-memory one).
+    else (`RoomStore(repository=...)`; `tests/test_repository.py` runs a
+    store on an in-memory one, `tests/test_postgres.py` on Postgres).
+  - Postgres: one row per room (`code`, `version`, `data` jsonb, `deleted`,
+    `saved_at`). A save is one statement that writes only if the stored
+    version is older; a deleted room is a row without data until its code is
+    claimed again; unusable data moves to `abaka_rooms_quarantine`. The
+    tables are created on first use. One connection, made again when it drops
+    (Neon closes it when it suspends); no prepared statements, for the
+    pooler. An unreachable database never stops a game: saves are logged as
+    failed, other calls log a warning, and the files still hold every game.
+  - Loads happen under the store's lock, so with a database the first look
+    at a game not in memory waits for a round trip (longer if Neon has to
+    wake up).
   - The data is taken under the lock (`_snapshot`) and saved after it
     (`_write`), so storage never holds up other games.
   - Each file write uses its own temp file and an atomic replace.
@@ -536,10 +559,14 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
     **Stage 2: durable shared store (M)**
 
-    - [ ] Postgres or Redis behind the repository, with a version check on
-      every write and change notifications.
-    - [ ] A one-time import of the JSON files, one release writing to both,
-      then reads switch over behind a flag.
+    - [x] Postgres behind the repository, with a version check on every
+      write. PR #42. Neon, chosen by the owner (2026-11-19). Change
+      notifications are not needed while one server runs.
+    - [x] The JSON files imported, and both written while the database is
+      new. PR #42. The app imports files the database lacks when it starts,
+      writes every save to both and loads the newer copy.
+    - [ ] Stop writing the files once the database has proved itself on the
+      live app.
     - Games then survive Cloud sleeping and reboots. Needs the owner's
       database account (Supabase or Neon for Postgres, Upstash for Redis)
       and its URL in Streamlit secrets.
@@ -559,7 +586,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - How rejoining is protected.
     - The limits: rooms, creations per session, how long finished games are
       kept.
-    - The database (Stage 2) and the hosting budget (Stage 3).
+    - The hosting budget (Stage 3). The database is Neon (2026-11-19).
 
 12. **Cross out a claimed bonus for the other players immediately.** Done in PR #37.
     When a player earns a shared row or column bonus, show a cross in the
@@ -589,8 +616,15 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     > первого, его результат не показывается вообще, сразу сообщается, что первым
     > ходит другой. Это вносит сумятицу и вопросы, сколько же он выбросил"
 
-## Status (2026-11-18)
+## Status (2026-11-19)
 
+- **Games in a database (owner: "I already have an account on Neon, can you
+  set it up"):** PR #42. With the `ABAKA_DATABASE_URL` secret, the app saves
+  every game to Neon Postgres as well as to files, so games survive Cloud
+  reboots and sleep. Without it, nothing changes. Checked on a local server
+  against Postgres 16: a game came back after a restart with its save
+  folder deleted, and games saved only in files were imported at start.
+  The secret on Cloud is the owner's to add.
 - **Mid-size screens and LICENSE (owner, "you can work on 4"):** PR #41. With
   3-5 players the cards stack between 641px and 1000/1180px, so the
   scoreboard fits and the dice keep 60px; the MIT LICENSE file is added.
@@ -659,10 +693,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, all 161 pass;
-  on 3.8, 142 pass and 19 are skipped (2 of them test `tools/pr.py`; the
-  others need Streamlit). CI runs them on 3.13 with Streamlit
-  1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 174
+  pass; on 3.8, 147 pass and 27 are skipped (2 of them test `tools/pr.py`, 8
+  need a database; the others need Streamlit). CI runs them on 3.13 with
+  Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 13 database
+  tests (`test_postgres.py`: the Postgres repository's contract, a dropped
+  connection, an unreachable database, a store on Postgres, the mirrored
+  files and their import), 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
   Russian version with the same placeholders, room errors, plurals, per-thread
@@ -740,13 +777,14 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ### Known issues
 
-- Saved games live on the server's disk. On Streamlit Community Cloud that
-  survives code updates and the restart after a change to
-  `requirements.txt` (both checked on the live app). It probably does not
-  survive a reboot from the Cloud dashboard or the app going to sleep, if
-  those rebuild the container; that is not checked. Keeping games through
-  those needs an external database (credentials in Streamlit secrets), which
-  the owner would have to set up.
+- Until the `ABAKA_DATABASE_URL` secret is set on Cloud, saved games live
+  only on the server's disk. That survives code updates and the restart
+  after a change to `requirements.txt` (both checked on the live app), but
+  probably not a reboot from the Cloud dashboard or the app going to sleep.
+  With the secret, games are in Neon too (PR #42).
+- Neon's free plan suspends an idle database; the first game opened after
+  that waits for it to wake up (about a second, not measured on the live
+  app).
 - Online players coming back in a new session (a reload, or a session
   dropped after more than 6 hours) land on the invite page and tap their
   name. The seat token is kept out of the URL, so a copied address bar
@@ -796,6 +834,36 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: games in Neon Postgres (Claude Code, PR #42)**
+
+- The owner asked about free databases and storing games on GitHub, chose
+  Neon ("I already have an account on Neon, can you set it up for the
+  abaka?"), and decided against moving the app to Vercel, which cannot run a
+  Streamlit server.
+- Postgres behind the existing repository interface, so `RoomStore` and the
+  game did not change. psycopg 3.3.6 (with its binary libpq) is pinned; it
+  is imported only by `PostgresRepository`, so the engine still runs on
+  Python 3.8 without it.
+- The URL comes from the `ABAKA_DATABASE_URL` secret, never from the code or
+  the log (the log names only the host). The app works as before without
+  it, so the merge and the secret are independent.
+- The files stay as a mirror at first, because the database is new: a load
+  takes the newer of the two copies, so a game whose database save failed
+  still comes back, and a game saved before the database moves into it on
+  start (`import_files`) or on its next save. Dropping the mirror is the
+  open Stage 2 step.
+- The version rule moved into the database: a save writes only if the stored
+  version is older, in one statement. A second server could not undo a move
+  either.
+- One connection behind a lock, made again on demand: a single process
+  writes about one row per move, so a pool would add a package for nothing.
+  A statement that fails on a dropped connection runs again once; every
+  statement is safe to repeat.
+- Tested against a real Postgres: locally (Postgres 16 from `pgserver`, as
+  no other was installed), and in CI through a Postgres service. Checked
+  end to end on a local server in headless Chromium: a game was played,
+  the server stopped, its save folder deleted, and a new server with an
+  empty folder showed the game unchanged from its link.
 **2026-11-18: mid-size screens and the LICENSE file (Claude Code, PR #41)**
 
 - The owner asked for the small polish items ("you can work on 4").

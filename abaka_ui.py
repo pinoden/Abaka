@@ -34,6 +34,7 @@ code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
     MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code, within_limit)
+from abaka.repository import FileRepository, MirroredRepository, PostgresRepository  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
@@ -85,6 +86,33 @@ def _save_dir() -> Optional[Path]:
     return None
 
 
+def _database_url() -> Optional[str]:
+    """
+    The Postgres URL (Neon on the live app): $ABAKA_DATABASE_URL if set (empty: no
+    database), else the ABAKA_DATABASE_URL secret (Streamlit Cloud: the app's Settings,
+    then Secrets). None: games are saved in files only.
+    """
+    url = os.environ.get("ABAKA_DATABASE_URL")
+    if url is None:
+        try:
+            url = st.secrets.get("ABAKA_DATABASE_URL")
+        except Exception:  # noqa: BLE001 - no secrets file at all
+            url = None
+    url = str(url or "").strip()
+    return url or None
+
+
+def _repository():
+    """Where the store keeps games: the database (with a copy in files) if there is one, else files."""
+    folder = _save_dir()
+    files = FileRepository(folder) if folder is not None else None
+    url = _database_url()
+    if url is None:
+        return files
+    database = PostgresRepository(url)
+    return MirroredRepository(database, files) if files is not None else database
+
+
 @st.cache_resource
 def _store_registry() -> dict:
     # Do not edit this function: its source is its cache key. An edit would start a
@@ -116,9 +144,14 @@ def get_store() -> RoomStore:
         if store is None or (type(store) is not RoomStore and _running_current_code()):
             if store is not None:
                 store.retire()
-            folder = _save_dir()
-            store = registry["store"] = RoomStore(save_dir=folder, report_every=STATS_EVERY_SECONDS)
-            logging.getLogger("abaka").info("store started; games are saved in %s", folder or "memory only")
+            repository = _repository()
+            store = registry["store"] = RoomStore(repository=repository, report_every=STATS_EVERY_SECONDS)
+            where = (repository.describe() if hasattr(repository, "describe")
+                     else getattr(repository, "folder", None) or "memory only")
+            logging.getLogger("abaka").info("store started; games are saved in %s", where)
+            if isinstance(repository, MirroredRepository):
+                # Games saved in files before the database (or while it was unreachable).
+                threading.Thread(target=repository.import_files, name="abaka-import", daemon=True).start()
         return store
 
 
