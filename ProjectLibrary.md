@@ -28,6 +28,7 @@ python -m unittest tests.test_rooms -v                # one test module
 python tools/simulate.py 200 40                       # random complete games with rule checks (2-3 min)
 python tools/loadtest.py --clients 100 --interval 1   # simulated pages polling every second: CPU, latency
 python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a Streamlit option
+python tools/loadtest.py --baseline --record docs/LOADTEST.md   # the release baseline (about 1 min): adds a row, flags a slowdown
 python tools/pr.py status                             # open pull requests and their branches
 python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR, wait for CI, merge
 ```
@@ -390,6 +391,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   backslash escapes, plus a zero-width space after ":", "." and "@" because
   captions and toasts turn bare addresses into links even when escaped.
   `rooms.clean_name` also removes control and invisible format characters.
+- A pull request that changes the app's code records a load-test row
+  (`python tools/loadtest.py --baseline --record docs/LOADTEST.md`, about a
+  minute) and says in its description if the tool flags a slowdown.
 - Every new online action goes through `RoomStore._act`, so it gets the turn
   check, the lock and the version bump.
 - The game rules are the owner's own. Do not change them, or copy rule details
@@ -615,7 +619,19 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       exact scheme.
     - [ ] Presence (who is online), rate limits, and longer game codes for
       new games.
-    - [ ] A load-test baseline recorded for every release.
+    - [x] A load-test baseline recorded for every release. PR #47.
+      - `tools/loadtest.py --baseline --record docs/LOADTEST.md`: 100 pages
+        polling every second, 200 saved games, 20 s. It adds a row (date,
+        commit, machine, Python and Streamlit, CPU, polls answered, poll
+        latency, CPU per poll, page run, memory) and compares it with the
+        latest row from the same machine, versions and load; a number 25%
+        worse is flagged.
+      - Rule: a pull request that changes the app's code (`abaka/`,
+        `ui_components/`, `abaka_ui.py`, `code_version.py`, `.streamlit/`,
+        `requirements.txt`) records a row, and says in the pull request if
+        it is flagged.
+      - First row, `main` at 996d5f5 on the M1 (Python 3.9, Streamlit
+        1.48): 31% CPU, 97 of 100 polls/s answered, 8.2 ms median poll.
 
     **Stage 2: durable shared store (M)**
 
@@ -688,6 +704,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-19)
 
+- **Load-test baseline (Backlog item 11, Stage 1; owner: "Keep going"):**
+  PR #47. `docs/LOADTEST.md` keeps one row per release, written by
+  `tools/loadtest.py --baseline --record`, which flags a slowdown against
+  the previous comparable row. First row: 31% CPU for 100 pages polling
+  every second, 8.2 ms median poll. A load test never reaches the
+  production database any more (its server gets an empty database URL).
 - **Code review for speed (owner: "review all the code on its optimality"):**
   PR #46. Nothing in the game grows with input size (a table is 15 rows ×
   4 cells, at most 5 players), so the work went to what each click and page
@@ -787,9 +809,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 192
-  pass; on 3.8, 162 pass and 30 are skipped (2 of them test `tools/pr.py`, 9
-  need a database or psycopg; the others need Streamlit). 10 club tests
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 196
+  pass; on 3.8, 162 pass and 34 are skipped (2 of them test `tools/pr.py`, 9
+  need a database or psycopg; the others need Streamlit). 4 baseline tests
+  (`test_loadtest_baseline.py`: rows read back, a slowdown flagged, only
+  comparable rows compared). 10 club tests
   (`test_clubs.py`: ratings, the running score, club tables, saving, the
   club pages through the app). CI runs them on 3.13 with
   Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 21 database
@@ -930,6 +954,27 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: load-test baseline (Claude Code, PR #47)**
+
+- The owner said "Keep going" after the speed review. The next Stage 1 step
+  that needs no owner decision was the load-test baseline; seat protection
+  waits for the owner's choice of scheme.
+- The baseline is a table in the repository (`docs/LOADTEST.md`), not a CI
+  job: CI machines vary from run to run and are much noisier than the
+  numbers being compared. Rows are compared only with rows from the same
+  machine, Python, Streamlit and load.
+- The load is the worst case a page asks for (a poll every second) with 100
+  pages, the size Stage 0 measured, so the first row lines up with those
+  numbers (PR #27: 33% CPU, 10 ms median; now 31%, 8.2 ms).
+- Two runs back to back on the same code gave the same CPU, polls and
+  median poll, and page runs 76.9 and 77.6 ms, so a 25% threshold flags real
+  changes, not noise.
+- "+changes" after the commit means the app's files differed from it; other
+  files (tools, docs) do not count.
+- Found while doing it: the load test passed its environment to the server,
+  so with `ABAKA_DATABASE_URL` set (as for the database tests against Neon)
+  its 200 games would have gone to the production database. The server now
+  gets an empty URL, which also makes the app ignore any secrets file.
 **2026-11-19: code review for speed (Claude Code, PR #46)**
 
 - The owner asked to review all the code for optimality and optimize it.
