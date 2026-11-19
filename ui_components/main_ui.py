@@ -64,11 +64,15 @@ def render_top_bar(status_html: str, on_leave: Optional[Callable[[], None]] = No
 
 def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: str = "",
                 on_play_again: Callable[[], None], on_leave: Callable[[], None],
-                leave_label: str) -> None:
+                leave_label: str, board_note_html: str = "", results_note_html: str = "",
+                after_results: Optional[Callable[[], None]] = None) -> None:
     """
     Args:
         engine: A GameEngine, or anything shaped like one (see abaka.rooms.RoomEngine).
         me: This browser's seat in an online game; None when everyone shares this screen.
+        board_note_html: shown under the scoreboard (the running score at this table).
+        results_note_html: shown on the results screen under the scores (a club game's ratings).
+        after_results: draws more buttons on the results screen, under "Play again".
     """
     render_top_bar(status_html, on_leave, leave_label)
     # Up to 4 players fit the usual layout; with 5 the scoreboard gets more room and the dice shrink a little.
@@ -81,13 +85,16 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
         with left:
             with st.container(border=True, key="card-play"):
                 if engine.is_game_over():
-                    _render_results(engine, me, on_play_again, on_leave, leave_label)
+                    _render_results(engine, me, on_play_again, on_leave, leave_label, results_note_html,
+                                    after_results)
                     target = None
                 else:
                     target = _render_play_panel(engine, me)
         with right:
             with st.container(border=True, key="card-board"):
                 render_scoreboard(engine, me=me, target=target)
+                if board_note_html:
+                    st.html(board_note_html)
 
 
 def _render_play_panel(engine: GameEngine, me: Optional[int]):
@@ -188,7 +195,8 @@ def _starter_summary(engine: GameEngine, me: Optional[int]) -> str:
 
 
 def _render_results(engine: GameEngine, me: Optional[int], on_play_again: Callable[[], None],
-                    on_leave: Callable[[], None], leave_label: str) -> None:
+                    on_leave: Callable[[], None], leave_label: str, note_html: str = "",
+                    after_results: Optional[Callable[[], None]] = None) -> None:
     scores = [(p.name, p.calculate_score(), i) for i, p in enumerate(engine.players)]
     best = max(s for _, s, _ in scores)
     winners = [i for _, s, i in scores if s == best]
@@ -205,12 +213,14 @@ def _render_results(engine: GameEngine, me: Optional[int], on_play_again: Callab
     )
     trophy = '<div class="trophy">\U0001F3C6</div>' if len(winners) == 1 and me == winners[0] else ""
     st.html(f'<div class="ab-result">{trophy}<h2>{headline}</h2>'
-            f'<div class="ab-scores">{rows}</div></div>')
+            f'<div class="ab-scores">{rows}</div></div>{note_html}')
     if st.button(t("Play again"), key="big-again", type="primary", icon=":material/replay:",
                  use_container_width=True):
         reset_turn_selection()
         on_play_again()
         st.rerun()
+    if after_results is not None:
+        after_results()
     if st.button(leave_label, key="results-leave", use_container_width=True):
         on_leave()
         st.rerun()

@@ -86,6 +86,7 @@ Python + Streamlit.
 | `abaka/player.py` | `PlayerState`: score table, school balance, final score |
 | `abaka/scoring.py`, `school.py`, `bonus.py` | Combination scoring, school balance, row and column bonuses |
 | `abaka/rooms.py` | Every game: `RoomStore` (online and same-device rooms, saved to disk, stats line) and `RoomEngine` (engine-shaped proxy). No Streamlit imports |
+| `abaka/clubs.py` | Clubs: `ClubStore` (a club's table, saved through a repository), the multiplayer Elo `rating_changes`, `member_key`. No Streamlit |
 | `abaka/saving.py` | `GameEngine` <-> plain JSON data (`engine_to_data`, `engine_from_data`) for saved games |
 | `abaka/repository.py` | Where rooms are kept between runs: the repository methods; `FileRepository` (one JSON file per room), `PostgresRepository` (one row per room; Neon on the live app) and `MirroredRepository` (both). No Streamlit |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
@@ -266,6 +267,40 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   closed. The others see "<name> left." (`_announce_departures`). Once the
   game has started, leaving keeps the seat so the player can rejoin.
 
+### Clubs and the running score (Backlog item 17)
+
+- Every room remembers its finished games (`room.results`, the last 100:
+  game number and scores, saved with the room). `RoomView.series()` gives
+  wins per seat and draws; the line under the scoreboard shows it ("Games at
+  this table: 3 · 👑 Ann 2 · Bob 1") once a game there has finished.
+- `RoomStore(on_game_over=...)` is called once per finished game, after the
+  lock, with room, game number, club, names, scores and time. A failing
+  listener is logged and never stops the game. The app passes
+  `ClubStore.record`.
+- A club (`abaka/clubs.py`) has a 6-character code (rooms have 5) and a
+  name. Its page is `?club=CODE`: the table, the latest 10 games, forms to
+  start a same-device or online game that counts for the club
+  (`create_local(names, club=)`, `create(name, players, club=)`), and its
+  link. The home page has a Clubs card (create, open by code, clubs this
+  browser opened: `ss.my_clubs`).
+  - The `?club=` parameter stays in the URL during a game started from the
+    club page, so leaving the game returns to the club. The results screen
+    of a club game shows how the ratings moved and a "Club table" button.
+  - Players are matched by name, ignoring capitals and spaces
+    (`member_key`). Anyone who can open a club can add games to it: it is
+    for friends, like the game codes.
+  - Rating: Elo with every pair of players as a head-to-head match (higher
+    score wins, equal draws), K = 32 scaled by 1/(players - 1), start 1000.
+    The changes of a game add up to zero.
+  - A result is recorded once (id `ROOM:game`). A club keeps its latest 200
+    games; members keep games, wins, total and best score, rating and last
+    change. A best score starts from the first game, since scores can be
+    negative.
+  - Saved like rooms but apart: table `abaka_clubs` (and the files in
+    `<save_dir>/clubs/`, mirrored). Clubs not changed for a year are deleted.
+    `get_clubs()` returns the `ClubStore` made together with the current
+    `RoomStore` in `get_store()`.
+
 ### UI conventions
 
 - `abaka_ui.main()` picks the screen: seated in a room -> the game (online or
@@ -354,7 +389,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -632,8 +667,24 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     > первого, его результат не показывается вообще, сразу сообщается, что первым
     > ходит другой. Это вносит сумятицу и вопросы, сколько же он выбросил"
 
+17. **Leaderboards: the running score at a table, and clubs.** Done in PR #45.
+    > "Is there a smart fun way to keep leaderboard ?" … "Both" (layers 1 and 2
+    > of the proposal: the running score at a table, and clubs with a rating)
+    - Every table shows its running score across "Play again".
+    - Clubs: a code to share, a rating table (Elo, start 1000), the latest
+      games, and club games started from the club page. See "Clubs and the
+      running score".
+    - Not done (layer 3 of the proposal): records and titles ("Abaka hunter",
+      highest score, streaks), and a public hall of fame.
+
 ## Status (2026-11-19)
 
+- **Leaderboards (owner: "Both"):** PR #45. The running score at a table, and
+  clubs with a rating table. Checked with AppTest (a club created through the
+  home page form, a game finished, its table and results screen) and in
+  headless Chromium on a local server with Postgres at 1300px and 390px: home,
+  club page and results, no sideways scrolling; creating a club, starting a
+  game from it and leaving it returns to the club.
 - **Live app on Neon (owner's secret was named `DATABASE_URL`):** PR #44.
   The app now also accepts the `DATABASE_URL` secret, and the home page says
   where games are saved. Before, after the owner's reboot, the live app
@@ -720,9 +771,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 177
-  pass; on 3.8, 148 pass and 29 are skipped (2 of them test `tools/pr.py`, 9
-  need a database or psycopg; the others need Streamlit). CI runs them on 3.13 with
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 187
+  pass; on 3.8, 157 pass and 30 are skipped (2 of them test `tools/pr.py`, 9
+  need a database or psycopg; the others need Streamlit). 10 club tests
+  (`test_clubs.py`: ratings, the running score, club tables, saving, the
+  club pages through the app). CI runs them on 3.13 with
   Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 16 database
   tests (`test_postgres.py`: the Postgres repository's contract, where games are saved, the secret's name, a dropped
   connection, an unreachable database, a store on Postgres, the mirrored
@@ -861,6 +914,25 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: leaderboards (Claude Code, PR #45)**
+
+- The owner asked for "a smart fun way to keep leaderboard" and chose layers
+  1 and 2 of the proposal: the running score at a table, and clubs.
+- Player names are typed freely, so a global table could not tell people
+  apart. Clubs keep the table inside a group of friends, where a name is
+  enough; names match ignoring capitals and spaces.
+- Elo over every pair of players, rather than points for places, so 3-5
+  player games count fairly and beating strong players counts more. K is
+  scaled by 1/(players - 1), so a game moves a rating by at most 32 however
+  many play. Abaka is luck-heavy, so ratings should move slowly; K can be
+  lowered later without losing data (the games are kept).
+- The room reports a finished game through a callback (`on_game_over`),
+  so `RoomStore` knows nothing about clubs, and a club failure never stops a
+  game. Clubs reuse the repository classes in their own table and folder,
+  so they are in Neon on the live app with no new setup.
+- The running score lives in the room (its results), so it needs no club
+  and survives restarts like the game.
+- No rules changed. Not done: records, titles and a hall of fame (layer 3).
 **2026-11-19: the `DATABASE_URL` secret, and where games are saved (Claude Code, PR #44)**
 
 - The owner had saved the Streamlit secret as `DATABASE_URL`, the name in

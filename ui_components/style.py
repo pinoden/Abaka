@@ -211,6 +211,39 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-board .ab-total td.ab-active { border-radius: 0 0 12px 12px; }
 
 /* ---------- results ---------- */
+/* ---------- running score and clubs ---------- */
+.ab-series { margin-top: .7rem; padding: .55rem .8rem; border-radius: 12px; background: #F6F7FB; color: #4A4F68;
+  font-size: .88rem; display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; }
+.ab-series-head { color: #9AA0B5; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.ab-series b { color: #1C2033; }
+.ab-series-club { margin-left: auto; color: #9A6700; font-weight: 600; font-size: .8rem; }
+.ab-club-result { display: flex; flex-wrap: wrap; gap: .3rem .9rem; justify-content: center; margin: -.4rem 0 1rem;
+  padding: .6rem .8rem; border-radius: 12px; background: #EEF0FF; color: #4A4F68; font-size: .9rem; }
+.ab-club-result > div { width: 100%; text-align: center; font-size: .75rem; font-weight: 700; color: #4F46E5;
+  text-transform: uppercase; letter-spacing: .06em; }
+.ab-up { color: #1F7A4A; font-weight: 700; font-size: .8em; }
+.ab-down { color: #C2410C; font-weight: 700; font-size: .8em; }
+.ab-same { color: #9AA0B5; font-size: .8em; }
+.ab-club-head { margin: .2rem 0 1rem; }
+.ab-club-table { width: 100%; border-collapse: collapse; margin-top: .8rem; font-size: .95rem; }
+.ab-club-table th { text-align: left; font-size: .72rem; font-weight: 700; color: #9AA0B5; text-transform: uppercase;
+  letter-spacing: .06em; padding: 0 .5rem .4rem; border-bottom: 1px solid #E6E8F0; }
+.ab-club-table td { padding: .55rem .5rem; border-bottom: 1px solid #F0F1F6; color: #4A4F68; }
+.ab-club-table tbody tr:first-child td { background: #FFF8E6; }
+.ab-club-table .ab-rank { width: 2rem; text-align: center; }
+.ab-club-table .ab-name { color: #1C2033; font-weight: 600; overflow-wrap: anywhere; }
+.ab-club-table .ab-rating { white-space: nowrap; }
+.ab-club-games { list-style: none; padding: 0; margin: .6rem 0 0; display: flex; flex-direction: column; gap: .35rem; }
+.ab-club-games li { display: flex; flex-wrap: wrap; gap: .2rem .6rem; font-size: .9rem; color: #6B7089;
+  padding: .4rem 0; border-bottom: 1px solid #F0F1F6; }
+.ab-club-games .win { color: #1C2033; font-weight: 700; }
+.ab-club-games .ab-when { color: #9AA0B5; font-variant-numeric: tabular-nums; min-width: 2.8rem; }
+@media (max-width: 640px) {
+  .ab-club-table { font-size: .88rem; }
+  .ab-club-table .ab-wide, .ab-club-table th:nth-child(6), .ab-club-table th:nth-child(7) { display: none; }
+  .ab-club-table td, .ab-club-table th { padding-left: .3rem; padding-right: .3rem; }
+}
+
 .ab-result { text-align: center; padding: .5rem 0 1rem; }
 .ab-result .trophy { font-size: 3rem; line-height: 1; }
 .ab-result h2 { margin: .4rem 0 .2rem; font-size: 1.8rem; }
