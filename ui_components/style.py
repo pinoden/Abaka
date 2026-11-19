@@ -235,6 +235,25 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 /* ---------- notifications: bottom of the screen, clear of the turn title and scoreboard ---------- */
 [data-testid="stToastContainer"] { top: auto !important; bottom: 1.25rem !important; }
 
+/* ---------- tablets and small laptops, 3-5 players ----------
+   Side by side, the scoreboard needs about 1000px of screen with 3 players, 1150px with 4 and 1180px
+   with 5; below that it scrolled sideways and the dice shrank (26-39px with 5 players). There the
+   play panel stacks above the scoreboard instead, as on phones (main_ui.render_game sets the key). */
+@media (min-width: 641px) and (max-width: 1180px) {
+  .st-key-game-many [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-card-board) {
+    flex-wrap: wrap; gap: 1rem !important; }
+  .st-key-game-many [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-card-board)
+    > [data-testid="stColumn"] { flex: 1 1 100% !important; width: 100% !important; min-width: 100% !important; }
+  .st-key-game-many .st-key-card-play { max-width: 640px; margin: 0 auto; }
+}
+@media (min-width: 641px) and (max-width: 1000px) {
+  .st-key-game-three [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-card-board) {
+    flex-wrap: wrap; gap: 1rem !important; }
+  .st-key-game-three [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-card-board)
+    > [data-testid="stColumn"] { flex: 1 1 100% !important; width: 100% !important; min-width: 100% !important; }
+  .st-key-game-three .st-key-card-play { max-width: 640px; margin: 0 auto; }
+}
+
 /* ---------- phones ---------- */
 @media (max-width: 640px) {
   /* Columns stack on phones; keep the stacked cards close together. */
