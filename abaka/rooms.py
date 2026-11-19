@@ -207,6 +207,21 @@ class RoomStore:
                 close()
         log.info("store retired after a code update; the new store reads the games from disk")
 
+    def storage(self) -> str:
+        """
+        Where games are kept, for the home page: "database", "files", "memory", or
+        "database:<why>" when a database is set up but not in use (see
+        PostgresRepository.status: password, unreachable, error, not connected yet).
+        """
+        repository = self._repository
+        if repository is None:
+            return "memory"
+        status = getattr(repository, "status", None)
+        if status is None:
+            return "files"
+        state = status()
+        return "database" if state == "connected" else f"database:{state}"
+
     # ----- lobby -----
     def create(self, host_name: str, players: int = 2) -> "tuple[str, str]":
         """Open a new room for `players` players. Returns (room_code, seat_token) for the host."""
