@@ -178,12 +178,14 @@ class PostgresRepository:
     at once instead of waiting for a timeout each time.
     """
 
-    def __init__(self, url: str, table: str = "abaka_rooms", connect_timeout: int = 5) -> None:
+    def __init__(self, url: str, table: str = "abaka_rooms", connect_timeout: int = 5,
+                 application_name: str = "abaka") -> None:
         if not _SAFE_TABLE.match(table):
             raise ValueError(f"not a table name: {table!r}")
         self.url = url
         self.table = table
         self.connect_timeout = connect_timeout
+        self.application_name = application_name  # how the connection shows in pg_stat_activity
         self._lock = threading.Lock()  # one connection, one statement at a time
         self._conn = None
         self._down_until = 0.0
@@ -301,7 +303,7 @@ class PostgresRepository:
             # prepare_threshold=None: no server-side prepared statements, which a connection
             # pooler (Neon's "-pooler" address) may not keep between statements.
             conn = psycopg.connect(self.url, autocommit=True, connect_timeout=self.connect_timeout,
-                                   prepare_threshold=None)
+                                   prepare_threshold=None, application_name=self.application_name)
         except Exception:
             self._down_until = time.monotonic() + RETRY_CONNECT_AFTER
             raise

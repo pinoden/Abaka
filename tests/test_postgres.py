@@ -3,8 +3,8 @@ Games in a database (stage 2): PostgresRepository against a real Postgres, and
 MirroredRepository (the database plus a copy in files).
 
 The Postgres tests need a server: set ABAKA_TEST_DATABASE_URL (CI runs a Postgres
-service; locally, any throwaway database). Each test uses its own tables and drops
-them. Without the variable or the psycopg package they are skipped. The mirrored
+service; locally, any throwaway database or a Neon branch). Each test uses its own
+tables and drops them, and touches no other connection. Without the variable or the psycopg package they are skipped. The mirrored
 tests use the in-memory repository and run everywhere.
 """
 
@@ -36,7 +36,7 @@ DATABASE_URL = os.environ.get("ABAKA_TEST_DATABASE_URL", "").strip()
 class TestPostgresRepository(unittest.TestCase):
     def setUp(self):
         self.table = "abaka_test_" + secrets.token_hex(4)
-        self.repo = PostgresRepository(DATABASE_URL, table=self.table)
+        self.repo = PostgresRepository(DATABASE_URL, table=self.table, application_name=self.table)
         self.addCleanup(self.drop_tables)
 
     def drop_tables(self):
@@ -102,8 +102,9 @@ class TestPostgresRepository(unittest.TestCase):
         self.repo.save("AB2CD", 1, {"v": 1})
         self.repo._conn.close()  # as when Neon suspends an idle database
         self.assertEqual(self.repo.load("AB2CD"), {"v": 1})
-        self.sql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                 "WHERE pid <> pg_backend_pid() AND datname = current_database() AND application_name = ''")
+        # Only this test's own connection: the test database may be shared (a Neon branch).
+        self.sql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = %s",
+                 (self.table,))
         self.assertTrue(self.repo.save("AB2CD", 2, {"v": 2}))
 
     def test_an_unreachable_database_never_stops_a_game(self):

@@ -39,6 +39,16 @@ python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR
   `~/opt/anaconda3/envs/Python39/bin/python -m streamlit run abaka_ui.py`.
   - That is older than the pinned 1.67, which needs Python 3.11+, and no
     newer Python is installed here.
+- Neon: the repository is linked to the owner's Neon project "Abaka"
+  (`restless-haze-52228918`, branch `production`, us-east-1) with the Neon
+  CLI (`neon init`, `neon deploy`). `neon.ts` declares Postgres only;
+  `package.json` holds its two config packages (no app code is JavaScript,
+  so there is no `npm run build`). `neon deploy` writes `DATABASE_URL`
+  (pooled, for the app) and `DATABASE_URL_UNPOOLED` to `.env.local`, which
+  is gitignored, like `.neon` and `node_modules/`. The app does not read
+  `.env.local` or `DATABASE_URL`: it is the production database, so only
+  `ABAKA_DATABASE_URL` (set on purpose) reaches it. To run against it
+  locally, pass that variable from `.env.local` without printing it.
 - No Postgres is installed here. For the database tests, a throwaway one:
   `pip install pgserver "psycopg[binary]"` in a scratch venv (psycopg 3.2 on
   Python 3.9), then its bundled `initdb -D <dir> -U abaka --auth=trust` and
@@ -618,6 +628,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-19)
 
+- **Neon project linked (owner, Neon's setup steps):** PR #43. `neon init`
+  and `neon deploy` linked the repository to the owner's Neon project; the
+  13 database tests and the restart check (a game back from Neon after its
+  save folder was deleted) passed against it. The test game was removed;
+  `abaka_rooms` is empty. The `ABAKA_DATABASE_URL` secret on Streamlit Cloud
+  is still the owner's to add (the pooled `DATABASE_URL` value).
 - **Games in a database (owner: "I already have an account on Neon, can you
   set it up"):** PR #42. With the `ABAKA_DATABASE_URL` secret, the app saves
   every game to Neon Postgres as well as to files, so games survive Cloud
@@ -834,6 +850,29 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: Neon project linked (Claude Code, PR #43)**
+
+- The owner pasted Neon's agent setup steps (install the CLI, `neon init`
+  for project `restless-haze-52228918`, `neon deploy`, wire the services,
+  `npm run build`, test end to end).
+- `neon.ts`, `package.json` and `package-lock.json` are committed so `neon
+  deploy` works from the repository; `.env.local`, `.neon` and
+  `node_modules/` are gitignored. Streamlit Cloud ignores the npm files.
+- The wiring stays as in PR #42. Neon's skill says to keep the existing
+  driver (psycopg suits a long-running server) and to use the pooled URL for
+  app traffic, which the app supports (no prepared statements).
+- The app keeps reading only `ABAKA_DATABASE_URL`, not `DATABASE_URL` or
+  `.env.local`: those name the production database, and the app tests run the
+  real app script, so a generic name could put test games into it.
+- `npm run build` fails with "Missing script": there is no JavaScript to
+  build. The proof is the database tests and a real server, both on Neon.
+- Measured from this machine: 1.8 s for the first connection (the compute
+  waking up), then 38 ms per query.
+- The dropped-connection test used to end every session with no application
+  name, which on a shared database would include the live app's. Connections
+  now carry an application name (`abaka`), and the test ends only its own.
+  Through Neon's pooler the name is not visible, so there it ends nothing
+  and checks the reconnect after closing the connection itself.
 **2026-11-19: games in Neon Postgres (Claude Code, PR #42)**
 
 - The owner asked about free databases and storing games on GitHub, chose
