@@ -95,6 +95,7 @@ Python + Streamlit.
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
 | `ui_components/moves.py` | Possible moves with exact score previews (tries each on a copy of the engine). No Streamlit |
 | `ui_components/actions.py` | `on_click` callbacks of the game buttons: make the move, keep a refusal to show once |
+| `ui_components/chat.py` | The chat card of an online game: messages (escaped), the box to write one, a toast for new ones |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
@@ -174,8 +175,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - Live updates: `_watch_room` draws a polling fragment
   (`st.fragment(run_every=...)`) that compares `store.seen(code)` with the
   value the page was drawn from (`RoomView.seen`: the room version, a
-  count of dice-pick changes and the id of the room's latest event), and
-  calls `st.rerun()` when they differ.
+  count of dice-pick changes and the room's latest event or chat id,
+  `room.last_event_id`), and calls `st.rerun()` when they differ.
 - Picked dice (Backlog item 18): a tap on a die in an online game also calls
   `store.pick` (`RoomEngine.pick`), which keeps the picks in the room
   (`room.picked`, with `room.picks` counting changes) for the other pages.
@@ -201,6 +202,19 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     seen, are skipped; the rest are drawn for their length from the moment
     this page first drew them, with a negative CSS animation delay, so a
     redraw continues the animation instead of starting it again.
+- Chat (Backlog item 22, `ui_components/chat.py`): `store.say(code, token,
+  text)` keeps the last 50 messages in `room.chat`, in memory only. Anyone
+  seated in an online game may write while it is played; not before it
+  starts, not after it ends, not on one device. Text is cleaned like a name
+  (`rooms.clean_message`: no control or invisible characters, spaces
+  collapsed) and cut to 200 characters; at most 3 messages per seat in 3 s
+  (`TooFast`). Not a move: no version bump. The move that ends the game
+  deletes the chat (owner's rule), and a rematch starts empty. Ids come from
+  the same clock as the events, so new messages change `seen`.
+  - The card sits under the play card (`render_game(after_play_card=...)`),
+    only while the game is on. Messages are drawn with `html.escape`; a
+    message from someone else also shows a toast (`i18n.md()`), so a phone
+    scrolled to the dice still hears about it.
   - It checks every second while someone else can change the room (players
     joining, another player's turn), every 3 s on the player's own turn or
     after the game, and every 10 s in a same-device game (`POLL_FAST`,
@@ -425,15 +439,16 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - Every new online action goes through `RoomStore._act`, so it gets the turn
   check, the lock and the version bump. (The one exception is `pick`, which
   shows picked dice and is not a move: it takes the lock and the same turn
-  check, `_check_turn`, but changes no version. `react` is not a move either:
-  it takes the lock and a seat check, no turn check, and changes no version.)
+  check, `_check_turn`, but changes no version. `react` and `say` are not
+  moves either: they take the lock and a seat check, no turn check, and
+  change no version.)
 - The game rules are the owner's own. Do not change them, or copy rule details
   from the upstream `abaka_cc` repo, unless the owner asks.
 
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 (chat: next PR). Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -783,7 +798,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - A club with no games yet keeps the plain text boxes.
 
 22. **Reactions, fireworks and a chat.** Reactions and effects done in
-    PR #52; the chat comes in the next PR.
+    PR #52; the chat in PR #53.
     > "I want to create a set of emojies, kind of like on GG poker - where one
     > player can send the other player emojies - for example if one get's
     > lucky - you send send him "lucky", or so on. If someone scores Abaka we
@@ -801,8 +816,21 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       scores Abaka; sparkles with "Large straight! Ann · +40 · first roll"
       for a straight, four of a kind or the royal full house on the first
       roll. Online and on one device, the mover's screen included, once.
+    - Chat (online games): a card under the play panel with the game's
+      messages (latest at the bottom, the last 50) and a box with Send.
+      Messages up to 200 characters, about one a second. A message from
+      someone else also pops up as a notification. **The chat is deleted by
+      the move that ends the game** and is never saved; the next game starts
+      with an empty chat.
 
 ## Status (2026-11-19)
+
+- **In-game chat (owner, Backlog item 22):** PR #53. Checked in headless
+  Chromium on a local server, a desktop (1300px) and a phone (390px) in one
+  online game: a message reached the other screen in 0.3 s, shown as text
+  (an `<b>` tag and a Markdown link stayed plain, no link on the page),
+  text half typed on the other screen survived its redraw, a burst of 6
+  messages sent 3 and showed the "Slow down" note; no sideways scrolling.
 
 - **Reactions and fireworks (owner, Backlog item 22):** PR #52. Checked in
   headless Chromium on a local server, a desktop (1300px) and a phone
@@ -810,7 +838,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   2 s, both ways, no sideways scrolling. The fireworks and sparkles were
   checked on a scratch page at both widths (an Abaka cannot be rolled on
   purpose in the app); the AppTest test drives them through the app.
-  Load-test row: no slowdown (25% CPU, 6.1 ms median poll).
+  Load-test row: no slowdown (25% CPU, 6.1 ms median poll). On the live
+  app after the merge, a reaction reached the other screen (desktop and
+  phone) in 1.3 s.
 
 - **Club player picker (owner, Backlog item 21):** PR #51. Checked in
   headless Chromium on a local server at 1300px and 390px: the club's
@@ -930,14 +960,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 225
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 235
   pass but one step skipped (a typed-in club name, which AppTest 1.48
-  cannot send); on 3.8, 186 pass and 39 are skipped (2 of them test `tools/pr.py`, 9
+  cannot send); on 3.8, 194 pass and 41 are skipped (2 of them test `tools/pr.py`, 9
   need a database or psycopg; the others need Streamlit). 18 reaction and
   celebration tests (`test_reactions.py`: a reaction is not a move, aimed
   reactions, the rate limit, never saved, which moves celebrate, rematch,
   and the screens through the app: bubbles, fireworks shown once, escaped
-  names). 6 picked-dice tests
+  names). 10 chat tests (`test_chat.py`: not a move, anyone seated, cleaned
+  and cut, the rate limit, deleted at game over and after a rematch, not
+  saved, and two screens through the app with hostile text). 6 picked-dice tests
   (`test_shown_dice.py`: picks are shown but are not a move, only the
   player whose turn it is picks, a reroll right after a pick, the other
   screen through the app). 4 baseline tests
@@ -1081,6 +1113,30 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-19: in-game chat (Claude Code, PR #53)**
+
+- The owner asked "is it hard to add a chat during the game? The chat should
+  be deleted once the game is over". Not hard: it follows the reactions
+  (PR #52), kept in the room's memory and polled through the same value.
+- Deleted by the move that ends the game, in the store, so every screen
+  loses it at once and no page can keep it. It is never saved, so a server
+  restart or a code update also deletes it, mid-game. That fits the
+  owner's rule (the chat is not part of the game) and keeps players' words
+  out of the database.
+- Online only, while the game is played: the waiting room has no chat (the
+  game screen has), and a same-device game has no one to write to.
+- Messages are drawn as plain text: `html.escape` in the card, `i18n.md()`
+  in the toast; cleaned like names, so invisible and right-to-left
+  characters cannot disguise them. No other moderation: the game is for
+  friends who share a link.
+- A small form (text box and Send) instead of `st.chat_input`, which pins
+  itself to the bottom of the page and does not sit inside a card.
+  The form sends in its `on_click`, so a message costs one page run.
+- The load-test row was flagged against the previous one (25% → 28% CPU,
+  6.1 → 7.7 ms median poll). `main` measured at the same time gave 32% and
+  8.5 ms, and earlier rows were 29-31%, so the previous row was a low
+  outlier, not a change from the chat (the poll path is the same).
 
 **2026-11-19: reactions and fireworks (Claude Code, PR #52)**
 

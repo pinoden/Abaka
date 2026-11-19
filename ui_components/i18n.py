@@ -136,6 +136,7 @@ _ERRORS_RU = {
     "Give the club a name.": "Дайте клубу название.",
     "Unknown reaction.": "Такой реакции нет.",
     "One reaction every two seconds, please.": "Не больше одной реакции в две секунды.",
+    "Slow down a little: about one message a second.": "Чуть помедленнее: примерно одно сообщение в секунду.",
 }
 _ERROR_PATTERNS_RU = [
     (re.compile(r"Not enough school balance to write this row \(need (\d+), have (-?\d+)\)"),
@@ -173,6 +174,11 @@ RU = {
     "Abaka!": "Абака!",
     "Royal full house!": "Королевский фулл-хаус!",
     "first roll": "с первого броска",
+    "Chat": "Чат",
+    "Deleted when the game ends": "Удаляется, когда игра заканчивается",
+    "No messages yet. Say hi!": "Сообщений пока нет. Поздоровайтесь!",
+    "Message": "Сообщение",
+    "Send": "Отправить",
     # ----- general -----
     "and": "и",
     "You": "Вы",
