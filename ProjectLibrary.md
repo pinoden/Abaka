@@ -589,6 +589,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-18)
 
+- **Rules confirmed (owner, 2026-11-18):** a first roll doubles score and
+  bonus; only exact 1-5 and 2-6 are straights. The engine already did this;
+  the original engine tests were corrected in PR #40.
 - **Starting throws stay on screen (owner's report, Backlog item 16):** PR #39.
   In a same-device game for three, the last thrower's total no longer vanishes
   when the first player is decided. Checked in headless Chromium on a local
@@ -790,6 +793,18 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-18: first-roll and straight rules confirmed (Claude Code, PR #40)**
+
+- The owner answered the two open rule questions:
+  > "Bonus gets doubled as well, for example, abaka on first throw with 6's gets 160 points.
+  > There are only 2 straights in this game: 1 2 3 4 5 (small) or 2 3 4 5 6 (large).
+  > 4 consecutive numbers don't score anything"
+- The engine (`scoring.py`: `(base + bonus) * 2` on a first roll; straights
+  exactly `{1..5}` = 15 and `{2..6}` = 20) and the rules text already did
+  this, so no game code changed.
+- The 4 original engine tests that expected the older rules are corrected and
+  run again; nothing is skipped on Python 3.9 any more.
 
 **2026-11-18: starting throws stay on screen (Claude Code, PR #39)**
 
