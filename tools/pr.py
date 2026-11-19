@@ -15,6 +15,12 @@ never printed.
                                                 # open + wait + merge
 
 Without NUMBER, `wait` uses the pull request of the current branch.
+
+GitHub enforces the rest: `main` takes a pull request only when the required CI
+checks passed on a branch that is up to date with `main` (branch protection).
+If `main` moved after a branch was tested, `merge` brings `main` into the branch
+on GitHub (a merge commit), waits for CI again on the combined code, and then
+merges. If the two conflict, it stops: rebase the branch yourself (AGENTS.md).
 """
 
 import argparse
@@ -28,6 +34,8 @@ import urllib.request
 
 API = "https://api.github.com"
 CI_TIMEOUT_SECONDS = 20 * 60
+POLL_SECONDS = 15
+UPDATE_ATTEMPTS = 3   # how many times `merge` brings a moving main into the branch before giving up
 
 
 def git(*args: str) -> str:
@@ -124,17 +132,35 @@ def cmd_open(gh: GitHub, args) -> int:
     return pull["number"]
 
 
-def wait_for_ci(gh: GitHub, number: int) -> bool:
+def required_checks(gh: GitHub) -> list:
+    """
+    The CI checks main's branch protection requires before a merge. Empty if they cannot be
+    read (only repository admins may read the protection); GitHub enforces them anyway.
+    """
+    try:
+        data = gh.call("GET", "/branches/main/protection/required_status_checks") or {}
+    except SystemExit:
+        return []
+    return [c["context"] for c in data.get("checks") or []] or list(data.get("contexts") or [])
+
+
+def wait_for_ci(gh: GitHub, number: int, required=()) -> bool:
+    """
+    Wait until CI finished on the pull request's latest commit: every check run there, and
+    every check in `required` (a job may not have started yet when the others have finished).
+    """
     sha = gh.call("GET", f"/pulls/{number}")["head"]["sha"]
     deadline = time.time() + CI_TIMEOUT_SECONDS
     print(f"waiting for CI on #{number} ({sha[:7]})...", flush=True)
     while True:
         runs = gh.call("GET", f"/commits/{sha}/check-runs")["check_runs"]
-        if runs and all(r["status"] == "completed" for r in runs):
+        missing = set(required) - {r["name"] for r in runs}
+        if runs and not missing and all(r["status"] == "completed" for r in runs):
             break
         if time.time() > deadline:
-            raise SystemExit("CI did not finish in time: " + ", ".join(f"{r['name']}={r['status']}" for r in runs))
-        time.sleep(15)
+            raise SystemExit("CI did not finish in time: " + ", ".join(
+                [f"{r['name']}={r['status']}" for r in runs] + [f"{name}=not started" for name in sorted(missing)]))
+        time.sleep(POLL_SECONDS)
     ok = True
     for r in runs:
         print(f"  {r['conclusion']:<9} {r['name']}")
@@ -154,20 +180,53 @@ def cmd_wait(gh: GitHub, args) -> bool:
         if not pull:
             raise SystemExit("this branch has no open pull request")
         number = pull["number"]
-    return wait_for_ci(gh, number)
+    return wait_for_ci(gh, number, required_checks(gh))
+
+
+def mergeability(gh: GitHub, number: int) -> dict:
+    """The pull request, once GitHub has worked out whether it can be merged (it does so in the background)."""
+    for _ in range(20):
+        pull = gh.call("GET", f"/pulls/{number}")
+        if pull["mergeable"] is not None and pull["mergeable_state"] != "unknown":
+            return pull
+        time.sleep(3)
+    return pull
+
+
+def bring_main_in(gh: GitHub, pull: dict) -> None:
+    """Merge main into the pull request's branch on GitHub, and wait until the branch has the new commit."""
+    number, old = pull["number"], pull["head"]["sha"]
+    print(f"#{number} is behind main: bringing main into the branch; CI runs again on the combined code",
+          flush=True)
+    try:
+        gh.call("PUT", f"/pulls/{number}/update-branch", {"expected_head_sha": old})
+    except SystemExit as e:
+        raise SystemExit(f"{e}\n#{number}: main could not be brought into the branch (a conflict?). Rebase it "
+                         "yourself: git pull --rebase origin main, run the tests, push (AGENTS.md).")
+    for _ in range(40):
+        if gh.call("GET", f"/pulls/{number}")["head"]["sha"] != old:
+            print("  the branch on GitHub has main now; your local branch does not (git pull to get it)")
+            return
+        time.sleep(3)
+    raise SystemExit(f"#{number}: GitHub did not update the branch in time; run merge again")
 
 
 def cmd_merge(gh: GitHub, number: int) -> None:
-    if not wait_for_ci(gh, number):
-        raise SystemExit(f"CI failed on #{number}: not merged")
-    for _ in range(10):  # GitHub works out mergeability in the background
-        pull = gh.call("GET", f"/pulls/{number}")
-        if pull["mergeable"] is not None:
-            break
-        time.sleep(3)
-    if not pull["mergeable"]:
-        raise SystemExit(f"#{number} cannot be merged ({pull['mergeable_state']}): bring main into the branch first")
-    result = gh.call("PUT", f"/pulls/{number}/merge", {"merge_method": "merge"})
+    required = required_checks(gh)
+    for _ in range(UPDATE_ATTEMPTS + 1):
+        if not wait_for_ci(gh, number, required):
+            raise SystemExit(f"CI failed on #{number}: not merged")
+        pull = mergeability(gh, number)
+        if pull["mergeable_state"] == "behind":  # main moved: the checks must pass on the combined code
+            bring_main_in(gh, pull)
+            continue
+        if not pull["mergeable"]:
+            raise SystemExit(f"#{number} cannot be merged ({pull['mergeable_state']}): rebase it on main "
+                             "(git pull --rebase origin main, run the tests, push), then merge again")
+        break
+    else:
+        raise SystemExit(f"#{number}: main kept moving; run merge again")
+    result = gh.call("PUT", f"/pulls/{number}/merge", {"merge_method": "merge", "sha": pull["head"]["sha"]})
     print(f"#{number} merged ({result['sha'][:7]})")
     subprocess.run(["git", "checkout", "-q", "main"], check=True)
     subprocess.run(["git", "pull", "-q", "--ff-only"], check=True)
