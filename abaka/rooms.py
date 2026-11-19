@@ -60,7 +60,11 @@ REACTION_EVERY_SECONDS = 2.0          # one reaction per seat this often
 EVENTS_KEPT = 20                      # recent reactions and effects a room keeps for the pages
 FIREWORKS = "fireworks"               # Abaka scored: fireworks for everyone
 SPARKLES = "sparkles"                 # a straight, four of a kind or the royal full house on the first roll
-_FIRST_ROLL_HITS = (Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT, Category.KARE, Category.FULL)
+CHAT_KEPT = 50                        # chat messages a room keeps (memory only; deleted when the game ends)
+MAX_MESSAGE_LENGTH = 200
+MESSAGES_PER_WINDOW = 3               # a player may send this many messages...
+MESSAGE_WINDOW_SECONDS = 3.0          # ...in this many seconds (about one a second, a short burst allowed)
+_FIRST_ROLL_HITS =(Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT, Category.KARE, Category.FULL)
 _CODE_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, CODE_LENGTH))
 
 log = logging.getLogger("abaka")
@@ -85,6 +89,14 @@ def clean_name(name: str, fallback: str) -> str:
     visible = "".join(ch for ch in (name or "") if unicodedata.category(ch) not in ("Cc", "Cf"))
     name = " ".join(visible.split())[:MAX_NAME_LENGTH]
     return name or fallback
+
+
+def clean_message(text: str) -> str:
+    """A chat message: no control or invisible format characters, spaces collapsed, at most
+    MAX_MESSAGE_LENGTH characters. Empty if nothing is left."""
+    visible = "".join(" " if ch.isspace() else ch for ch in (text or "")
+                      if ch.isspace() or unicodedata.category(ch) not in ("Cc", "Cf"))
+    return " ".join(visible.split())[:MAX_MESSAGE_LENGTH]
 
 
 def normalize_code(code: str) -> str:
@@ -113,7 +125,8 @@ class RoomView:
     def __init__(self, code: str, names: List[str], engine: Optional[GameEngine],
                  version: int, games_played: int, capacity: int, local: bool = False,
                  club: Optional[str] = None, results: Optional[List[dict]] = None,
-                 picked: tuple = (), rerolled: tuple = (), picks: int = 0, events: tuple = ()) -> None:
+                 picked: tuple = (), rerolled: tuple = (), picks: int = 0, events: tuple = (),
+                 chat: tuple = (), last_event_id: int = 0) -> None:
         self.code = code
         self.names = names            # seated players, in seat order (seat 0 created the game)
         self.engine = engine
@@ -126,8 +139,9 @@ class RoomView:
         self.picked = picked          # dice the player whose turn it is has picked to roll again
         self.rerolled = rerolled      # dice the last move rolled again (empty if it was not a reroll)
         self.events = events          # recent reactions and effects, oldest first (see _Room.events)
-        # Changes with the room, the picked dice or a new event: what pages poll.
-        self.seen = (version, picks, events[-1]["id"] if events else 0)
+        self.chat = chat              # this game's chat messages, oldest first (see _Room.chat)
+        # Changes with the room, the picked dice, a new event or a chat message: what pages poll.
+        self.seen = (version, picks, last_event_id)
 
     @property
     def started(self) -> bool:
@@ -178,11 +192,23 @@ class _Room:
         self.events: List[dict] = []
         self.last_event_id = 0
         self.reacted_at: Dict[int, List[float]] = {}  # per seat: when it sent its latest reaction
+        # The game's chat (online games): {"id", "seat", "text", "at"}, never saved, deleted by
+        # the move that ends the game. Its ids come from the same clock as the events.
+        self.chat: List[dict] = []
+        self.said_at: Dict[int, List[float]] = {}     # per seat: when it sent its latest messages
 
-    def add_event(self, event: dict) -> None:
+    def _next_id(self) -> "tuple[int, float]":
         now = time.time()
         self.last_event_id = max(self.last_event_id + 1, int(now * 1000))
-        self.events = (self.events + [dict(event, id=self.last_event_id, at=now)])[-EVENTS_KEPT:]
+        return self.last_event_id, now
+
+    def add_event(self, event: dict) -> None:
+        event_id, now = self._next_id()
+        self.events = (self.events + [dict(event, id=event_id, at=now)])[-EVENTS_KEPT:]
+
+    def add_message(self, seat: int, text: str) -> None:
+        message_id, now = self._next_id()
+        self.chat = (self.chat + [{"id": message_id, "seat": seat, "text": text, "at": now}])[-CHAT_KEPT:]
 
     def touch(self) -> None:
         self.version += 1
@@ -443,21 +469,19 @@ class RoomStore:
             room = self._get(code)
             return RoomView(room.code, list(room.names), room.engine, room.version, room.games_played,
                             room.capacity, room.local, room.club, list(room.results),
-                            room.picked, room.rerolled, room.picks, tuple(room.events))
+                            room.picked, room.rerolled, room.picks, tuple(room.events), tuple(room.chat),
+                            room.last_event_id)
 
     def seen(self, code: str):
         """
         (version, picks, latest event id): changes when the room changes, the player whose turn
-        it is picks other dice, or a reaction or effect arrives. Pages poll it (RoomView.seen is
-        the value they were drawn from). Cheap.
+        it is picks other dice, or a reaction, effect or chat message arrives. Pages poll it
+        (RoomView.seen is the value they were drawn from). Cheap.
         """
         with self._lock:
             self._count("polls")
             room = self._room(code)
-            if room is None:
-                seen = (-1, 0, 0)
-            else:
-                seen = (room.version, room.picks, room.events[-1]["id"] if room.events else 0)
+            seen = (room.version, room.picks, room.last_event_id) if room else (-1, 0, 0)
         self._report_if_due()
         return seen
 
@@ -537,6 +561,35 @@ class RoomStore:
                 raise TooFast("One reaction every two seconds, please.")
             room.add_event({"kind": "reaction", "seat": seat, "to": to, "reaction": reaction})
 
+    def say(self, code: str, token: str, text: str) -> None:
+        """
+        A chat message from this player to the table, while an online game is being played.
+        Anyone seated may write, whoever's turn it is. Cleaned like a name (no control or
+        invisible characters) and cut to MAX_MESSAGE_LENGTH; an empty message is ignored.
+        Not a move: the room version stays as it is. Never saved, and the move that ends the
+        game deletes the chat (owner: "The chat should be deleted once the game is over").
+        At most MESSAGES_PER_WINDOW per seat in MESSAGE_WINDOW_SECONDS (TooFast otherwise).
+        """
+        text = clean_message(text)
+        if not text:
+            return
+        with self._lock:
+            room = self._get(code)
+            if token not in room.tokens:
+                raise RoomError("You are not seated in this game.")
+            if room.local:
+                return  # everyone shares one screen
+            if room.engine is None:
+                raise RoomError("Waiting for the second player to join.")
+            if room.engine.is_game_over():
+                raise RoomError("The game is over.")
+            seat = room.tokens.index(token)
+            allowed, room.said_at[seat] = within_limit(room.said_at.get(seat, []), time.time(),
+                                                       MESSAGES_PER_WINDOW, MESSAGE_WINDOW_SECONDS)
+            if not allowed:
+                raise TooFast("Slow down a little: about one message a second.")
+            room.add_message(seat, text)
+
     def score(self, code: str, token: str, category: Category, slot_index: int,
               expected_version: Optional[int] = None) -> None:
         def action(engine: GameEngine) -> None:
@@ -561,7 +614,7 @@ class RoomStore:
                 raise RoomError("The current game is not finished yet.")
             room.games_played += 1
             room.engine = _new_engine(room, self.starting_throw)
-            room.events = []  # last_event_id stays, so ids keep growing
+            room.events, room.chat = [], []  # last_event_id stays, so ids keep growing
             room.touch()
             pending = self._snapshot(room)
         self._write(pending)
@@ -601,6 +654,7 @@ class RoomStore:
                 room.add_event(effect)
             finished = None
             if engine.is_game_over():  # this move ended the game
+                room.chat = []  # the chat lasts as long as the game (owner)
                 scores = [p.calculate_score() for p in engine.players]
                 room.results = (room.results + [{"game": room.games_played, "scores": scores}])[-RESULTS_KEPT:]
                 finished = {"room": room.code, "game": room.games_played, "club": room.club,

@@ -315,6 +315,24 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 @media (prefers-reduced-motion: reduce) { .ab-burst { display: none; } }
 @media (max-width: 640px) { .ab-fx-title { font-size: 2rem; } .ab-bubbles { top: 3.6rem; } }
 
+/* ---------- chat (chat.py) ---------- */
+.st-key-card-chat { margin-top: .4rem; padding: 1rem 1.1rem .9rem !important; }
+.ab-chat-head { font-weight: 700; color: #1C2033; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.ab-chat-head span { font-weight: 400; font-size: .78rem; color: #9AA0B5; }
+/* Listed newest first and shown bottom up, so the box opens scrolled to the latest message. */
+.ab-chat { display: flex; flex-direction: column-reverse; gap: .3rem; max-height: 190px; overflow-y: auto;
+  margin-top: .5rem; padding-right: .2rem; overflow-wrap: anywhere; }
+.ab-msg { align-self: flex-start; max-width: 88%; padding: .35rem .7rem; border-radius: 14px 14px 14px 4px;
+  background: #F1F2FA; color: #1C2033; font-size: .9rem; line-height: 1.3; }
+.ab-msg b { display: block; font-size: .72rem; color: #6B7089; font-weight: 600; }
+.ab-msg.mine { align-self: flex-end; background: #EEF0FF; border-radius: 14px 14px 4px 14px; }
+.ab-msg.mine b { color: #4F46E5; }
+.ab-chat-empty { color: #9AA0B5; font-size: .88rem; margin-top: .4rem; }
+[class*="st-key-chat-row"] { flex-wrap: nowrap !important; gap: .4rem !important; }
+.st-key-card-chat [data-testid="InputInstructions"] { display: none; }
+[class*="st-key-chat-row"] > *:first-child { flex: 1 1 auto !important; min-width: 0 !important; }
+[class*="st-key-chat-row"] > *:last-child { flex: 0 0 auto !important; width: auto !important; }
+
 /* ---------- notifications: bottom of the screen, clear of the turn title and scoreboard ---------- */
 [data-testid="stToastContainer"] { top: auto !important; bottom: 1.25rem !important; }
 
@@ -327,14 +345,14 @@ h1, h2, h3 { letter-spacing: -0.02em; }
     flex-wrap: wrap; gap: 1rem !important; }
   .st-key-game-many [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-card-board)
     > [data-testid="stColumn"] { flex: 1 1 100% !important; width: 100% !important; min-width: 100% !important; }
-  .st-key-game-many .st-key-card-play { max-width: 640px; margin: 0 auto; }
+  .st-key-game-many .st-key-card-play, .st-key-game-many .st-key-card-chat { max-width: 640px; margin: 0 auto; }
 }
 @media (min-width: 641px) and (max-width: 1000px) {
   .st-key-game-three [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-card-board) {
     flex-wrap: wrap; gap: 1rem !important; }
   .st-key-game-three [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] .st-key-card-board)
     > [data-testid="stColumn"] { flex: 1 1 100% !important; width: 100% !important; min-width: 100% !important; }
-  .st-key-game-three .st-key-card-play { max-width: 640px; margin: 0 auto; }
+  .st-key-game-three .st-key-card-play, .st-key-game-three .st-key-card-chat { max-width: 640px; margin: 0 auto; }
 }
 
 /* ---------- phones ---------- */
