@@ -70,7 +70,8 @@ class Move:
 
     def __init__(self, category: Category, slot: int, cross: bool,
                  value: object = None, balance_change: Optional[int] = None,
-                 bonus_lost: bool = False, column_bonus_lost: bool = False) -> None:
+                 bonus_lost: bool = False, column_bonus_lost: bool = False,
+                 points: Optional[int] = None, bonus: int = 0) -> None:
         self.category = category
         self.slot = slot                      # 0..2, the leftmost free cell of the row
         self.cross = cross
@@ -78,6 +79,8 @@ class Move:
         self.balance_change = balance_change  # school rows only
         self.bonus_lost = bonus_lost          # the move crosses out this row's (still open) bonus
         self.column_bonus_lost = column_bonus_lost  # ... and this column's (crossing out a combination)
+        self.points = points                  # what the move adds to the player's total now (scoring only)
+        self.bonus = bonus                    # row and column bonus points the move earns at once
 
     @property
     def name(self) -> str:
@@ -90,9 +93,12 @@ class Move:
             return self.name
         if is_school(self.category):
             if self.value == "X":
-                return t("{name} · exactly 3", name=self.name)
-            return f"{self.name} · {_signed(self.balance_change)}"
-        return f"{self.name} · {self.value}"
+                text = t("{name} · exactly 3", name=self.name)
+            else:
+                text = f"{self.name} · {_signed(self.balance_change)}"
+        else:
+            text = f"{self.name} · {self.value}"
+        return text + " · " + t("bonus +{n}", n=self.bonus) if self.bonus else text
 
     @property
     def action_text(self) -> str:
@@ -148,6 +154,7 @@ def score_options(engine) -> List[Move]:
     if not base.dice:
         return []
     me = base.current
+    total_before = base.players[me].calculate_score()
     options = []
     for category in ROW_ORDER:
         slot = free_slot(base, category)
@@ -156,6 +163,7 @@ def score_options(engine) -> List[Move]:
         trial = base.clone()
         balance_before = trial.players[me].school_balance
         bonus_open = trial.players[me].table[category][3] is None
+        column_open = trial.players[me].column_bonus[slot] is None
         try:
             trial.record_score(category, slot)
         except (ValueError, RuntimeError):
@@ -164,8 +172,24 @@ def score_options(engine) -> List[Move]:
         change = after.school_balance - balance_before if is_school(category) else None
         # Paying from the balance crosses out the row bonus at once (owner's rule, 2026-11-16).
         bonus_lost = is_school(category) and bonus_open and after.table[category][3] == "X"
-        options.append(Move(category, slot, False, after.table[category][slot], change, bonus_lost))
+        earned = [after.table[category][3] if bonus_open else None, after.column_bonus[slot] if column_open else None]
+        bonus = sum(v for v in earned if isinstance(v, int) and not isinstance(v, bool))
+        options.append(Move(category, slot, False, after.table[category][slot], change, bonus_lost,
+                            points=after.calculate_score() - total_before, bonus=bonus))
     return options
+
+
+def most_points(moves: List[Move]) -> List[int]:
+    """
+    Which options add the most to the player's total now (owner, 2026-11-19): the score, a
+    School row's balance change, plus any row or column bonus the move earns. All of them
+    on a tie. Positions in `moves`; none for crossing out.
+    """
+    points = [m.points for m in moves if m.points is not None]
+    if not points:
+        return []
+    top = max(points)
+    return [i for i, m in enumerate(moves) if m.points == top]
 
 
 def cross_options(engine) -> List[Move]:

@@ -2,7 +2,8 @@
 Choosing where to write the roll: Score or Cross out, pick a row, confirm.
 
 Every option shows what it would score, and the confirm button says exactly
-what will happen ("Score 46 in Full house").
+what will happen ("Score 46 in Full house"). The option that adds the most to
+the player's total is highlighted (bold, in gold: style.py), all of them on a tie.
 """
 
 from typing import Optional
@@ -12,7 +13,7 @@ import streamlit as st
 from abaka.engine import GameEngine
 from ui_components.actions import run_action
 from ui_components.i18n import t
-from ui_components.moves import Move, cross_options, score_options
+from ui_components.moves import Move, cross_options, most_points, score_options
 
 SCORE, CROSS = "Score", "Cross out"  # values of the switch (and in widget keys); shown through t()
 
@@ -47,8 +48,10 @@ def render_move_picker(engine: GameEngine) -> Optional[Move]:
             st.info(t("There is nothing left to cross out."))
         return None
 
+    # Labels are Markdown: the best options are bold, which the CSS also colours (style.py).
+    best = set(most_points(moves))
     pick = st.pills(
-        "Row", list(range(len(moves))), format_func=lambda i: moves[i].label,
+        "Row", list(range(len(moves))), format_func=lambda i: f"**{moves[i].label}**" if i in best else moves[i].label,
         key=f"pick-{action}-{turn}", label_visibility="collapsed",
     )
     move = moves[pick] if pick is not None else None
