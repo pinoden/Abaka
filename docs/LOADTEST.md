@@ -1,0 +1,22 @@
+# Load-test baseline
+
+One row per release, from `tools/loadtest.py --baseline --record docs/LOADTEST.md`:
+100 simulated pages polling their game every second (the most a page polls: while
+watching another player's turn online), 200 saved games, measured for 20 s after 5 s
+of warm-up. The server runs the app as it is in the repository, saving to a
+temporary folder only.
+
+- **Pages:** simulated browser tabs and how often each polls.
+- **CPU %:** the server process's CPU over the window (100% = one core).
+- **Polls/s offered / answered:** answered below offered means the server fell behind.
+- **Poll p50 / p95 ms:** time from a poll's request to its finished run.
+- **CPU ms per poll:** server CPU spent per answered poll.
+- **Page run ms:** a full page run when a tab opens its game (median).
+- **RSS MB:** the server's memory at the end.
+
+Compare rows only from the same machine and versions: the tool does that when it
+records a row, and says if the new one is more than 25% worse.
+
+| Date | Commit | Machine | Python / Streamlit | Pages | Rooms | CPU % | Polls/s offered / answered | Poll p50 / p95 ms | CPU ms per poll | Page run ms | RSS MB | Options |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-11-19 | 996d5f5 | Apple M1, 8 cores, Darwin | 3.9.20 / 1.48.1 | 100 every 1 s | 200 | 31 | 100 / 97 | 8.2 / 21.3 | 3.2 | 76.9 | 50 | - |

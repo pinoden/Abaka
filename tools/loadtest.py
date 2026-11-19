@@ -12,6 +12,14 @@ CPU and memory, polls answered per second, and poll latency.
   python tools/loadtest.py --clients 100 --interval 1
   python tools/loadtest.py --clients 100 --rooms 5000 --seconds 20 --interval 1
   python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a setting
+  python tools/loadtest.py --baseline --record docs/LOADTEST.md   # the release baseline, kept in the repo
+
+`--baseline` runs the standard measurement (100 pages polling every second,
+200 saved games, 20 s). `--record FILE` adds the run as a row to FILE's table
+and compares it with the latest row from the same machine and Streamlit
+version, so a release that makes the server slower shows up.
+
+The server never gets a database URL: a load test saves to a temporary folder only.
 
 Needs the Python environment that runs the app: Streamlit and its protobuf, and
 a websocket client, `websockets` (a dependency of Streamlit 1.5x and later) or
@@ -23,7 +31,9 @@ real browser keeps firing), so real overload is somewhat worse than reported.
 
 import argparse
 import asyncio
+import datetime
 import os
+import platform
 import random
 import shutil
 import statistics
@@ -226,6 +236,104 @@ async def main_async(args, codes, pid):
     }
 
 
+# --- the baseline file -------------------------------------------------------------------------
+COLUMNS = ["Date", "Commit", "Machine", "Python / Streamlit", "Pages", "Rooms", "CPU %",
+           "Polls/s offered / answered", "Poll p50 / p95 ms", "CPU ms per poll", "Page run ms", "RSS MB",
+           "Options"]
+BASELINE = {"clients": 100, "rooms": 200, "seconds": 20, "warmup": 5, "interval": 1.0}
+WORSE_BY = 1.25  # flag a number at least this much worse than the previous row
+
+
+def _run(cmd):
+    try:
+        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def machine() -> str:
+    brand = _run(["sysctl", "-n", "machdep.cpu.brand_string"]) or platform.processor() or platform.machine()
+    return f"{brand}, {os.cpu_count()} cores, {platform.system()}"
+
+
+APP_PATHS = ["abaka", "ui_components", "abaka_ui.py", "code_version.py", ".streamlit", "requirements.txt"]
+
+
+def commit() -> str:
+    """The commit measured, with "+changes" if the app's files differ from it (other files do not count)."""
+    head = _run(["git", "rev-parse", "--short", "HEAD"]) or "?"
+    changed = _run(["git", "status", "--porcelain", "--untracked-files=no", "--"] + APP_PATHS)
+    return head + ("+changes" if changed else "")
+
+
+def row_for(result: dict, args) -> list:
+    import streamlit
+    pages = f"{args.clients} every {args.interval:g} s" if args.interval else f"{args.clients} as asked"
+    return [datetime.date.today().isoformat(), commit(), machine(),
+            f"{platform.python_version()} / {streamlit.__version__}", pages, str(args.rooms),
+            str(result["cpu %"]), f'{result["polls/s offered"]} / {result["polls/s answered"]}',
+            f'{result["poll p50 ms"]} / {result["poll p95 ms"]}', str(result["cpu ms per poll"]),
+            str(result["page run p50 ms"]), str(result["rss MB"]), " ".join(args.set) or "-"]
+
+
+def read_rows(path: str) -> list:
+    """The table rows of a baseline file, oldest first (each a list of cells)."""
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    for line in lines:
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if line.startswith("|") and len(cells) == len(COLUMNS) and cells[0] != "Date" \
+                and not set(cells[0]) <= set("-: "):
+            rows.append(cells)
+    return rows
+
+
+def compare(new: list, rows: list) -> list:
+    """Lines saying how `new` differs from the latest comparable row (same machine, versions, pages)."""
+    same = [r for r in rows if r[2:6] == new[2:6] and r[12] == new[12]]
+    if not same:
+        return ["No earlier row from this machine with the same versions and load to compare with."]
+    old = same[-1]
+
+    def first(cell):
+        try:
+            return float(cell.split("/")[0])
+        except ValueError:
+            return None
+
+    def second(cell):
+        try:
+            return float(cell.split("/")[1])
+        except (ValueError, IndexError):
+            return None
+
+    lines = [f"Compared with {old[0]} ({old[1]}):"]
+    worse = False
+    for name, index, pick, higher_is_worse in (("CPU %", 6, first, True), ("polls answered", 7, second, False),
+                                               ("poll p50 ms", 8, first, True), ("CPU ms per poll", 9, first, True),
+                                               ("page run ms", 10, first, True)):
+        a, b = pick(old[index]), pick(new[index])
+        if a is None or b is None:
+            continue
+        bad = (b > a * WORSE_BY and b - a > 1) if higher_is_worse else (b < a / WORSE_BY)
+        worse = worse or bad
+        lines.append(f"  {name:<16} {a:g} -> {b:g}{'   WORSE' if bad else ''}")
+    lines.append("  Slower than before: look into it before releasing." if worse else "  No slowdown.")
+    return lines
+
+
+def record(path: str, row: list) -> None:
+    if not os.path.exists(path):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("# Load-test baseline\n\n| " + " | ".join(COLUMNS) + " |\n|"
+                    + "|".join("---" for _ in COLUMNS) + "|\n")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write("| " + " | ".join(row) + " |\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--clients", type=int, default=50, help="simulated browsers (default 50)")
@@ -236,9 +344,16 @@ def main():
                         help="poll every this many seconds instead of as often as the page asks "
                              "(1 = a page watching another player's turn online)")
     parser.add_argument("--port", type=int, default=8790)
+    parser.add_argument("--baseline", action="store_true",
+                        help="the standard release measurement: 100 pages polling every second, 200 games, 20 s")
+    parser.add_argument("--record", metavar="FILE",
+                        help="add the result to FILE's table (docs/LOADTEST.md) and compare it with the last row")
     parser.add_argument("--set", action="append", default=[], metavar="SECTION.OPTION=VALUE",
                         help="extra Streamlit option for the server, e.g. runner.postScriptGC=true")
     args = parser.parse_args()
+    if args.baseline:
+        for name, value in BASELINE.items():
+            setattr(args, name, value)
 
     save_dir = tempfile.mkdtemp(prefix="abaka-loadtest-")
     server = None
@@ -250,7 +365,9 @@ def main():
         for option in args.set:
             name, value = option.split("=", 1)
             cmd += [f"--{name}", value]
-        env = dict(os.environ, ABAKA_SAVE_DIR=save_dir)
+        # An empty database URL: the app then saves to files only and ignores any secrets file,
+        # so a load test never reaches the production database.
+        env = dict(os.environ, ABAKA_SAVE_DIR=save_dir, ABAKA_DATABASE_URL="")
         server = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import urllib.request
         for _ in range(120):
@@ -265,6 +382,12 @@ def main():
         width = max(len(k) for k in result)
         for key, value in result.items():
             print(f"{key:<{width}}  {value}")
+        if args.record:
+            row = row_for(result, args)
+            path = args.record if os.path.isabs(args.record) else os.path.join(ROOT, args.record)
+            earlier = read_rows(path)
+            record(path, row)
+            print("\n".join([f"Recorded in {args.record}."] + compare(row, earlier)))
     finally:
         if server is not None:
             server.terminate()
