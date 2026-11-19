@@ -72,18 +72,22 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
     """
     render_top_bar(status_html, on_leave, leave_label)
     # Up to 4 players fit the usual layout; with 5 the scoreboard gets more room and the dice shrink a little.
-    wide_board = len(engine.players) >= 5
-    left, right = st.columns([4, 8] if wide_board else [5, 7], gap="large")
-    with left:
-        with st.container(border=True, key="card-play"):
-            if engine.is_game_over():
-                _render_results(engine, me, on_play_again, on_leave, leave_label)
-                target = None
-            else:
-                target = _render_play_panel(engine, me)
-    with right:
-        with st.container(border=True, key="card-board"):
-            render_scoreboard(engine, me=me, target=target)
+    # With 3 players the two cards stack on screens up to 1000px wide, with 4 or 5 up to 1180px
+    # (style.py), so the scoreboard does not scroll sideways there.
+    n = len(engine.players)
+    wide_board = n >= 5
+    with st.container(key="game-many" if n >= 4 else ("game-three" if n == 3 else "game")):
+        left, right = st.columns([4, 8] if wide_board else [5, 7], gap="large")
+        with left:
+            with st.container(border=True, key="card-play"):
+                if engine.is_game_over():
+                    _render_results(engine, me, on_play_again, on_leave, leave_label)
+                    target = None
+                else:
+                    target = _render_play_panel(engine, me)
+        with right:
+            with st.container(border=True, key="card-board"):
+                render_scoreboard(engine, me=me, target=target)
 
 
 def _render_play_panel(engine: GameEngine, me: Optional[int]):

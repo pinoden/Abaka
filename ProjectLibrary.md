@@ -270,8 +270,10 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   `min(--ab-die, (100cqw - 4 gaps) / 5)`, so it adapts to any layout.
 - Layout: play panel and scoreboard split 5:7; with 5 players 4:8 so the
   scoreboard fits on desktop. With 3+ players the table uses the compact
-  `ab-many` style; on narrow screens it scrolls sideways inside its card with
-  the row names pinned.
+  `ab-many` style; on phones it scrolls sideways inside its card with the row
+  names pinned. Between 641px and 1000px (3 players) or 1180px (4-5 players)
+  the play card stacks above the scoreboard (container keys `game-three` and
+  `game-many`, CSS in `style.py`), so the board fits and the dice keep 60px.
 - Online notifications: "<friend> joined" / "Everyone's here." when this
   browser was on the waiting screen (`was_waiting`); "Your turn!" when
   `was_my_turn` changes from False to True ("Your throw!" during the
@@ -735,9 +737,6 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ### Known issues
 
-- README.md links to a LICENSE file (MIT) that the repository does not have.
-- On screens around 1024px wide, a 5-player game has small dice (about 34px),
-  and with 4 or 5 players the scoreboard scrolls sideways inside its card.
 - Saved games live on the server's disk. On Streamlit Community Cloud that
   survives code updates and the restart after a change to
   `requirements.txt` (both checked on the live app). It probably does not
