@@ -12,3 +12,6 @@ __pycache__/*
 
 # Streamlit secrets (the database URL) stay on the machine
 .streamlit/secrets.toml
+.neon
+node_modules/
+.env.local
