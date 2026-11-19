@@ -591,6 +591,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-18)
 
+- **Mid-size screens and LICENSE (owner, "you can work on 4"):** PR #41. With
+  3-5 players the cards stack between 641px and 1000/1180px, so the
+  scoreboard fits and the dice keep 60px; the MIT LICENSE file is added.
 - **Rules confirmed (owner, 2026-11-18):** a first roll doubles score and
   bonus; only exact 1-5 and 2-6 are straights. The engine already did this;
   the original engine tests were corrected in PR #40.
@@ -792,6 +795,23 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-18: mid-size screens and the LICENSE file (Claude Code, PR #41)**
+
+- The owner asked for the small polish items ("you can work on 4").
+- Measured on a local server: side by side, the scoreboard needs about 1000px
+  of screen with 3 players, 1150px with 4 and 1180px with 5. Below that it
+  scrolled sideways inside its card, and with 5 players the dice shrank to
+  26-39px. (The 3-player case was not in Known issues; it showed up in the
+  measurement.)
+- Stacking the cards in that range, as on phones, was chosen over shrinking
+  the table further: the table is already compact (`ab-many`), and stacking
+  keeps the dice at 60px. Above those widths and on phones nothing changes.
+- After the change, at 700-1180px the board fits, the dice are 60px and no
+  page scrolls sideways (at exactly 641px a 5-player board still scrolls by
+  40px inside its card).
+- LICENSE: README.md has said MIT from the start, so the file is MIT with the
+  owner's name (from the repository's git author) and 2026.
 
 **2026-11-18: first-roll and straight rules confirmed (Claude Code, PR #40)**
 
