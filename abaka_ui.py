@@ -34,6 +34,7 @@ code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
     MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code, within_limit)
+from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from abaka.repository import FileRepository, MirroredRepository, PostgresRepository  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
@@ -50,6 +51,8 @@ GAMES_PER_SESSION = 10              # a browser may start this many games...
 GAMES_PER_SESSION_WINDOW = 10 * 60  # ...in this many seconds (a guard against scripts)
 MY_GAMES_KEPT = 10   # games a browser remembers for "Continue a game"...
 MY_GAMES_SHOWN = 4   # ...and how many unfinished ones it shows
+MY_CLUBS_KEPT = 6    # clubs a browser remembers for the home page
+CLUB_GAMES_SHOWN = 10  # recent games on a club's page
 STATS_EVERY_SECONDS = 60  # the store logs a stats line this often while pages are open
 
 
@@ -106,14 +109,20 @@ def _database_url() -> Optional[str]:
     return url or None
 
 
-def _repository():
-    """Where the store keeps games: the database (with a copy in files) if there is one, else files."""
+def _repository(table: str = "abaka_rooms", subfolder: Optional[str] = None):
+    """
+    Where a store keeps its data: the database (with a copy in files) if there is one,
+    else files. Games use the table abaka_rooms and the save folder; clubs use
+    abaka_clubs and its clubs/ subfolder.
+    """
     folder = _save_dir()
+    if folder is not None and subfolder:
+        folder = folder / subfolder
     files = FileRepository(folder) if folder is not None else None
     url = _database_url()
     if url is None:
         return files
-    database = PostgresRepository(url)
+    database = PostgresRepository(url, table=table)
     return MirroredRepository(database, files) if files is not None else database
 
 
@@ -148,15 +157,30 @@ def get_store() -> RoomStore:
         if store is None or (type(store) is not RoomStore and _running_current_code()):
             if store is not None:
                 store.retire()
+            # The clubs' tables, made with the store so the store reports finished club games to them.
+            club_repository = _repository("abaka_clubs", "clubs")
+            clubs = registry["clubs"] = ClubStore(repository=club_repository)
             repository = _repository()
-            store = registry["store"] = RoomStore(repository=repository, report_every=STATS_EVERY_SECONDS)
+            store = registry["store"] = RoomStore(repository=repository, report_every=STATS_EVERY_SECONDS,
+                                                  on_game_over=clubs.record)
             where = (repository.describe() if hasattr(repository, "describe")
                      else getattr(repository, "folder", None) or "memory only")
             logging.getLogger("abaka").info("store started; games are saved in %s", where)
-            if isinstance(repository, MirroredRepository):
-                # Games saved in files before the database (or while it was unreachable).
-                threading.Thread(target=repository.import_files, name="abaka-import", daemon=True).start()
+            for saved in (repository, club_repository):
+                if isinstance(saved, MirroredRepository):
+                    # Saved in files before the database (or while it was unreachable).
+                    threading.Thread(target=saved.import_files, name="abaka-import", daemon=True).start()
         return store
+
+
+def get_clubs() -> ClubStore:
+    """The ClubStore made together with the current RoomStore (see get_store)."""
+    get_store()
+    registry = _store_registry()
+    with registry["lock"]:
+        if registry.get("clubs") is None:  # a store made by code from before clubs
+            registry["clubs"] = ClubStore(repository=_repository("abaka_clubs", "clubs"))
+        return registry["clubs"]
 
 
 def main():
@@ -170,10 +194,12 @@ def main():
     ss.setdefault("lobby_notice", None)
     ss.setdefault("lobby_info", None)
     ss.setdefault("my_games", [])      # codes of games this browser played, newest first
+    ss.setdefault("my_clubs", [])      # codes of clubs this browser opened, newest first
     set_language(_pick_language())
 
     store = get_store()
     invited_code = normalize_code(st.query_params.get("room", ""))
+    club_code = normalize_code(st.query_params.get("club", ""))
 
     if ss.room_code:
         try:
@@ -184,6 +210,8 @@ def main():
             st.rerun()
     elif invited_code:
         _render_invite(store, invited_code)
+    elif club_code:
+        _render_club(store, get_clubs(), club_code)
     else:
         _render_home(store)
 
@@ -252,6 +280,8 @@ def _render_home(store: RoomStore) -> None:
                     else:
                         st.error(t("No game with that code. Check it and try again."))
 
+    _render_clubs_card(get_clubs())
+
     _, mid, _ = st.columns([0.4, 10, 0.4])
     with mid:
         with st.expander(t("How to play"), icon=":material/help:"):
@@ -272,6 +302,148 @@ def _storage_note(store: RoomStore) -> str:
         "database:not connected yet": t("the database is not connected yet"),
     }.get(storage, t("the database reported an error"))
     return t("Games are saved on this server only: {why}.", why=why)
+
+
+def _render_clubs_card(clubs: ClubStore) -> None:
+    """Home page: create a club, open one by its code, or go back to a club this browser knows."""
+    ss = st.session_state
+    _, mid, _ = st.columns([0.4, 10, 0.4])
+    with mid:
+        with st.container(border=True, key="card-clubs"):
+            _card_header("\U0001F3C6", t("Clubs"),
+                         t("A leaderboard for your group of friends. Games started from a club count for its table."))
+            known = []
+            for code in ss.get("my_clubs", []):
+                club = clubs.get(code)
+                if club is not None:
+                    known.append(club)
+            ss.my_clubs = [c["code"] for c in known]
+            if known:
+                with st.container(horizontal=True, key="my-clubs-row"):
+                    for club in known:
+                        if st.button(md(club["name"]), key=f"club-{club['code']}", icon=":material/leaderboard:"):
+                            _open_club(club["code"])
+            create_col, open_col = st.columns(2, gap="medium")
+            with create_col:
+                with st.form("create_club", border=False):
+                    name = st.text_input(t("Club name"), placeholder=t("e.g. Friday dice"), max_chars=30,
+                                         key="club_name")
+                    if st.form_submit_button(t("Create club"), icon=":material/add:", use_container_width=True):
+                        try:
+                            _open_club(clubs.create(name))
+                        except ClubError as e:
+                            st.error(error(str(e)))
+            with open_col:
+                with st.form("find_club", border=False):
+                    typed = st.text_input(t("Club code"), placeholder=t("e.g. K7PX2M"), max_chars=8,
+                                          key="find_club_code")
+                    if st.form_submit_button(t("Open club"), icon=":material/login:", use_container_width=True):
+                        code = normalize_code(typed)
+                        if is_club_code(code) and clubs.exists(code):
+                            _open_club(code)
+                        else:
+                            st.error(t("No club with that code. Check it and try again."))
+
+
+def _open_club(code: str) -> None:
+    st.query_params["club"] = code
+    st.rerun()
+
+
+def _render_club(store: RoomStore, clubs: ClubStore, code: str) -> None:
+    """A club's page: its table, a link to share, new club games, and the latest results."""
+    ss = st.session_state
+    _language_row("lang-club")
+    _show_lobby_notice()
+    club = clubs.get(code)
+    if club is None:
+        with _centered():
+            st.error(t("No club with that code. Check it and try again."))
+            _club_home_button()
+        return
+    ss.my_clubs = ([code] + [c for c in ss.get("my_clubs", []) if c != code])[:MY_CLUBS_KEPT]
+
+    _, mid, _ = st.columns([0.4, 10, 0.4])
+    with mid:
+        _club_home_button()
+        st.html(f'<div class="ab-club-head"><div class="ab-card-icon">&#127942;</div>'
+                f'<div class="ab-card-title">{escape(club["name"])}</div>'
+                f'<div class="ab-card-sub">{t("Club code")} <b>{code}</b> · '
+                f'{t("Games started on this page count for the table.")}</div></div>')
+        board, play = st.columns([7, 5], gap="large")
+        with board:
+            with st.container(border=True, key="card-club-table"):
+                st.html(_club_table_html(club))
+            if club["games"]:
+                with st.container(border=True, key="card-club-games"):
+                    st.html(_club_games_html(club))
+        with play:
+            with st.container(border=True, key="card-club-play"):
+                _card_header("\U0001F3B2", t("New club game"),
+                             t("Type the names the same way each time; capital letters do not matter."))
+                local_tab, online_tab = st.tabs([t("Same device"), t("Online")])
+                with local_tab:
+                    count = _player_count("club_local_count")
+                    with st.form("club_local_game", border=False):
+                        typed = [st.text_input(t("Player {i}", i=i), placeholder=t("Name"), max_chars=20,
+                                               key=f"club_p{i}") for i in range(1, count + 1)]
+                        if st.form_submit_button(t("Start game"), type="primary", icon=":material/play_arrow:",
+                                                 use_container_width=True):
+                            names = [name.strip() or t("Player {i}", i=i) for i, name in enumerate(typed, 1)]
+                            _start_game(lambda: store.create_local(names, club=code))
+                with online_tab:
+                    players = _player_count("club_online_count")
+                    with st.form("club_online_game", border=False):
+                        name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="club_host")
+                        if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
+                                                 use_container_width=True):
+                            _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players,
+                                                             club=code))
+            with st.container(border=True, key="card-club-share"):
+                st.html(f'<div class="ab-card-sub">{t("Invite friends to the club with this link:")}</div>')
+                link, _ = _invite_link(code, "club")
+                if link:
+                    st.code(link, language=None, wrap_lines=True)
+
+
+def _club_home_button() -> None:
+    if st.button(t("Home"), key="club-home", type="tertiary", icon=":material/arrow_back:"):
+        if "club" in st.query_params:
+            del st.query_params["club"]
+        st.rerun()
+
+
+def _club_table_html(club: dict) -> str:
+    members = sorted(club["members"].values(), key=lambda m: (-m["rating"], -m["wins"], m["name"].casefold()))
+    if not members:
+        return (f'<div class="ab-card-title">{t("Table")}</div>'
+                f'<div class="ab-card-sub">{t("No games yet. Start one, and the table fills in when it ends.")}</div>')
+    head = "".join(f"<th>{h}</th>" for h in ("#", t("Player"), t("Rating"), t("Games"), t("Wins"),
+                                              t("Average"), t("Best")))
+    rows = []
+    for rank, m in enumerate(members, 1):
+        medal = {1: "&#129351;", 2: "&#129352;", 3: "&#129353;"}.get(rank, str(rank))
+        average = round(m["points"] / m["games"]) if m["games"] else 0
+        rows.append(f'<tr><td class="ab-rank">{medal}</td><td class="ab-name">{escape(m["name"])}</td>'
+                    f'<td class="ab-rating"><b>{round(m["rating"])}</b> {_change_html(m["change"])}</td>'
+                    f'<td>{m["games"]}</td><td>{m["wins"]}</td><td class="ab-wide">{average}</td>'
+                    f'<td class="ab-wide">{m["best"]}</td></tr>')
+    return (f'<div class="ab-card-title">{t("Table")}</div>'
+            f'<div class="ab-card-sub">{t("Everyone starts at 1000. Beating a stronger player earns more.")}</div>'
+            f'<table class="ab-club-table"><thead><tr>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table>')
+
+
+def _club_games_html(club: dict) -> str:
+    items = []
+    for game in club["games"][:CLUB_GAMES_SHOWN]:
+        best = max(p["score"] for p in game["players"])
+        players = " · ".join(
+            f'<span class="{"win" if p["score"] == best else ""}">{escape(p["name"])} {p["score"]}</span>'
+            for p in sorted(game["players"], key=lambda p: -p["score"]))
+        when = time.strftime("%d.%m", time.localtime(game["at"]))
+        items.append(f'<li><span class="ab-when">{when}</span>{players}</li>')
+    return (f'<div class="ab-card-title">{t("Latest games")}</div>'
+            f'<ul class="ab-club-games">{"".join(items)}</ul>')
 
 
 def _start_game(create) -> None:
@@ -415,7 +587,8 @@ def _render_online(store: RoomStore) -> None:
                 pass  # the other player already started the next game
 
         render_game(engine, me=seat, status_html=status, on_play_again=rematch,
-                    on_leave=_leave_room, leave_label=t("Leave game"))
+                    on_leave=_leave_room, leave_label=t("Leave game"), board_note_html=_series_html(view),
+                    results_note_html=_club_result_html(view), after_results=lambda: _club_button(view))
 
     # Check often only while someone else can change the room: players joining, or another
     # player's turn. On your own turn, or once the game is over, nobody else moves.
@@ -440,7 +613,61 @@ def _render_local_game(store: RoomStore, view, token: str) -> None:
 
     render_game(RoomEngine(get_store, code, token, view.engine, view.version), me=None,
                 status_html=chip(t("Same device · {code}", code=code)), on_play_again=rematch,
-                on_leave=leave, leave_label=t("Leave game"))
+                on_leave=leave, leave_label=t("Leave game"), board_note_html=_series_html(view),
+                results_note_html=_club_result_html(view), after_results=lambda: _club_button(view))
+
+
+def _series_html(view) -> str:
+    """The running score at this table, under the scoreboard, once a game here has finished."""
+    if not view.results:
+        return ""
+    wins, draws = view.series()
+    order = sorted(range(len(view.names)), key=lambda i: (-wins[i], i))
+    leader = order[0] if wins[order[0]] > 0 and (len(order) == 1 or wins[order[0]] > wins[order[1]]) else None
+    people = " · ".join(f'{"&#128081; " if i == leader else ""}{escape(view.names[i])} <b>{wins[i]}</b>'
+                        for i in order)
+    games = len(view.results)
+    head = t("Games at this table: {n}", n=games)
+    tail = f' · {t("draws: {n}", n=draws)}' if draws else ""
+    club = f'<span class="ab-series-club">&#127942; {t("club game")}</span>' if view.club else ""
+    return f'<div class="ab-series"><span class="ab-series-head">{head}</span> {people}{tail}{club}</div>'
+
+
+def _club_result_html(view) -> str:
+    """On the results screen of a club game: how the ratings moved (once the game is recorded)."""
+    if not view.club or not (view.engine is not None and view.engine.is_game_over()):
+        return ""
+    clubs = get_clubs()
+    club = clubs.get(view.club)
+    game = clubs.game(view.club, view.code, view.games_played) if club is not None else None
+    if game is None:
+        return ""
+    rows = []
+    for p in sorted(game["players"], key=lambda p: -p["score"]):
+        member = club["members"].get(member_key(p["name"]))
+        rating = round(member["rating"]) if member else ""
+        rows.append(f'<span>{escape(p["name"])} <b>{rating}</b> {_change_html(p["change"])}</span>')
+    return (f'<div class="ab-club-result"><div>{t("Club rating · {name}", name=escape(club["name"]))}</div>'
+            f'{"".join(rows)}</div>')
+
+
+def _club_button(view) -> None:
+    """On the results screen of a club game: a way to the club's table."""
+    if not view.club:
+        return
+    if st.button(t("Club table"), key="results-club", icon=":material/leaderboard:", use_container_width=True):
+        _leave_room()
+        st.query_params["club"] = view.club
+        st.rerun()
+
+
+def _change_html(change: float) -> str:
+    n = round(change)
+    if n > 0:
+        return f'<span class="ab-up">&#9650;{n}</span>'
+    if n < 0:
+        return f'<span class="ab-down">&#9660;{-n}</span>'
+    return '<span class="ab-same">=</span>'
 
 
 def _watch_room(code: str, seen_version: int, every: float) -> None:
@@ -622,8 +849,8 @@ def _leave_room(notice: str = None, keep_link: bool = False, info: str = None) -
         del st.query_params["room"]
 
 
-def _invite_link(code: str):
-    """Returns (link or None, True if the link only works on the local network)."""
+def _invite_link(code: str, param: str = "room"):
+    """Returns (link or None, True if the link only works on the local network). `param`: room or club."""
     try:
         parts = urlsplit(st.context.url)
     except Exception:
@@ -640,7 +867,7 @@ def _invite_link(code: str):
         netloc = f"{ip}:{parts.port}" if parts.port else ip
         same_network_only = True
     path = parts.path if parts.path.endswith("/") else parts.path + "/"
-    return f"{parts.scheme}://{netloc}{path}?room={code}", same_network_only
+    return f"{parts.scheme}://{netloc}{path}?{param}={code}", same_network_only
 
 
 def _local_ip():

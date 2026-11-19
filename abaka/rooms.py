@@ -51,6 +51,7 @@ FINISHED_IN_MEMORY_SECONDS = 10 * 60  # a finished game, sooner
 MAX_ROOMS_IN_MEMORY = 2000            # beyond this, the rooms seen least recently leave first
 SWEEP_EVERY_SECONDS = 60
 DISK_SWEEP_EVERY_SECONDS = 60 * 60    # expired files are deleted this often
+RESULTS_KEPT = 100                    # finished games a room remembers for its running score
 _CODE_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, CODE_LENGTH))
 
 log = logging.getLogger("abaka")
@@ -97,7 +98,8 @@ class RoomView:
     """A point-in-time copy of a room, safe to read without the store lock."""
 
     def __init__(self, code: str, names: List[str], engine: Optional[GameEngine],
-                 version: int, games_played: int, capacity: int, local: bool = False) -> None:
+                 version: int, games_played: int, capacity: int, local: bool = False,
+                 club: Optional[str] = None, results: Optional[List[dict]] = None) -> None:
         self.code = code
         self.names = names            # seated players, in seat order (seat 0 created the game)
         self.engine = engine
@@ -105,10 +107,32 @@ class RoomView:
         self.games_played = games_played
         self.capacity = capacity      # how many players the game is for
         self.local = local            # a same-device game: one browser plays every seat
+        self.club = club              # the club whose table this room's games count for, if any
+        self.results = results or []  # finished games, oldest first: {"game": n, "scores": [...]}
 
     @property
     def started(self) -> bool:
         return self.engine is not None
+
+    def series(self) -> "tuple[List[int], int]":
+        """The running score at this table: wins per seat, and the number of drawn games."""
+        return series_wins(self.results, len(self.names))
+
+
+def series_wins(results: List[dict], players: int) -> "tuple[List[int], int]":
+    """Wins per seat over finished games (a shared top score is a draw, not a win), and draws."""
+    wins, draws = [0] * players, 0
+    for result in results:
+        scores = result["scores"]
+        if len(scores) != players:
+            continue
+        best = max(scores)
+        winners = [i for i, score in enumerate(scores) if score == best]
+        if len(winners) == 1:
+            wins[winners[0]] += 1
+        else:
+            draws += 1
+    return wins, draws
 
 
 class _Room:
@@ -121,6 +145,8 @@ class _Room:
         self.engine: Optional[GameEngine] = None
         self.version = 0
         self.games_played = 0
+        self.club: Optional[str] = None
+        self.results: List[dict] = []
         self.updated_at = time.time()
         self.last_seen = self.updated_at  # when a page last looked at it (not saved)
 
@@ -134,6 +160,7 @@ class _Room:
             "names": list(self.names), "tokens": list(self.tokens),
             "engine": engine_to_data(self.engine) if self.engine is not None else None,
             "version": self.version, "games_played": self.games_played, "updated_at": self.updated_at,
+            "club": self.club, "results": [dict(r, scores=list(r["scores"])) for r in self.results],
         }
 
     @classmethod
@@ -145,6 +172,9 @@ class _Room:
         room.version = int(d["version"])
         room.games_played = int(d["games_played"])
         room.updated_at = float(d["updated_at"])
+        room.club = d.get("club")
+        room.results = [{"game": int(r["game"]), "scores": [int(x) for x in r["scores"]]}
+                        for r in d.get("results") or []]
         room.last_seen = time.time()
         return room
 
@@ -160,7 +190,7 @@ class RoomStore:
     """
 
     def __init__(self, starting_throw: bool = True, save_dir: Union[str, Path, None] = None,
-                 report_every: Optional[float] = None, repository=None) -> None:
+                 report_every: Optional[float] = None, repository=None, on_game_over=None) -> None:
         """
         starting_throw: each game opens with the starting throw (lowest total goes first).
         save_dir: keep every room in a JSON file there (a FileRepository). Saved rooms are
@@ -169,11 +199,15 @@ class RoomStore:
             written by a poll, so a server nobody has open stays quiet.
         repository: where rooms are kept, instead of save_dir (see abaka/repository.py).
             Without either, rooms live in memory only.
+        on_game_over: called with a result dict when a game ends (after the lock is
+            released): room, game (its number in the room), club, names, scores, at.
+            The app records club games with it (abaka/clubs.py).
         """
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
         self._retired = False
         self.starting_throw = starting_throw
+        self.on_game_over = on_game_over
         if repository is None and save_dir is not None:
             repository = FileRepository(save_dir)
         self._repository = repository
@@ -223,14 +257,18 @@ class RoomStore:
         return "database" if state == "connected" else f"database:{state}"
 
     # ----- lobby -----
-    def create(self, host_name: str, players: int = 2) -> "tuple[str, str]":
-        """Open a new room for `players` players. Returns (room_code, seat_token) for the host."""
+    def create(self, host_name: str, players: int = 2, club: Optional[str] = None) -> "tuple[str, str]":
+        """
+        Open a new room for `players` players. Returns (room_code, seat_token) for the host.
+        With `club`, its games count for that club's table.
+        """
         if not MIN_PLAYERS <= int(players) <= MAX_PLAYERS:
             raise RoomError(f"A game is for {MIN_PLAYERS} to {MAX_PLAYERS} players.")
         with self._lock:
             self._make_room_for_one_more()
             code = self._new_code()
             room = _Room(code, int(players))
+            room.club = club
             self._rooms[code] = room
             self._count("created")
             token = self._seat(room, clean_name(host_name, "Player 1"))
@@ -238,7 +276,7 @@ class RoomStore:
         self._write(pending)
         return code, token
 
-    def create_local(self, names: List[str]) -> "tuple[str, str]":
+    def create_local(self, names: List[str], club: Optional[str] = None) -> "tuple[str, str]":
         """
         A same-device game: every seat is played from one browser, and the game starts at once.
         It gets a code like an online game, so it can be continued later from its link or code.
@@ -249,6 +287,7 @@ class RoomStore:
             self._make_room_for_one_more()
             code = self._new_code()
             room = _Room(code, len(names), local=True)
+            room.club = club
             token = secrets.token_urlsafe(16)
             room.names = [clean_name(n, f"Player {i}") for i, n in enumerate(names, 1)]
             room.tokens = [token] * len(names)  # one browser holds every seat
@@ -368,8 +407,8 @@ class RoomStore:
         with self._lock:
             self._count("views")
             room = self._get(code)
-            return RoomView(room.code, list(room.names), room.engine,
-                            room.version, room.games_played, room.capacity, room.local)
+            return RoomView(room.code, list(room.names), room.engine, room.version, room.games_played,
+                            room.capacity, room.local, room.club, list(room.results))
 
     # ----- playing -----
     # Each move may name the room version the player's page was drawn from
@@ -447,10 +486,21 @@ class RoomStore:
             engine = room.engine.clone()
             action(engine)
             room.engine = engine
+            finished = None
+            if engine.is_game_over():  # this move ended the game
+                scores = [p.calculate_score() for p in engine.players]
+                room.results = (room.results + [{"game": room.games_played, "scores": scores}])[-RESULTS_KEPT:]
+                finished = {"room": room.code, "game": room.games_played, "club": room.club,
+                            "names": list(room.names), "scores": scores, "at": time.time()}
             room.touch()
             self._count("moves")
             pending = self._snapshot(room)
         self._write(pending)
+        if finished is not None and self.on_game_over is not None:
+            try:
+                self.on_game_over(finished)
+            except Exception as e:  # noqa: BLE001 - a club table must never break the game
+                log.warning("could not record game %s:%s: %s", finished["room"], finished["game"], e)
 
     def _count(self, what: str, n: int = 1) -> None:
         """Add to a count for the stats line. Call with self._lock held."""
