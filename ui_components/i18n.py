@@ -169,6 +169,13 @@ RU = {
     "You started a lot of games just now. Please wait a few minutes.":
         "Вы только что начали много игр. Подождите несколько минут.",
     "How to play": "Как играть",
+    "Games are saved in the database.": "Игры сохраняются в базе данных.",
+    "Games are saved on this server only.": "Игры сохраняются только на этом сервере.",
+    "Games are saved on this server only: {why}.": "Игры сохраняются только на этом сервере: {why}.",
+    "the database refused the password": "база данных не приняла пароль",
+    "the database cannot be reached": "база данных недоступна",
+    "the database is not connected yet": "база данных ещё не подключена",
+    "the database reported an error": "база данных сообщила об ошибке",
     "Same device · {code}": "Одно устройство · {code}",
     "Online · {code}": "Онлайн · {code}",
     "{code} · {kind} · {names}": "{code} · {kind} · {names}",

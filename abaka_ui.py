@@ -89,13 +89,17 @@ def _save_dir() -> Optional[Path]:
 def _database_url() -> Optional[str]:
     """
     The Postgres URL (Neon on the live app): $ABAKA_DATABASE_URL if set (empty: no
-    database), else the ABAKA_DATABASE_URL secret (Streamlit Cloud: the app's Settings,
-    then Secrets). None: games are saved in files only.
+    database), else the ABAKA_DATABASE_URL or DATABASE_URL secret (Streamlit Cloud: the
+    app's Settings, then Secrets; DATABASE_URL is the name Neon gives it). None: games are
+    saved in files only.
+
+    A DATABASE_URL environment variable is not used: it names the production database in
+    Neon's .env.local, and tests and local runs must never reach it unless asked to.
     """
     url = os.environ.get("ABAKA_DATABASE_URL")
     if url is None:
         try:
-            url = st.secrets.get("ABAKA_DATABASE_URL")
+            url = st.secrets.get("ABAKA_DATABASE_URL") or st.secrets.get("DATABASE_URL")
         except Exception:  # noqa: BLE001 - no secrets file at all
             url = None
     url = str(url or "").strip()
@@ -252,6 +256,22 @@ def _render_home(store: RoomStore) -> None:
     with mid:
         with st.expander(t("How to play"), icon=":material/help:"):
             st.markdown(rules_md())
+        st.caption(_storage_note(store))
+
+
+def _storage_note(store: RoomStore) -> str:
+    """One line at the foot of the home page: where games are saved (no address or password)."""
+    storage = store.storage()
+    if storage == "database":
+        return t("Games are saved in the database.")
+    if storage in ("files", "memory"):
+        return t("Games are saved on this server only.")
+    why = {
+        "database:password": t("the database refused the password"),
+        "database:unreachable": t("the database cannot be reached"),
+        "database:not connected yet": t("the database is not connected yet"),
+    }.get(storage, t("the database reported an error"))
+    return t("Games are saved on this server only: {why}.", why=why)
 
 
 def _start_game(create) -> None:

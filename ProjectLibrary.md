@@ -190,7 +190,8 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   - Without a database, the app uses `FileRepository`, which writes each room
     to `<save_dir>/<CODE>.json` after every change.
   - With a database URL (`ABAKA_DATABASE_URL`: the environment variable, or
-    the Streamlit secret of that name; Neon on the live app), it uses
+    the Streamlit secret `ABAKA_DATABASE_URL` or `DATABASE_URL`, Neon's name;
+    never a `DATABASE_URL` environment variable), it uses
     `MirroredRepository`: every save goes to Postgres
     (`PostgresRepository`, table `abaka_rooms`) and to the files; a load takes
     whichever has the newer version. When the store starts, a background
@@ -207,6 +208,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     (Neon closes it when it suspends); no prepared statements, for the
     pooler. An unreachable database never stops a game: saves are logged as
     failed, other calls log a warning, and the files still hold every game.
+  - The foot of the home page says where games are saved
+    (`RoomStore.storage()`, `abaka_ui._storage_note`): in the database, on
+    this server only, or on this server only because the database refused
+    the password, cannot be reached, or is not connected yet. It names no
+    address, so anyone can check the live app from a browser.
   - Loads happen under the store's lock, so with a database the first look
     at a game not in memory waits for a round trip (longer if Neon has to
     wake up).
@@ -628,6 +634,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-19)
 
+- **Live app on Neon (owner's secret was named `DATABASE_URL`):** PR #44.
+  The app now also accepts the `DATABASE_URL` secret, and the home page says
+  where games are saved. Before, after the owner's reboot, the live app
+  still saved to its disk only (games 6VPPE, RSXZR and L994A never reached
+  Neon, and 6VPPE was gone after the reboot: the disk does not survive it).
 - **Neon project linked (owner, Neon's setup steps):** PR #43. `neon init`
   and `neon deploy` linked the repository to the owner's Neon project; the
   13 database tests and the restart check (a game back from Neon after its
@@ -709,11 +720,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 174
-  pass; on 3.8, 147 pass and 27 are skipped (2 of them test `tools/pr.py`, 8
-  need a database; the others need Streamlit). CI runs them on 3.13 with
-  Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 13 database
-  tests (`test_postgres.py`: the Postgres repository's contract, a dropped
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 177
+  pass; on 3.8, 148 pass and 29 are skipped (2 of them test `tools/pr.py`, 9
+  need a database or psycopg; the others need Streamlit). CI runs them on 3.13 with
+  Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 16 database
+  tests (`test_postgres.py`: the Postgres repository's contract, where games are saved, the secret's name, a dropped
   connection, an unreachable database, a store on Postgres, the mirrored
   files and their import), 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
@@ -850,6 +861,19 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: the `DATABASE_URL` secret, and where games are saved (Claude Code, PR #44)**
+
+- The owner had saved the Streamlit secret as `DATABASE_URL`, the name in
+  Neon's `.env.local`, so the app (which read only `ABAKA_DATABASE_URL`)
+  kept saving to its disk. The app now reads either name from Streamlit
+  secrets. A `DATABASE_URL` environment variable is still ignored, so tests
+  and local runs cannot reach the production database by accident.
+- Streamlit Community Cloud has no API for secrets or logs, so the agents
+  cannot see why the live app does not use the database. The home page now
+  says it in one line (database, server only, or why the database is not
+  in use), without the address or the server's message.
+- The owner's reboot confirmed the Known issue: a game saved only on the
+  disk (6VPPE) was gone afterwards.
 **2026-11-19: Neon project linked (Claude Code, PR #43)**
 
 - The owner pasted Neon's agent setup steps (install the CLI, `neon init`

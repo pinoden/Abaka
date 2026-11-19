@@ -189,6 +189,7 @@ class PostgresRepository:
         self._lock = threading.Lock()  # one connection, one statement at a time
         self._conn = None
         self._down_until = 0.0
+        self._last_error: Optional[str] = None  # why the last connection failed, for status()
 
     def describe(self) -> str:
         """Where the rooms are, without the password: for the log."""
@@ -261,6 +262,24 @@ class PostgresRepository:
         with self._lock:
             self._disconnect()
 
+    def status(self) -> str:
+        """
+        "connected", "not connected yet", or why the last connection failed: "password"
+        (refused the login), "unreachable" (network, timeout) or "error". Safe to show:
+        it never contains the URL or the server's message.
+        """
+        if self._conn is not None and not self._conn.closed:
+            return "connected"
+        if self._last_error is None:
+            return "not connected yet"
+        text = self._last_error.lower()
+        if "password" in text or "authentication" in text or "role" in text:
+            return "password"
+        if any(word in text for word in ("timeout", "timed out", "could not translate", "refused",
+                                          "unreachable", "network", "resolve")):
+            return "unreachable"
+        return "error"
+
     def _quietly(self, default, what: str, sql: str, params, fetch=True):
         try:
             return self._run(sql, params, fetch)
@@ -304,9 +323,11 @@ class PostgresRepository:
             # pooler (Neon's "-pooler" address) may not keep between statements.
             conn = psycopg.connect(self.url, autocommit=True, connect_timeout=self.connect_timeout,
                                    prepare_threshold=None, application_name=self.application_name)
-        except Exception:
+        except Exception as e:
             self._down_until = time.monotonic() + RETRY_CONNECT_AFTER
+            self._last_error = f"{type(e).__name__}: {e}"
             raise
+        self._last_error = None
         t = self.table
         for sql in (
             f"CREATE TABLE IF NOT EXISTS {t} (code text PRIMARY KEY, version bigint NOT NULL, data jsonb, "
@@ -382,6 +403,10 @@ class MirroredRepository:
         close = getattr(self.primary, "close", None)
         if close is not None:
             close()
+
+    def status(self) -> str:
+        status = getattr(self.primary, "status", None)
+        return status() if status is not None else "connected"
 
     def remove_leftovers(self) -> None:
         self.mirror.remove_leftovers()

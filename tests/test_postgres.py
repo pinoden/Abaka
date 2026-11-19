@@ -211,5 +211,51 @@ class FilesThenMemory(unittest.TestCase):
         self.assertIn("AB2CD", self.db.rooms)
 
 
+class TestWhereGamesAreSaved(unittest.TestCase):
+    """The line at the foot of the home page, and the secret that names the database."""
+
+    def test_store_storage(self):
+        self.assertEqual(RoomStore().storage(), "memory")
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(RoomStore(save_dir=folder).storage(), "files")
+            mirrored = MirroredRepository(MemoryRepository(), FileRepository(folder))
+            self.assertEqual(RoomStore(repository=mirrored).storage(), "database")
+
+    @unittest.skipIf(psycopg is None, "no psycopg")
+    def test_a_database_that_is_not_in_use_says_why(self):
+        down = PostgresRepository("postgresql://nobody:secret@127.0.0.1:1/none", connect_timeout=2)
+        self.assertEqual(down.status(), "not connected yet")
+        with tempfile.TemporaryDirectory() as folder, self.assertLogs("abaka", level="WARNING"):
+            store = RoomStore(repository=MirroredRepository(down, FileRepository(folder)))  # tries at start
+        self.assertEqual(store.storage(), "database:unreachable")
+        self.assertNotIn("secret", store.storage())
+        down._last_error = 'OperationalError: password authentication failed for user "nobody"'
+        self.assertEqual(down.status(), "password")
+
+    def test_the_database_secret_may_use_neons_name(self):
+        try:
+            import abaka_ui
+        except ImportError:  # no Streamlit
+            self.skipTest("Streamlit is not installed")
+        from unittest import mock
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ABAKA_DATABASE_URL", None)
+            for secrets_, expected in (({"DATABASE_URL": " postgresql://neon "}, "postgresql://neon"),
+                                       ({"ABAKA_DATABASE_URL": "postgresql://a", "DATABASE_URL": "x"}, "postgresql://a"),
+                                       ({}, None)):
+                with mock.patch.object(abaka_ui.st, "secrets", secrets_):
+                    self.assertEqual(abaka_ui._database_url(), expected)
+            os.environ["ABAKA_DATABASE_URL"] = ""  # set but empty: no database, whatever the secrets say
+            with mock.patch.object(abaka_ui.st, "secrets", {"DATABASE_URL": "postgresql://neon"}):
+                self.assertIsNone(abaka_ui._database_url())
+        os.environ.pop("ABAKA_DATABASE_URL", None)
+        os.environ["DATABASE_URL"] = "postgresql://production"  # Neon's .env.local name: never used
+        try:
+            with mock.patch.object(abaka_ui.st, "secrets", {}):
+                self.assertIsNone(abaka_ui._database_url())
+        finally:
+            del os.environ["DATABASE_URL"]
+
+
 if __name__ == "__main__":
     unittest.main()
