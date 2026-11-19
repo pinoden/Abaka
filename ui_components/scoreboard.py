@@ -28,40 +28,38 @@ def render_scoreboard(engine: GameEngine, me: Optional[int] = None, target: Opti
     st.html(build_scoreboard_html(engine, me, target))
 
 
-def _score_cell(value, category, classes, target_text=None, last=False) -> str:
-    if last:
-        classes += " ab-last"
-    if target_text is not None:
-        return f'<td class="{classes} ab-target">{escape(target_text)}</td>'
+def _bonus_cell(value, classes: str, crossed_tail: str) -> str:
     if value is None:
         return f'<td class="{classes} ab-none">{EMPTY}</td>'
     if value == "X":
-        # In school rows an X means "settled" (exactly three, or an old balance cell).
-        if is_school(category):
-            return f'<td class="{classes} ab-ok" title="{t("Done")}">{CHECK}</td>'
-        return f'<td class="{classes} ab-x" title="{t("Crossed out")}">{CROSS}</td>'
-    cls = "ab-neg" if isinstance(value, int) and value < 0 else "ab-num"
-    return f'<td class="{classes} {cls}">{value}</td>'
-
-
-def _bonus_cell(value, classes) -> str:
-    if value is None:
-        return f'<td class="{classes} ab-none">{EMPTY}</td>'
-    if value == "X":
-        return f'<td class="{classes} ab-x" title="{t("Bonus crossed out")}">{CROSS}</td>'
+        return f'<td class="{classes}{crossed_tail}'
     return f'<td class="{classes} ab-bval">{value}</td>'
 
 
 def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None) -> str:
+    """
+    The whole table as HTML. It has about 75 cells per player and is drawn on every page
+    run, so everything that does not depend on the cell (translated tooltips, each
+    player's classes, the highlighted cells) is worked out once, outside the loops.
+    """
     players = engine.players
     over = engine.is_game_over()
     active = None if over else engine.current
     span = 1 + 5 * len(players)  # row label + (gap + 3 cells + bonus) per player
     last = getattr(engine, "last_move", None)  # (player, category, slot) of the latest move
+    last = tuple(last) if last is not None else (None, None, None)
     many = len(players) > 2
-
-    def act(i: int) -> str:
-        return " ab-active" if i == active else ""
+    acts = [" ab-active" if i == active else "" for i in range(len(players))]  # header and bonus cells
+    plain = [a.strip() for a in acts]                                            # score cells
+    scores = [p.calculate_score() for p in players]
+    # The end of a crossed-out cell: in School rows an X means "settled" (exactly three, or an
+    # old balance cell), elsewhere a crossed-out combination.
+    school_x = f' ab-ok" title="{t("Done")}">{CHECK}</td>'
+    combo_x = f' ab-x" title="{t("Crossed out")}">{CROSS}</td>'
+    bonus_x = f' ab-x" title="{t("Bonus crossed out")}">{CROSS}</td>'
+    # The picked move: which cell it fills, and which bonus cells it gives up (previewed as crossed out).
+    aim_cat = target.category if target is not None and active is not None else None
+    aim_slot = target.slot if aim_cat is not None else None
 
     h = [f'<div class="ab-board-wrap"><table class="ab-board{" ab-many" if many else ""}"><thead><tr><th></th>']
     for i, p in enumerate(players):
@@ -70,58 +68,73 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
         bal = p.school_balance
         bal_txt = f'<span style="color:#E5484D">{bal}</span>' if bal < 0 else str(bal)
         h.append(
-            f'<th class="ab-gap"></th><th colspan="4" class="ab-player{act(i)}">{dot}{escape(p.name)}{you}'
-            f'<div class="ab-pmeta"><span class="ab-nw">{t("{score} pts", score=p.calculate_score())}</span>'
+            f'<th class="ab-gap"></th><th colspan="4" class="ab-player{acts[i]}">{dot}{escape(p.name)}{you}'
+            f'<div class="ab-pmeta"><span class="ab-nw">{t("{score} pts", score=scores[i])}</span>'
             f'{"<br>" if many else " &middot; "}<span class="ab-nw">{t("balance {balance}", balance=bal_txt)}</span>'
             f'</div></th>'
         )
     h.append('</tr><tr class="ab-sub"><th></th>')
-    for i, _ in enumerate(players):
-        h.append(f'<th class="ab-gap"></th><th class="{act(i)}">I</th><th class="{act(i)}">II</th>'
-                 f'<th class="{act(i)}">III</th><th class="ab-bonus{act(i)}" title="{t("Row bonus")}">★</th>')
+    row_bonus_tip = t("Row bonus")
+    for a in acts:
+        h.append(f'<th class="ab-gap"></th><th class="{a}">I</th><th class="{a}">II</th>'
+                 f'<th class="{a}">III</th><th class="ab-bonus{a}" title="{row_bonus_tip}">★</th>')
     h.append("</tr></thead><tbody>")
 
+    lose_row_tip = t("This move crosses out the row bonus")
     for title, cats in ((t("School"), SCHOOL_CATS), (t("Combinations"), COMBO_CATS)):
         h.append(f'<tr class="ab-section"><td colspan="{span}">{title}</td></tr>')
         for cat in cats:
-            icon = f'<img src="{die_uri(school_number(cat))}" alt="">' if is_school(cat) else ""
+            school = is_school(cat)
+            crossed_tail = school_x if school else combo_x
+            icon = f'<img src="{die_uri(school_number(cat))}" alt="">' if school else ""
             h.append(f'<tr><th class="ab-row" title="{escape(row_hint(cat))}">{icon}{escape(row_name(cat))}</th>')
+            aimed = cat == aim_cat
             for i, p in enumerate(players):
+                cells = p.table[cat]
                 h.append('<td class="ab-gap"></td>')
                 for slot in range(3):
-                    hit = target is not None and i == active and target.category == cat and target.slot == slot
-                    was_last = last is not None and tuple(last) == (i, cat, slot)
-                    h.append(_score_cell(p.table[cat][slot], cat, act(i).strip(), target.preview if hit else None,
-                                         last=was_last))
-                loses_bonus = (target is not None and i == active and target.category == cat
-                               and getattr(target, "bonus_lost", False))
-                if loses_bonus:  # the picked move pays from the balance: preview the crossed-out bonus
-                    h.append(f'<td class="ab-bonus{act(i)} ab-target" '
-                             f'title="{t("This move crosses out the row bonus")}">{CROSS}</td>')
+                    classes = plain[i]
+                    if i == last[0] and cat == last[1] and slot == last[2]:
+                        classes += " ab-last"
+                    if aimed and i == active and slot == aim_slot:
+                        h.append(f'<td class="{classes} ab-target">{escape(target.preview)}</td>')
+                        continue
+                    value = cells[slot]
+                    if value is None:
+                        h.append(f'<td class="{classes} ab-none">{EMPTY}</td>')
+                    elif value == "X":
+                        h.append(f'<td class="{classes}{crossed_tail}')
+                    else:
+                        cls = "ab-neg" if isinstance(value, int) and value < 0 else "ab-num"
+                        h.append(f'<td class="{classes} {cls}">{value}</td>')
+                if aimed and i == active and getattr(target, "bonus_lost", False):
+                    # The picked move pays from the balance: preview the crossed-out bonus.
+                    h.append(f'<td class="ab-bonus{acts[i]} ab-target" title="{lose_row_tip}">{CROSS}</td>')
                 else:
-                    h.append(_bonus_cell(p.table[cat][3], "ab-bonus" + act(i)))
+                    h.append(_bonus_cell(cells[3], "ab-bonus" + acts[i], bonus_x))
             h.append("</tr>")
 
     h.append(f'<tr class="ab-section"><td colspan="{span}">{escape(t("Bonuses & total"))}</td></tr>')
     h.append(f'<tr><th class="ab-row" title="{t("Complete a column with no crossed-out combinations")}">'
              f'{t("Column bonus")}</th>')
+    lose_column = aim_cat is not None and getattr(target, "column_bonus_lost", False)
+    lose_column_tip = t("This move crosses out the column bonus")
     for i, p in enumerate(players):
         h.append('<td class="ab-gap"></td>')
         for col, value in enumerate(p.column_bonus):
-            if (target is not None and i == active and target.slot == col
-                    and getattr(target, "column_bonus_lost", False)):
+            if lose_column and i == active and col == aim_slot:
                 # The picked move crosses out a combination in this column: preview the crossed-out bonus.
-                h.append(f'<td class="{act(i).strip()} ab-target" '
-                         f'title="{t("This move crosses out the column bonus")}">{CROSS}</td>')
+                h.append(f'<td class="{plain[i]} ab-target" title="{lose_column_tip}">{CROSS}</td>')
             else:
-                h.append(_bonus_cell(value, act(i).strip()))
-        h.append(f'<td class="ab-bonus{act(i)}"></td>')
+                h.append(_bonus_cell(value, plain[i], bonus_x))
+        h.append(f'<td class="ab-bonus{acts[i]}"></td>')
     h.append(f'</tr><tr class="ab-total"><th class="ab-row">{t("Total")}</th>')
-    for i, p in enumerate(players):
-        h.append(f'<td class="ab-gap"></td><td colspan="4" class="{act(i).strip()}">{p.calculate_score()}</td>')
+    for i in range(len(players)):
+        h.append(f'<td class="ab-gap"></td><td colspan="4" class="{plain[i]}">{scores[i]}</td>')
     h.append("</tr></tbody></table></div>")
-    if last is not None:
-        h.append(f'<div class="ab-legend"><span class="ab-swatch"></span>{escape(describe_move(engine, last, me))}</div>')
+    if last[0] is not None:
+        h.append(f'<div class="ab-legend"><span class="ab-swatch"></span>'
+                 f'{escape(describe_move(engine, last, me))}</div>')
     return "".join(h)
 
 

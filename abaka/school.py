@@ -1,6 +1,6 @@
 # abaka/school.py
 from __future__ import annotations
-from .models import Category
+from .models import Category, SCHOOL_NUMBERS
 
 def record_school(engine, category: Category, slot_index: int) -> None:
     """
@@ -20,7 +20,7 @@ def record_school(engine, category: Category, slot_index: int) -> None:
         Paying from the balance crosses out this row's bonus for the player at once.
     """
     p = engine.players[engine.current]
-    denom = int(category.name.split('_')[1])
+    denom = SCHOOL_NUMBERS[category]
 
     # считаем k
     k = sum(1 for d in engine.dice if d.value == denom)

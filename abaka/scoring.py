@@ -1,5 +1,5 @@
 from collections import Counter
-from .models import Category, Die
+from .models import Category, Die, SCHOOL_NUMBERS
 
 def score_category(dice, category, first_roll=False):
     """
@@ -44,8 +44,8 @@ def score_category(dice, category, first_roll=False):
             score, bonus = (total, 50) if any(c == 5 for c in cnt.values()) else (0, 0)
         elif cat == Category.SUM:
             score = total
-        elif cat.name.startswith("SCHOOL_"):
-            denom = int(cat.name.split('_')[1])
+        elif cat in SCHOOL_NUMBERS:
+            denom = SCHOOL_NUMBERS[cat]
             score = cnt.get(denom, 0) - 3
         else:
             score = 0

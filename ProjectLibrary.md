@@ -143,8 +143,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   imported again from disk. Tests that patch modules before running the app
   call `code_version.mark_current()` first.
   - The contents decide, but the files are read again only when a size or a
-    file time changed, or a minute has passed (`current_fingerprint`): 0.5
-    instead of 2.5 ms per full run.
+    file time changed, or a minute has passed (`current_fingerprint`). Sizes
+    and times are looked at at most every 2 s (`CHECK_EVERY_SECONDS`): the
+    check costs about 1 µs per run instead of 0.6 ms.
 - A room has a 5-character code, a `capacity` of 2 to 5 players chosen by the
   creator (`rooms.MIN_PLAYERS`..`MAX_PLAYERS`), seats in join order (each a
   name plus a secret token; seat 0 is the creator) and one `GameEngine`,
@@ -197,6 +198,14 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     (`PostgresRepository`, table `abaka_rooms`) and to the files; a load takes
     whichever has the newer version. When the store starts, a background
     thread copies files the database lacks into it (`import_files`).
+  - The app's `MirroredRepository` writes the database in the background
+    (`background=True`): a save writes the file and returns, and a thread
+    (`abaka-db-writer`, stopped after 30 s idle) writes the newest pending
+    version of each room. A move waits about 1 ms for storage instead of
+    about 40 ms to Neon. `wait()` (used by `retire()`) returns once the
+    database has caught up; a delete drops the room's pending write. If the
+    file write fails, that save goes to the database at once. Data handed to
+    a repository must not change afterwards (`ClubStore` saves a copy).
   - The repository methods are `claim`, `load`, `save(code, version, data)`,
     `delete`, `prune`, `quarantine` and `wait`. `RoomStore` uses nothing
     else (`RoomStore(repository=...)`; `tests/test_repository.py` runs a
@@ -679,6 +688,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-19)
 
+- **Code review for speed (owner: "review all the code on its optimality"):**
+  PR #46. Nothing in the game grows with input size (a table is 15 rows ×
+  4 cells, at most 5 players), so the work went to what each click and page
+  run costs: moves wait about 1 ms for storage instead of about 40 ms (Neon
+  is written in the background), the code-update check costs about 1 µs
+  instead of 0.6 ms per run, and the scoreboard is built in about half the
+  time, with byte-identical HTML.
 - **Leaderboards (owner: "Both"):** PR #45. The running score at a table, and
   clubs with a rating table. Checked with AppTest (a club created through the
   home page form, a game finished, its table and results screen) and in
@@ -771,13 +787,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 187
-  pass; on 3.8, 157 pass and 30 are skipped (2 of them test `tools/pr.py`, 9
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 192
+  pass; on 3.8, 162 pass and 30 are skipped (2 of them test `tools/pr.py`, 9
   need a database or psycopg; the others need Streamlit). 10 club tests
   (`test_clubs.py`: ratings, the running score, club tables, saving, the
   club pages through the app). CI runs them on 3.13 with
-  Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 16 database
-  tests (`test_postgres.py`: the Postgres repository's contract, where games are saved, the secret's name, a dropped
+  Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 21 database
+  tests (`test_postgres.py`: the Postgres repository's contract, background database writes, where games are saved, the secret's name, a dropped
   connection, an unreachable database, a store on Postgres, the mirrored
   files and their import), 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
@@ -914,6 +930,34 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: code review for speed (Claude Code, PR #46)**
+
+- The owner asked to review all the code for optimality and optimize it.
+- Big-O: the engine works on fixed sizes (15 rows × 4 cells per player, at
+  most 5 players, 5 dice), so no algorithm there grows with anything. The
+  store's per-request work was already constant: a poll costs about 1 µs, a
+  page's room read about 2 µs (measured). What remained was constant costs
+  repeated on every click or page run, measured on a 5-player game half
+  played:
+  - a move with Neon: 40 ms (median; p90 47 ms), almost all of it the
+    database round trip. Now about 1 ms (median; p90 1.9 ms): the database
+    is written in the background, behind the file copy;
+  - the code-update check: 588 µs per run, listing and checking every file.
+    Now about 1 µs: it looks at most every 2 s;
+  - the scoreboard: 844 µs. Now 393 µs: tooltips, classes and the
+    highlighted cells are worked out once instead of per cell. Its HTML is
+    byte-identical (compared on 10,986 boards: 2-5 players, every phase,
+    picked moves, both languages);
+  - a club's results screen copied the whole club twice (0.3 ms each with
+    200 games); now it copies one game.
+- One lookup (`models.SCHOOL_NUMBERS`, `is_school`) replaces seven string
+  tests of the row name, in the engine and the UI.
+- Not changed, with reasons: move previews (`score_options`, 0.25 ms) try
+  each move on a copy of the game, which keeps them exact; a page run's
+  remaining time is Streamlit building widgets, not our code; the 17 KB of
+  styles sent with every full run are compressed on the websocket, and
+  moving them to a static file would depend on how Streamlit Cloud serves
+  files.
 **2026-11-19: leaderboards (Claude Code, PR #45)**
 
 - The owner asked for "a smart fun way to keep leaderboard" and chose layers

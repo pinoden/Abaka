@@ -1,4 +1,4 @@
-from .models import Category
+from .models import Category, is_school
 
 class PlayerState:
     def __init__(self, name):
@@ -42,7 +42,7 @@ class PlayerState:
 
     def non_school_complete(self):
         for cat, slots in self.table.items():
-            if not cat.name.startswith("SCHOOL_") and not all(v is not None for v in slots[:3]):
+            if not is_school(cat) and not all(v is not None for v in slots[:3]):
                 return False
         return True
 
