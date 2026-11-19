@@ -23,7 +23,8 @@ def score_category(dice, category, first_roll=False):
             trips = [v for v, c in cnt.items() if c >= 3]
             score = trips[0] * 3 if trips else 0
         elif cat == Category.FULL:
-            if sorted(cnt.values()) == [2, 3]:
+            # Five of a kind (Abaka) counts as a full house too (owner, 2026-11-19).
+            if sorted(cnt.values()) in ([2, 3], [5]):
                 score = total
                 if cnt.get(1, 0) == 3 and cnt.get(2, 0) == 2:
                     bonus = 50

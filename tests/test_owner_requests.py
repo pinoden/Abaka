@@ -34,6 +34,26 @@ class TestTwoPairsFromFourOfAKind(unittest.TestCase):
         self.assertEqual(offered.get(Category.TWO_PAIRS), 24)
 
 
+class TestAbakaAsFullHouseAndPairs(unittest.TestCase):
+    """Owner (2026-11-19): Abaka can be written as a full house, and every combination holds a pair."""
+
+    def test_five_of_a_kind_is_a_full_house(self):
+        from abaka.scoring import score_category
+        self.assertEqual(score_category(dice(6, 6, 6, 6, joker=6), Category.FULL), 30)
+        self.assertEqual(score_category(dice(2, 2, 2, 2, joker=2), Category.FULL, first_roll=True), 20)
+        self.assertEqual(score_category(dice(3, 3, 3, 3, joker=1), Category.FULL), 15)  # wild joker makes it
+        self.assertEqual(score_category(dice(3, 3, 3, 5, joker=5), Category.FULL), 19)  # as before
+        self.assertEqual(score_category(dice(3, 3, 3, 3, joker=5), Category.FULL), 0)   # four of a kind is not
+
+    def test_every_combination_holds_a_pair(self):
+        from abaka.scoring import score_category
+        self.assertEqual(score_category(dice(6, 6, 6, 1, joker=6), Category.PAIR), 12)  # four of a kind
+        self.assertEqual(score_category(dice(4, 4, 4, 4, joker=4), Category.PAIR), 8)   # five of a kind
+        self.assertEqual(score_category(dice(5, 5, 5, 3, joker=3), Category.PAIR), 10)  # full house
+        self.assertEqual(score_category(dice(2, 2, 5, 5, joker=1), Category.PAIR), 10)  # two pairs: the higher one
+        self.assertEqual(score_category(dice(5, 5, 5, 2, joker=4), Category.PAIR), 10)  # three of a kind
+
+
 class TestSchoolBonusAfterPaying(unittest.TestCase):
     """
     Owner's rule (2026-11-16, reversing the 2026-11-15 decision): paying from the balance

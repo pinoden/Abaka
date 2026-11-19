@@ -413,7 +413,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -734,11 +734,24 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Before, Two pairs needed two different numbers (the scoring code from
       2025), so four of a kind scored 0 there and the move was not offered.
     - The rules text says "two pairs (four of a kind counts)" / "две пары
-      (каре тоже)". Nothing else changed: Full house still needs exactly
-      three and two.
+      (каре тоже)". Full house was changed next, by item 20.
+
+20. **Abaka counts as a full house; every combination holds a pair.** Done
+    in PR #50.
+    > "Also abaka should be able to be written as a full house as well"
+    > "an all of above could be a pair"
+    - Five of a kind scores in Full house as all five dice (6 6 6 6 6: 30,
+      doubled on a first roll). The 1-1-1-2-2 bonus is unchanged; five of a
+      kind gets no bonus there.
+    - Pair already accepted three, four and five of a kind, two pairs and a
+      full house (the highest pair counts); now tested, and the rules text
+      says so.
+    - Four of a kind is still not a full house.
 
 ## Status (2026-11-19)
 
+- **Abaka as a full house (owner, Backlog item 20):** PR #50, with the
+  rules text in English and Russian.
 - **Two pairs from four of a kind (owner's report, Backlog item 19):** PR #49.
   The owner's game LWUNK had already moved on, so that turn stays as played.
 - **Picked dice on the other screens (owner, Backlog item 18):** PR #48.
@@ -851,8 +864,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 204
-  pass; on 3.8, 169 pass and 35 are skipped (2 of them test `tools/pr.py`, 9
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 206
+  pass; on 3.8, 171 pass and 35 are skipped (2 of them test `tools/pr.py`, 9
   need a database or psycopg; the others need Streamlit). 6 picked-dice tests
   (`test_shown_dice.py`: picks are shown but are not a move, only the
   player whose turn it is picks, a reroll right after a pick, the other
@@ -872,7 +885,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   lock and a retired store), 26 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room, moves
   from outdated pages),
-  13 move-preview tests (`test_moves.py`), 8 tests for the owner's requests
+  13 move-preview tests (`test_moves.py`), 10 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 5 module-reload tests (`test_code_version.py`), 9
@@ -998,6 +1011,15 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: Abaka as a full house, pairs in every combination (Claude Code, PR #50)**
+
+- The owner asked for both while PR #49 was going live. Abaka counts in
+  Full house as the sum of all five dice, like any full house, without
+  the Abaka bonus (+50 stays with the Abaka row) and without the 1-1-1-2-2
+  bonus.
+- "All of above could be a pair" needed no code change: the Pair rule
+  already took the highest number appearing at least twice. Tests now hold
+  it for every combination.
 **2026-11-19: four of a kind counts as two pairs (Claude Code, PR #49)**
 
 - The owner could not write joker 6, 6, 6, 6, 1 in Two pairs and called it an

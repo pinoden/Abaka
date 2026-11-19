@@ -21,12 +21,12 @@ has three cells that fill from left to right.
 
 | Row | Needs | Scores |
 |---|---|---|
-| Pair | two of a number | the pair |
+| Pair | two of a number (also in any of the combinations below) | the highest pair |
 | Two pairs | two pairs (four of a kind counts) | both pairs |
 | Three of a kind | three of a number | the three |
 | Small straight | exactly 1-2-3-4-5 | 15 |
 | Large straight | exactly 2-3-4-5-6 | 20 |
-| Full house | three of one number + two of another | all dice (1-1-1-2-2: +50) |
+| Full house | three of one number + two of another, or five of a kind | all dice (1-1-1-2-2: +50) |
 | Four of a kind | four of a number | the four + 20 |
 | Abaka | all five the same | all dice + 50 |
 | Sum | anything | all dice |
@@ -69,12 +69,12 @@ RULES_MD_RU = """
 
 | Строка | Что нужно | Очки |
 |---|---|---|
-| Пара | два одинаковых числа | сумма пары |
+| Пара | два одинаковых числа (в любой из комбинаций ниже тоже) | сумма старшей пары |
 | Две пары | две пары (каре тоже) | сумма обеих пар |
 | Тройка | три одинаковых числа | сумма трёх |
 | Малый стрит | ровно 1-2-3-4-5 | 15 |
 | Большой стрит | ровно 2-3-4-5-6 | 20 |
-| Фулл-хаус | три одного числа + два другого | сумма всех кубиков (1-1-1-2-2: +50) |
+| Фулл-хаус | три одного числа + два другого, или пять одинаковых | сумма всех кубиков (1-1-1-2-2: +50) |
 | Каре | четыре одинаковых числа | сумма четырёх + 20 |
 | Абака | все пять одинаковые | сумма всех кубиков + 50 |
 | Сумма | что угодно | сумма всех кубиков |
