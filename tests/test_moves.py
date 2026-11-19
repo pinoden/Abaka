@@ -1,10 +1,21 @@
+import os
 import unittest
+from unittest import mock
 
+import abaka.rooms as rooms
+import code_version
 from abaka.constants import COMBO_CATS
 from abaka.engine import GameEngine
 from abaka.models import Category, Die
 from abaka.rooms import RoomEngine, RoomStore
-from ui_components.moves import cross_options, plain_engine, row_name, score_options
+from ui_components.moves import cross_options, most_points, plain_engine, row_name, score_options
+
+try:
+    from streamlit.testing.v1 import AppTest
+except ImportError:  # the base Python 3.8
+    AppTest = None
+
+APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "abaka_ui.py")
 
 
 def game(*values, joker=None, first_roll=True):
@@ -119,6 +130,79 @@ class TestCrossOptions(unittest.TestCase):
         self.assertEqual([m.category for m in opts], [c for c in COMBO_CATS if c != Category.ABAKA])
         self.assertTrue(all(m.cross for m in opts))
         self.assertEqual(opts[0].action_text, "Cross out Pair (lose the row and column bonuses)")
+
+
+class TestMostPoints(unittest.TestCase):
+    """Owner (2026-11-19): highlight the option with the most points."""
+
+    def best(self, g):
+        moves = score_options(g)
+        return [moves[i].category for i in most_points(moves)], by_row(moves)
+
+    def test_points_are_what_the_total_gains(self):
+        best, opts = self.best(game(2, 2, 2, 2, joker=3))  # the owner's roll on the live app, first roll
+        self.assertEqual(best, [Category.KARE])
+        self.assertEqual({c: m.points for c, m in opts.items()},
+                         {Category.SCHOOL_2: 2, Category.PAIR: 8, Category.TWO_PAIRS: 16, Category.TRIPS: 12,
+                          Category.KARE: 56, Category.SUM: 22})  # School: the balance change
+
+    def test_all_options_with_the_most_on_a_tie(self):
+        best, _ = self.best(game(5, 5, 5, 4, joker=4, first_roll=False))  # a full house: 23 there and in Sum
+        self.assertEqual(best, [Category.FULL, Category.SUM])
+
+    def test_a_bonus_earned_counts_and_shows(self):
+        g = game(2, 2, 2, 2, joker=3, first_roll=False)
+        g.players[0].table[Category.SUM][:2] = [52, 52]  # Sum now completes the row: its bonus is 52
+        best, opts = self.best(g)
+        self.assertEqual(best, [Category.SUM])  # 11 + 52 beats 28 in Four of a kind
+        self.assertEqual((opts[Category.SUM].points, opts[Category.SUM].bonus), (63, 52))
+        self.assertEqual(opts[Category.SUM].label, "Sum · 11 · bonus +52")
+        self.assertEqual(opts[Category.KARE].label, "Four of a kind · 28")
+
+    def test_a_closed_bonus_earns_nothing(self):
+        g = game(2, 2, 2, 2, joker=3, first_roll=False)
+        g.players[0].table[Category.SUM][:2] = [52, 52]
+        g.players[1].table[Category.SUM] = [30, 30, 30, 30]  # Bob completed the Sum row first...
+        g.players[0].table[Category.SUM][3] = "X"              # ...which closed it for Ann
+        g.row_bonus_claimed[Category.SUM] = True
+        best, opts = self.best(g)
+        self.assertEqual((best, opts[Category.SUM].bonus), ([Category.KARE], 0))
+
+    def test_nothing_to_highlight_when_crossing_out(self):
+        self.assertEqual(most_points(cross_options(game(1, 2, 3, 4, joker=6))), [])
+        self.assertEqual(most_points([]), [])
+
+    @unittest.skipIf(AppTest is None, "Streamlit is not installed")
+    def test_the_page_draws_the_best_option_bold(self):
+        env = mock.patch.dict(os.environ, {"ABAKA_SAVE_DIR": ""})
+        env.start()
+        self.addCleanup(env.stop)
+        stores = []
+
+        class FreshRoomStore(rooms.RoomStore):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                stores.append(self)
+
+        self.addCleanup(setattr, rooms, "RoomStore", rooms.RoomStore)
+        rooms.RoomStore = FreshRoomStore
+        code_version.mark_current()
+        AppTest.from_file(APP, default_timeout=30).run()  # the app makes its store
+        store = stores[-1]
+        code, key = store.create_local(["Ann", "Bob"])
+        while store.view(code).engine.choosing_first_player:
+            store.throw_for_start(code, key)
+        with mock.patch("abaka.engine.roll_dice", lambda: [Die(2), Die(2), Die(2), Die(2), Die(3, is_joker=True)]):
+            store.roll(code, key)
+        at = AppTest.from_file(APP, default_timeout=30)
+        at.query_params["room"] = code
+        at.session_state["room_code"], at.session_state["seat_token"] = code, key
+        at.run()
+        self.assertFalse(at.exception, [e.value for e in at.exception])
+        pills = next(g for g in at.get("button_group") if (g.key or "").startswith("pick-"))
+        labels = [getattr(o, "content", o) for o in pills.options]  # AppTest 1.48: protos; 1.67: text
+        self.assertEqual([label for label in labels if label.startswith("**")], ["**Four of a kind · 56**"])
+        self.assertIn("Sum · 22", labels)
 
 
 class TestOnlineEngine(unittest.TestCase):

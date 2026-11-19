@@ -174,6 +174,7 @@ RU = {
     "Abaka!": "Абака!",
     "Royal full house!": "Королевский фулл-хаус!",
     "first roll": "с первого броска",
+    "bonus +{n}": "бонус +{n}",
     "Bonus!": "Бонус!",
     "Bonuses!": "Бонусы!",
     "{row} row +{points}": "строка «{row}» +{points}",

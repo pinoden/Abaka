@@ -397,6 +397,17 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   animation) is injected with `st.html("<style>...")`.
 - Move-picker widget keys include a turn signature (player, rolls left, dice),
   so a pick never carries over to a reroll or a new turn.
+- The score option that adds the most to the player's total is highlighted
+  (Backlog item 24).
+  - `Move.points` is the total's change, from the same trial move as the
+    preview: the score or the School balance change, plus any row or column
+    bonus the move earns.
+  - `moves.most_points` picks the options, all of them on a tie.
+  - The picker writes their labels in bold (pill labels are Markdown), and
+    `style.py` colours a bold pill gold
+    (`button[data-testid="stBaseButton-pills"]:has(strong)`, the same in
+    Streamlit 1.48 and 1.67). A picked pill keeps Streamlit's indigo.
+  - An option that earns a bonus says so: "Sum · 11 · bonus +52".
 - Game buttons (Throw, Roll dice, the two Reroll buttons, the confirm button)
   make their move in an `on_click` callback (`ui_components/actions.py`), so a
   move costs one script run instead of two (the second came from
@@ -462,7 +473,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -867,7 +878,30 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Banners now sit in the lower part of the screen, so they never hide
       the dice.
 
+24. **Highlight the option with the most points.** Done in PR #56.
+    > "Among the options,, can you highlight the option with the most points
+    > potential ?"
+    - Among the Score options, the one that adds the most to the player's
+      total now is bold and gold. Points are the score (a School row: its
+      balance change) plus any row or column bonus the move earns at once.
+    - On a tie, every option with the most is highlighted. A full house
+      always ties with Sum, and so do both straights.
+    - An option that earns a bonus shows it: "Sum · 11 · bonus +52".
+    - Nothing is highlighted when crossing out.
+
 ## Status (2026-11-19)
+
+- **The option with the most points (owner, Backlog item 24):** PR #56.
+  - Checked in headless Chromium on a local server with steered dice, at
+    1300px and 390px:
+    - with four 2s on a first roll, only "Four of a kind · 56" was gold;
+    - picked, it turned Streamlit's indigo;
+    - with a full house, "Full house · 46" and "Sum · 46" were both gold.
+  - No sideways scrolling.
+  - The load-test row was flagged against the previous one (25% → 33% CPU,
+    6.8 → 8.6 ms median poll). `main` and this branch measured back to back
+    gave the same (33% and 34%, 8.7 and 8.9 ms), so the previous row was low.
+    The poll path did not change.
 
 - **Effects as the dice land (owner, Backlog item 23):** PR #55.
   - Checked in headless Chromium on a local server with steered dice (a
@@ -1023,10 +1057,10 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, all 246 pass but one step
+- **Tests:** on Python 3.9 with Streamlit 1.48, all 252 pass but one step
   skipped (a typed-in club name, which AppTest 1.48 cannot send) and the 9
-  database tests, which need a test database (CI has one); on 3.8, 204 pass
-  and 42 are skipped (9 need a database or psycopg; the others need
+  database tests, which need a test database (CI has one); on 3.8, 209 pass
+  and 43 are skipped (9 need a database or psycopg; the others need
   Streamlit). 7 PR tool tests (`test_pr_tool.py`:
   remote URLs, and `merge` with a fake GitHub: a required job not started
   yet, a failing job, a branch behind `main`, a conflict). 24 reaction and
@@ -1057,7 +1091,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   lock and a retired store), 26 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room, moves
   from outdated pages),
-  13 move-preview tests (`test_moves.py`), 10 tests for the owner's requests
+  20 move-preview tests (`test_moves.py`, with the most points: the total's
+  change, ties, a bonus earned or already closed, and the page drawing the
+  best option bold), 10 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 5 module-reload tests (`test_code_version.py`), 9
@@ -1182,6 +1218,25 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-19: the option with the most points (Claude Code, PR #56)**
+
+- "Most points" is what the move adds to the player's total now: the total
+  after the trial move the preview already makes, minus the total before.
+  - That is the number on the option, except when the move also earns a row
+    or column bonus. The highlight is the true best, so those options show
+    their bonus ("Sum · 11 · bonus +52"), or a highlighted "Sum · 11" next to
+    "Four of a kind · 28" would look wrong.
+  - It is points, not strategy. Sum adds every die, so it ties with a full
+    house or a straight and beats a pair, two pairs or three of a kind until
+    the Sum row is full. Four of a kind, Abaka and the royal full house beat
+    it with their +20/+50. A bonus a School payment gives up is not counted:
+    the confirm button already warns about it.
+- On a tie every option with the most is highlighted, instead of choosing
+  between them: which row to keep free is the player's call.
+- The pill labels are Markdown in both Streamlit versions, so a bold label
+  is the hook for the gold style (`:has(strong)`). No position or label text
+  is matched, and the tests still pick options by position.
 
 **2026-11-19: effects as the dice land (Claude Code, PR #55)**
 

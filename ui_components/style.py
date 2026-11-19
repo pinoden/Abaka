@@ -161,6 +161,12 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 }
 [class*="st-key-confirm"] button p, [class*="st-key-roll"] button p, [class*="st-key-big-"] button p { font-weight: 600; }
 
+/* ---------- move picker: the option with the most points (bold label, move_selection.py) ---------- */
+[class*="st-key-pick-"] button[data-testid="stBaseButton-pills"]:has(strong) {
+  background: #FFF4DB; border-color: #F2C14E; color: #9A6700; }
+[class*="st-key-pick-"] button[data-testid="stBaseButton-pills"]:has(strong):hover {
+  background: #FFEBC2; border-color: #E0A82E; color: #7A5200; }
+
 /* ---------- scoreboard ---------- */
 .ab-board-wrap { overflow-x: auto; }
 .ab-board { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .92rem;
