@@ -15,7 +15,7 @@ import streamlit as st
 from abaka.engine import GameEngine
 from ui_components.actions import run_action, show_action_error
 from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
-from ui_components.i18n import LANGUAGES, and_join, md, t
+from ui_components.i18n import LANGUAGES, and_join, md, picked_dice_note, rerolled_dice_note, t
 from ui_components.move_selection import render_move_picker
 from ui_components.rules import rules_dialog
 from ui_components.scoreboard import render_scoreboard
@@ -131,7 +131,15 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
 
     render_dice(engine, interactive=can_act)
     if not can_act:
-        st.caption(t("{name} is choosing a move. You will see it here as it happens.", name=md(player.name)))
+        picked = len(getattr(engine, "picked", ()) or ()) if engine.rolls_left > 0 else 0
+        rerolled = len(getattr(engine, "rerolled", ()) or ())
+        if picked:
+            note = picked_dice_note(md(player.name), picked)
+        elif rerolled:
+            note = rerolled_dice_note(md(player.name), rerolled)
+        else:
+            note = t("{name} is choosing a move. You will see it here as it happens.", name=md(player.name))
+        st.caption(note)
         return None
     render_reroll(engine)
     return render_move_picker(engine)
