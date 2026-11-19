@@ -22,7 +22,7 @@ has three cells that fill from left to right.
 | Row | Needs | Scores |
 |---|---|---|
 | Pair | two of a number | the pair |
-| Two pairs | two different pairs | both pairs |
+| Two pairs | two pairs (four of a kind counts) | both pairs |
 | Three of a kind | three of a number | the three |
 | Small straight | exactly 1-2-3-4-5 | 15 |
 | Large straight | exactly 2-3-4-5-6 | 20 |
@@ -70,7 +70,7 @@ RULES_MD_RU = """
 | Строка | Что нужно | Очки |
 |---|---|---|
 | Пара | два одинаковых числа | сумма пары |
-| Две пары | две разные пары | сумма обеих пар |
+| Две пары | две пары (каре тоже) | сумма обеих пар |
 | Тройка | три одинаковых числа | сумма трёх |
 | Малый стрит | ровно 1-2-3-4-5 | 15 |
 | Большой стрит | ровно 2-3-4-5-6 | 20 |

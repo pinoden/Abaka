@@ -413,7 +413,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -724,8 +724,23 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       again."
     - Same-device games are unchanged (everyone sees the one screen).
 
+19. **Four of a kind counts as two pairs.** Done in PR #49.
+    > "there was an error during my game - I was't able to score two pairs
+    > into the last row" (game LWUNK: joker 6, 6, 6, 6, 1 on the third roll;
+    > only Sum was offered)
+    - **Decided by the owner** (reported as an error): four of a kind holds
+      two pairs of the same number, so 6 6 6 6 1 scores 24 in Two pairs.
+      Five of a kind scores four of its dice (4 4 4 4 4: 16).
+    - Before, Two pairs needed two different numbers (the scoring code from
+      2025), so four of a kind scored 0 there and the move was not offered.
+    - The rules text says "two pairs (four of a kind counts)" / "две пары
+      (каре тоже)". Nothing else changed: Full house still needs exactly
+      three and two.
+
 ## Status (2026-11-19)
 
+- **Two pairs from four of a kind (owner's report, Backlog item 19):** PR #49.
+  The owner's game LWUNK had already moved on, so that turn stays as played.
 - **Picked dice on the other screens (owner, Backlog item 18):** PR #48.
   Checked in headless Chromium on a local server, a desktop and a phone in
   one online game: the watcher saw the two picked dice lifted 1 s after the
@@ -836,8 +851,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 202
-  pass; on 3.8, 167 pass and 35 are skipped (2 of them test `tools/pr.py`, 9
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 204
+  pass; on 3.8, 169 pass and 35 are skipped (2 of them test `tools/pr.py`, 9
   need a database or psycopg; the others need Streamlit). 6 picked-dice tests
   (`test_shown_dice.py`: picks are shown but are not a move, only the
   player whose turn it is picks, a reroll right after a pick, the other
@@ -857,7 +872,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   lock and a retired store), 26 room tests (`test_rooms.py`: a full two-player game,
   rematch, 3-5 player rooms, starting early, leaving the waiting room, moves
   from outdated pages),
-  13 move-preview tests (`test_moves.py`), 6 tests for the owner's requests
+  13 move-preview tests (`test_moves.py`), 8 tests for the owner's requests
   (`test_owner_requests.py`), 6 starting-throw tests
   (`test_starting_throw.py`: lowest starts, ties, joker at face value,
   rooms, rematch), 5 module-reload tests (`test_code_version.py`), 9
@@ -983,6 +998,19 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: four of a kind counts as two pairs (Claude Code, PR #49)**
+
+- The owner could not write joker 6, 6, 6, 6, 1 in Two pairs and called it an
+  error. The engine was doing what the 2025 scoring code said (two different
+  numbers); the rules text, written from that code in PR #12, said "two
+  different pairs". The owner's report is taken as the rule: four of a kind
+  is two pairs.
+- Five of a kind follows the same rule (two pairs out of four of its dice),
+  since it holds four of a kind. A Pair already accepted three, four or five
+  of a kind, and Three of a kind accepted four or five, so Two pairs now
+  matches them.
+- Full house was left as it is (exactly three and two; five of a kind is not
+  a full house): the owner did not ask, and that is a separate rule.
 **2026-11-19: picked dice on the other screens (Claude Code, PR #48)**
 
 - The owner asked that the other players see exactly which dice are rerolled.

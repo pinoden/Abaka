@@ -9,6 +9,31 @@ def dice(*values, joker=6):
     return [Die(v) for v in values] + [Die(joker, is_joker=True)]
 
 
+class TestTwoPairsFromFourOfAKind(unittest.TestCase):
+    """Owner (2026-11-19): four sixes (joker 6, 6, 6, 6, 1) could not be written in Two pairs."""
+
+    def test_four_or_five_of_a_kind_holds_two_pairs(self):
+        from abaka.scoring import score_category
+        self.assertEqual(score_category(dice(6, 6, 6, 1, joker=6), Category.TWO_PAIRS), 24)  # the owner's roll
+        self.assertEqual(score_category(dice(4, 4, 4, 4, joker=4), Category.TWO_PAIRS), 16)  # five of a kind
+        self.assertEqual(score_category(dice(6, 6, 6, 6, joker=6), Category.TWO_PAIRS, first_roll=True), 48)
+        # The rest is as before: two different pairs, a full house, one pair only.
+        self.assertEqual(score_category(dice(2, 2, 5, 5, joker=6), Category.TWO_PAIRS), 14)
+        self.assertEqual(score_category(dice(5, 5, 5, 3, joker=3), Category.TWO_PAIRS), 16)
+        self.assertEqual(score_category(dice(6, 6, 6, 2, joker=5), Category.TWO_PAIRS), 0)
+        # A wild joker (showing 1) still picks its best value: 6, 6, 6 and a wild joker -> four sixes.
+        self.assertEqual(score_category(dice(6, 6, 6, 2, joker=1), Category.TWO_PAIRS), 24)
+
+    def test_the_move_is_offered(self):
+        from ui_components.moves import score_options
+        g = GameEngine(["Denis", "Andrey"])
+        g.start_turn()
+        g.dice = dice(6, 6, 6, 1, joker=6)
+        g.rolls_left, g.first_roll = 0, False
+        offered = {m.category: m.value for m in score_options(g)}
+        self.assertEqual(offered.get(Category.TWO_PAIRS), 24)
+
+
 class TestSchoolBonusAfterPaying(unittest.TestCase):
     """
     Owner's rule (2026-11-16, reversing the 2026-11-15 decision): paying from the balance
