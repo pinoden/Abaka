@@ -54,6 +54,20 @@ def reroll_dice(n: int) -> str:
     return f"Reroll {n} {'die' if n == 1 else 'dice'}"
 
 
+def picked_dice_note(name: str, n: int) -> str:
+    """Under the dice, for the other players: how many dice the active player has picked."""
+    if get_language() == "ru":
+        return f"{name} — к перебросу {n} {_ru_plural(n, 'кубик', 'кубика', 'кубиков')}."
+    return f"{name} picked {n} {'die' if n == 1 else 'dice'} to roll again."
+
+
+def rerolled_dice_note(name: str, n: int) -> str:
+    """Under the dice, for the other players, after a reroll: how many dice were rolled again."""
+    if get_language() == "ru":
+        return f"{name} — переброшено {n} {_ru_plural(n, 'кубик', 'кубика', 'кубиков')}."
+    return f"{name} rolled {n} {'die' if n == 1 else 'dice'} again."
+
+
 def players_count(n: int) -> str:
     """'3 players' (Start now with ...)."""
     if get_language() == "ru":

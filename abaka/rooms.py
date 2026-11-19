@@ -99,7 +99,8 @@ class RoomView:
 
     def __init__(self, code: str, names: List[str], engine: Optional[GameEngine],
                  version: int, games_played: int, capacity: int, local: bool = False,
-                 club: Optional[str] = None, results: Optional[List[dict]] = None) -> None:
+                 club: Optional[str] = None, results: Optional[List[dict]] = None,
+                 picked: tuple = (), rerolled: tuple = (), picks: int = 0) -> None:
         self.code = code
         self.names = names            # seated players, in seat order (seat 0 created the game)
         self.engine = engine
@@ -109,6 +110,9 @@ class RoomView:
         self.local = local            # a same-device game: one browser plays every seat
         self.club = club              # the club whose table this room's games count for, if any
         self.results = results or []  # finished games, oldest first: {"game": n, "scores": [...]}
+        self.picked = picked          # dice the player whose turn it is has picked to roll again
+        self.rerolled = rerolled      # dice the last move rolled again (empty if it was not a reroll)
+        self.seen = (version, picks)  # changes with the room or the picked dice: what pages poll
 
     @property
     def started(self) -> bool:
@@ -149,6 +153,10 @@ class _Room:
         self.results: List[dict] = []
         self.updated_at = time.time()
         self.last_seen = self.updated_at  # when a page last looked at it (not saved)
+        # Shown to the other players while a turn goes on; not saved, and cleared by every move.
+        self.picked: tuple = ()           # dice the player whose turn it is has picked
+        self.rerolled: tuple = ()         # dice the latest move rolled again, if it was a reroll
+        self.picks = 0                    # counts changes of `picked`, so pages notice them
 
     def touch(self) -> None:
         self.version += 1
@@ -408,7 +416,20 @@ class RoomStore:
             self._count("views")
             room = self._get(code)
             return RoomView(room.code, list(room.names), room.engine, room.version, room.games_played,
-                            room.capacity, room.local, room.club, list(room.results))
+                            room.capacity, room.local, room.club, list(room.results),
+                            room.picked, room.rerolled, room.picks)
+
+    def seen(self, code: str):
+        """
+        (version, picks): changes when the room changes or the player whose turn it is picks
+        other dice. Pages poll it (RoomView.seen is the value they were drawn from). Cheap.
+        """
+        with self._lock:
+            self._count("polls")
+            room = self._room(code)
+            seen = (room.version, room.picks) if room else (-1, 0)
+        self._report_if_due()
+        return seen
 
     # ----- playing -----
     # Each move may name the room version the player's page was drawn from
@@ -431,12 +452,36 @@ class RoomStore:
         self._act(code, token, action, expected_version)
 
     def reroll(self, code: str, token: str, indices: List[int], expected_version: Optional[int] = None) -> None:
+        chosen = tuple(sorted(set(indices)))
+
         def action(engine: GameEngine) -> None:
             _require_rolled(engine)
             if engine.rolls_left <= 0:
                 raise RoomError("No rerolls left.")
-            engine.reroll(sorted(set(indices)))
-        self._act(code, token, action, expected_version)
+            engine.reroll(list(chosen))
+
+        def show(room: _Room) -> None:
+            room.rerolled = chosen  # the others see exactly which dice were rolled again
+        self._act(code, token, action, expected_version, after=show)
+
+    def pick(self, code: str, token: str, indices: List[int]) -> None:
+        """
+        The dice the player whose turn it is has picked to roll again, so the other players
+        see them. Not a move: the game and the room version stay as they are (a reroll pressed
+        right after a pick is not refused as outdated), nothing is saved, and the next move
+        clears the picks. Same-device games keep their picks in the page.
+        """
+        with self._lock:
+            room = self._get(code)
+            if room.local:
+                return
+            engine = self._check_turn(room, token)
+            if not engine.dice or engine.rolls_left <= 0:
+                raise RoomError("No rerolls left.")
+            picked = tuple(sorted({i for i in indices if 0 <= i < len(engine.dice)}))
+            if picked != room.picked:
+                room.picked = picked
+                room.picks += 1
 
     def score(self, code: str, token: str, category: Category, slot_index: int,
               expected_version: Optional[int] = None) -> None:
@@ -467,25 +512,34 @@ class RoomStore:
         self._write(pending)
 
     # ----- internals -----
-    def _act(self, code: str, token: str, action, expected_version: Optional[int] = None) -> None:
-        """Run one move for the player holding `token`, atomically."""
+    @staticmethod
+    def _check_turn(room: _Room, token: str, expected_version: Optional[int] = None) -> GameEngine:
+        """The room's game, if the player holding `token` may act in it now. Call with the lock held."""
+        if token not in room.tokens:
+            raise RoomError("You are not seated in this game.")
+        if expected_version is not None and room.version != expected_version:
+            raise OutdatedPage("This page was out of date, so the move was not made.")
+        if room.engine is None:
+            raise RoomError("Waiting for the second player to join.")
+        if room.engine.is_game_over():
+            raise RoomError("The game is over.")
+        if not room.local and room.tokens.index(token) != room.engine.current:
+            raise RoomError("It is not your turn.")
+        return room.engine
+
+    def _act(self, code: str, token: str, action, expected_version: Optional[int] = None,
+             after=None) -> None:
+        """Run one move for the player holding `token`, atomically. `after(room)` runs once it succeeded."""
         with self._lock:
             room = self._get(code)
-            if token not in room.tokens:
-                raise RoomError("You are not seated in this game.")
-            if expected_version is not None and room.version != expected_version:
-                raise OutdatedPage("This page was out of date, so the move was not made.")
-            if room.engine is None:
-                raise RoomError("Waiting for the second player to join.")
-            if room.engine.is_game_over():
-                raise RoomError("The game is over.")
-            if not room.local and room.tokens.index(token) != room.engine.current:
-                raise RoomError("It is not your turn.")
             # Work on a copy so a rejected move can never leave the room half-updated, and so the
             # engine that views have handed out never changes (copy-on-write).
-            engine = room.engine.clone()
+            engine = self._check_turn(room, token, expected_version).clone()
             action(engine)
             room.engine = engine
+            room.picked, room.rerolled = (), ()
+            if after is not None:
+                after(room)
             finished = None
             if engine.is_game_over():  # this move ended the game
                 scores = [p.calculate_score() for p in engine.players]
@@ -734,12 +788,15 @@ class RoomEngine:
     (OutdatedPage) if the room has changed since.
     """
 
-    def __init__(self, store, code: str, token: str, engine: GameEngine, version: Optional[int] = None) -> None:
+    def __init__(self, store, code: str, token: str, engine: GameEngine, version: Optional[int] = None,
+                 picked: tuple = (), rerolled: tuple = ()) -> None:
         self._store = store
         self._code = code
         self._token = token
         self._engine = engine
         self._version = version
+        self.picked = picked        # the dice the player whose turn it is has picked (online)
+        self.rerolled = rerolled    # the dice the latest move rolled again
 
     def __getattr__(self, name: str):
         return getattr(self._engine, name)
@@ -755,6 +812,10 @@ class RoomEngine:
 
     def reroll(self, indices: List[int]) -> None:
         self._room_store().reroll(self._code, self._token, indices, expected_version=self._version)
+
+    def pick(self, indices: List[int]) -> None:
+        """Show the other players which dice this player has picked (not a move)."""
+        self._room_store().pick(self._code, self._token, indices)
 
     def record_score(self, category: Category, slot_index: int) -> None:
         self._room_store().score(self._code, self._token, category, slot_index, expected_version=self._version)

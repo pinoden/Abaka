@@ -171,8 +171,17 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   it (`tests/test_ui_store.py` checks every phase). Every change bumps
   `room.version`.
 - Live updates: `_watch_room` draws a polling fragment
-  (`st.fragment(run_every=...)`) that compares `store.version(code)` with the
-  version the page was drawn from, and calls `st.rerun()` when they differ.
+  (`st.fragment(run_every=...)`) that compares `store.seen(code)` with the
+  value the page was drawn from (`RoomView.seen`: the room version and a
+  count of dice-pick changes), and calls `st.rerun()` when they differ.
+- Picked dice (Backlog item 18): a tap on a die in an online game also calls
+  `store.pick` (`RoomEngine.pick`), which keeps the picks in the room
+  (`room.picked`, with `room.picks` counting changes) for the other pages.
+  A pick is not a move: it changes neither the game nor `room.version`, so a
+  Reroll pressed right after a pick is not refused as outdated, and nothing
+  is saved. Only the player whose turn it is can pick, and only while a
+  reroll remains. Every move clears the picks; a reroll records its dice in
+  `room.rerolled`, which `dice._roll_animation` spins.
   - It checks every second while someone else can change the room (players
     joining, another player's turn), every 3 s on the player's own turn or
     after the game, and every 10 s in a same-device game (`POLL_FAST`,
@@ -395,14 +404,16 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   (`python tools/loadtest.py --baseline --record docs/LOADTEST.md`, about a
   minute) and says in its description if the tool flags a slowdown.
 - Every new online action goes through `RoomStore._act`, so it gets the turn
-  check, the lock and the version bump.
+  check, the lock and the version bump. (The one exception is `pick`, which
+  shows picked dice and is not a move: it takes the lock and the same turn
+  check, `_check_turn`, but changes no version.)
 - The game rules are the owner's own. Do not change them, or copy rule details
   from the upstream `abaka_cc` repo, unless the owner asks.
 
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -702,8 +713,24 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Not done (layer 3 of the proposal): records and titles ("Abaka hunter",
       highest score, streaks), and a public hall of fame.
 
+18. **The other players see which dice are picked for a reroll.** Done in
+    PR #48.
+    > "When one player rerolling , I want the opponent (s )to see which exact dice"
+    - Online, each die the player whose turn it is taps is lifted and marked
+      (↻) on every other screen too, about a second later (their poll), with
+      "Bob picked 2 dice to roll again." under the dice.
+    - After the reroll, exactly the dice rolled again spin on every screen,
+      also one that landed on the same face, with "Bob rolled 2 dice
+      again."
+    - Same-device games are unchanged (everyone sees the one screen).
+
 ## Status (2026-11-19)
 
+- **Picked dice on the other screens (owner, Backlog item 18):** PR #48.
+  Checked in headless Chromium on a local server, a desktop and a phone in
+  one online game: the watcher saw the two picked dice lifted 1 s after the
+  tap, and after the reroll exactly those two spun. Load-test row: no
+  slowdown (30% CPU, 7.1 ms median poll).
 - **Load-test baseline (Backlog item 11, Stage 1; owner: "Keep going"):**
   PR #47. `docs/LOADTEST.md` keeps one row per release, written by
   `tools/loadtest.py --baseline --record`, which flags a slowdown against
@@ -809,9 +836,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 196
-  pass; on 3.8, 162 pass and 34 are skipped (2 of them test `tools/pr.py`, 9
-  need a database or psycopg; the others need Streamlit). 4 baseline tests
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 202
+  pass; on 3.8, 167 pass and 35 are skipped (2 of them test `tools/pr.py`, 9
+  need a database or psycopg; the others need Streamlit). 6 picked-dice tests
+  (`test_shown_dice.py`: picks are shown but are not a move, only the
+  player whose turn it is picks, a reroll right after a pick, the other
+  screen through the app). 4 baseline tests
   (`test_loadtest_baseline.py`: rows read back, a slowdown flagged, only
   comparable rows compared). 10 club tests
   (`test_clubs.py`: ratings, the running score, club tables, saving, the
@@ -950,10 +980,28 @@ The scale-up plan is Backlog item 11, as a checklist.
 
 Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
-- showing the opponent which dice the active player has picked.
 
 ## Decision log
 
+**2026-11-19: picked dice on the other screens (Claude Code, PR #48)**
+
+- The owner asked that the other players see exactly which dice are rerolled.
+  Both moments are shown: the picks as they are made, and the dice that were
+  rolled after the reroll. A player who picks and rerolls within a second
+  would otherwise show the others nothing between two polls.
+- Picks are kept in the room, not in the game: they are not part of the
+  rules, and a saved game does not need them.
+- A pick does not change the room version, which guards moves against
+  outdated pages. If it did, a fast tap on Reroll after picking a die (on a
+  phone, before the page is redrawn) would be refused as outdated and the
+  picks lost. Pages poll a separate value (`seen`: version and pick count)
+  instead.
+- A page still on the old code after the update polls with the old version
+  number, which never equals the new tuple, so it redraws once with the
+  new code.
+- After a reroll the spin follows the dice that were rolled, not the faces
+  that changed, so a die that lands on the same number spins too, on every
+  screen, the player's own included.
 **2026-11-19: load-test baseline (Claude Code, PR #47)**
 
 - The owner said "Keep going" after the speed review. The next Stage 1 step

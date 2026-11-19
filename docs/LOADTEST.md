@@ -20,3 +20,4 @@ records a row, and says if the new one is more than 25% worse.
 | Date | Commit | Machine | Python / Streamlit | Pages | Rooms | CPU % | Polls/s offered / answered | Poll p50 / p95 ms | CPU ms per poll | Page run ms | RSS MB | Options |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 2026-11-19 | 996d5f5 | Apple M1, 8 cores, Darwin | 3.9.20 / 1.48.1 | 100 every 1 s | 200 | 31 | 100 / 97 | 8.2 / 21.3 | 3.2 | 76.9 | 50 | - |
+| 2026-11-19 | 555b807+changes | Apple M1, 8 cores, Darwin | 3.9.20 / 1.48.1 | 100 every 1 s | 200 | 30 | 100 / 97 | 7.1 / 15.4 | 3.1 | 77.2 | 51 | - |

@@ -550,7 +550,7 @@ def _render_online(store: RoomStore) -> None:
     view = store.view(code)
     if view.local:
         _render_local_game(store, view, token)
-        _watch_room(code, view.version, POLL_IDLE)  # in step if the game is open on two devices
+        _watch_room(code, view.seen, POLL_IDLE)  # in step if the game is open on two devices
         return
     status = chip(t("Online · {code}", code=code), "accent")
 
@@ -564,7 +564,7 @@ def _render_online(store: RoomStore) -> None:
         _render_waiting_room(store, view, seat, token, leave_waiting_room)
         ss.was_waiting = True
     else:
-        engine = RoomEngine(get_store, code, token, view.engine, view.version)
+        engine = RoomEngine(get_store, code, token, view.engine, view.version, view.picked, view.rerolled)
         my_turn = not view.engine.is_game_over() and view.engine.current == seat
         # Before the first round it is a turn to throw for who goes first.
         your_turn = t("Your throw!") if view.engine.choosing_first_player else t("Your turn!")
@@ -591,7 +591,7 @@ def _render_online(store: RoomStore) -> None:
     # Check often only while someone else can change the room: players joining, or another
     # player's turn. On your own turn, or once the game is over, nobody else moves.
     others_can_act = not view.started or not (my_turn or view.engine.is_game_over())
-    _watch_room(code, view.version, POLL_FAST if others_can_act else POLL_CALM)
+    _watch_room(code, view.seen, POLL_FAST if others_can_act else POLL_CALM)
 
 
 def _render_local_game(store: RoomStore, view, token: str) -> None:
@@ -609,7 +609,8 @@ def _render_local_game(store: RoomStore, view, token: str) -> None:
         _leave_room(info=t("Game {code} is saved. To continue it, open it from this page or enter the code {code}.",
                            code=code) if unfinished else None)
 
-    render_game(RoomEngine(get_store, code, token, view.engine, view.version), me=None,
+    render_game(RoomEngine(get_store, code, token, view.engine, view.version, view.picked, view.rerolled),
+                me=None,
                 status_html=chip(t("Same device · {code}", code=code)), on_play_again=rematch,
                 on_leave=leave, leave_label=t("Leave game"), board_note_html=_series_html(view),
                 results_note_html=_club_result_html(view), after_results=lambda: _club_button(view))
@@ -663,29 +664,32 @@ def _change_html(change: float) -> str:
     return '<span class="ab-same">=</span>'
 
 
-def _watch_room(code: str, seen_version: int, every: float) -> None:
-    """Re-draw the page as soon as the shared room changes, checking every `every` seconds."""
-    {POLL_FAST: _watch_fast, POLL_CALM: _watch_calm, POLL_IDLE: _watch_idle}[every](code, seen_version)
+def _watch_room(code: str, seen, every: float) -> None:
+    """
+    Re-draw the page as soon as the shared room changes, or the player whose turn it is picks
+    other dice (`seen` is RoomView.seen), checking every `every` seconds.
+    """
+    {POLL_FAST: _watch_fast, POLL_CALM: _watch_calm, POLL_IDLE: _watch_idle}[every](code, tuple(seen))
 
 
-def _check_room(code: str, seen_version: int) -> None:
-    if get_store().version(code) != seen_version:
+def _check_room(code: str, seen) -> None:
+    if get_store().seen(code) != seen:
         st.rerun()
 
 
 @st.fragment(run_every=POLL_FAST)
-def _watch_fast(code: str, seen_version: int) -> None:
-    _check_room(code, seen_version)
+def _watch_fast(code: str, seen) -> None:
+    _check_room(code, seen)
 
 
 @st.fragment(run_every=POLL_CALM)
-def _watch_calm(code: str, seen_version: int) -> None:
-    _check_room(code, seen_version)
+def _watch_calm(code: str, seen) -> None:
+    _check_room(code, seen)
 
 
 @st.fragment(run_every=POLL_IDLE)
-def _watch_idle(code: str, seen_version: int) -> None:
-    _check_room(code, seen_version)
+def _watch_idle(code: str, seen) -> None:
+    _check_room(code, seen)
 
 
 def _announce_departures(view, seat: int) -> None:

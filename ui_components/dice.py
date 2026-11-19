@@ -3,6 +3,9 @@ Dice: tap a die to mark it for a reroll, then press Reroll.
 
 Each die is a Streamlit button (key `die-<i>`) drawn as a die face with CSS,
 so it stays clickable and keyboard-accessible.
+
+Online, the other players see the picked dice too (RoomStore.pick, polled about once
+a second), and after a reroll exactly the dice that were rolled again spin.
 """
 
 import streamlit as st
@@ -15,19 +18,32 @@ from ui_components.style import ACCENT, die_uri
 MAX_ROLLS = 3
 
 
-def _toggle_die(i: int) -> None:
+def _toggle_die(i: int, engine) -> None:
     picked = st.session_state.selected_dice
     if i in picked:
         picked.remove(i)
     else:
         picked.add(i)
+    share = getattr(engine, "pick", None)  # an online game: show the other players
+    if share is not None:
+        try:
+            share(sorted(picked))
+        except (ValueError, RuntimeError):
+            pass  # only a display; the page is redrawn with the game as it is now
 
 
 def render_dice(engine: GameEngine, interactive: bool) -> None:
-    """The active player can pick dice while a reroll remains."""
-    interactive = interactive and engine.rolls_left > 0
+    """
+    The active player can pick dice while a reroll remains. The other players of an online
+    game see the dice picked so far, marked the same way.
+    """
+    can_pick = engine.rolls_left > 0
+    interactive = interactive and can_pick
     ss = st.session_state
-    picked = ss.selected_dice if interactive else set()
+    if interactive:
+        picked = ss.selected_dice
+    else:
+        picked = set(getattr(engine, "picked", ()) or ()) if can_pick else set()
     dice = list(engine.dice)
 
     css = []
@@ -45,24 +61,32 @@ def render_dice(engine: GameEngine, interactive: bool) -> None:
             )
         if d.is_joker:
             css.append(f'.st-key-die-{i}::after {{ content: "{t("wild joker") if d.value == 1 else t("joker")}"; }}')
-    css.extend(_roll_animation(dice))
+    css.extend(_roll_animation(engine, dice))
     st.html("<style>" + "\n".join(css) + "</style>")
 
     with st.container(horizontal=True, key="dice-row"):
         for i, d in enumerate(dice):
             label = t("{value} (joker)", value=d.value) if d.is_joker else str(d.value)
             st.button(label, key=f"die-{i}", disabled=not interactive,
-                      on_click=_toggle_die if interactive else None, args=(i,))
+                      on_click=_toggle_die if interactive else None, args=(i, engine) if interactive else None)
 
 
-def _roll_animation(dice) -> list:
-    """Spin the dice whose faces changed since this browser last drew them."""
+def _roll_animation(engine, dice) -> list:
+    """
+    Spin the dice that were rolled since this browser last drew them: after a reroll the
+    dice rolled again (also those that landed on the same face), otherwise the dice whose
+    faces changed.
+    """
     ss = st.session_state
     now = [(d.value, d.is_joker) for d in dice]
-    before = ss.get("shown_dice")
-    ss.shown_dice = now
+    roll = (engine.current, engine.rolls_left)
+    before, before_roll = ss.get("shown_dice"), ss.get("shown_roll")
+    ss.shown_dice, ss.shown_roll = now, roll
+    rerolled = [i for i in (getattr(engine, "rerolled", ()) or ()) if i < len(now)]
     if before is not None and len(before) == len(now):
         changed = [i for i in range(len(now)) if now[i] != before[i]]
+        if rerolled and roll != before_roll:
+            changed = sorted(set(changed) | set(rerolled))
     else:
         changed = list(range(len(now)))
     if not changed:
