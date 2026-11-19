@@ -74,6 +74,10 @@ python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR
   names both; read it with headless Chromium to see what Cloud runs.
   - There, segmented controls and pills are `role="radio"` buttons, so
     browser checks should find them by text, not by role.
+    - Pills there have `data-variant="pills"` and no `data-testid`, and the
+      picked one has `aria-checked="true"`. In 1.48 they are
+      `data-testid="stBaseButton-pills"` (picked: `stBaseButton-pillsActive`).
+      CSS for them must match both.
   - On Cloud the app runs inside an iframe (`iframe[title="streamlitApp"]`,
     path `/~/+/`).
 
@@ -404,9 +408,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     bonus the move earns.
   - `moves.most_points` picks the options, all of them on a tie.
   - The picker writes their labels in bold (pill labels are Markdown), and
-    `style.py` colours a bold pill gold
-    (`button[data-testid="stBaseButton-pills"]:has(strong)`, the same in
-    Streamlit 1.48 and 1.67). A picked pill keeps Streamlit's indigo.
+    `style.py` colours a bold pill gold unless it is picked (`:has(strong)`).
+    A picked pill keeps Streamlit's indigo.
+    - Streamlit marks a picked pill differently in each version:
+      `data-testid="stBaseButton-pillsActive"` in 1.48, `aria-checked="true"`
+      in 1.67.
   - An option that earns a bonus says so: "Sum · 11 · bonus +52".
 - Game buttons (Throw, Roll dice, the two Reroll buttons, the confirm button)
   make their move in an `on_click` callback (`ui_components/actions.py`), so a
@@ -473,7 +479,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -878,7 +884,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Banners now sit in the lower part of the screen, so they never hide
       the dice.
 
-24. **Highlight the option with the most points.** Done in PR #56.
+24. **Highlight the option with the most points.** Done in PR #56; gold on
+    the live app since PR #57.
     > "Among the options,, can you highlight the option with the most points
     > potential ?"
     - Among the Score options, the one that adds the most to the player's
@@ -891,7 +898,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-19)
 
-- **The option with the most points (owner, Backlog item 24):** PR #56.
+- **The option with the most points (owner, Backlog item 24):** PR #56 and
+  PR #57.
+  - On the live app after PR #56 the best option was bold, but not gold:
+    Streamlit 1.67 marks pills differently (Decision log). PR #57 fixed the
+    style. Before merging, the new rule was checked against the live page's
+    markup in a headless browser (the best option gold, the others grey) and
+    on 1.48 locally.
   - Checked in headless Chromium on a local server with steered dice, at
     1300px and 390px:
     - with four 2s on a first roll, only "Four of a kind · 56" was gold;
@@ -1218,6 +1231,24 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-19: the gold option on the live app (Claude Code, PR #57)**
+
+- After PR #56 went live, the best option was bold but not gold.
+  - In Streamlit 1.67, pills are `role="radio"` buttons with
+    `data-variant="pills"` and no `data-testid`.
+  - The rule matched only 1.48's `data-testid="stBaseButton-pills"`. The
+    `stBaseButton-pills` ids I had found in the 1.67 frontend belong to its
+    other buttons, not to the pills.
+- The rule now matches any bold pill that is not picked, as each version
+  marks it: `data-testid="stBaseButton-pillsActive"` in 1.48,
+  `aria-checked="true"` in 1.67.
+- Checked before merging. The rule, injected into a headless browser's copy
+  of the live page, turned the best option gold and left the others grey;
+  nothing changed on the server. It also behaves as before on 1.48.
+- PR #56's first CI run failed in its new page test: AppTest 1.67 gives pill
+  options as text, 1.48 as protos. The test reads both. The app code was not
+  at fault, and nothing was merged until CI passed.
 
 **2026-11-19: the option with the most points (Claude Code, PR #56)**
 

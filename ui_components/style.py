@@ -161,10 +161,12 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 }
 [class*="st-key-confirm"] button p, [class*="st-key-roll"] button p, [class*="st-key-big-"] button p { font-weight: 600; }
 
-/* ---------- move picker: the option with the most points (bold label, move_selection.py) ---------- */
-[class*="st-key-pick-"] button[data-testid="stBaseButton-pills"]:has(strong) {
+/* ---------- move picker: the option with the most points (bold label, move_selection.py) ----------
+   Gold unless picked. A picked pill is data-testid="stBaseButton-pillsActive" in Streamlit 1.48 and
+   aria-checked="true" in 1.67 (where pills are role="radio" buttons with no data-testid). */
+[class*="st-key-pick-"] button:has(strong):not([data-testid="stBaseButton-pillsActive"]):not([aria-checked="true"]) {
   background: #FFF4DB; border-color: #F2C14E; color: #9A6700; }
-[class*="st-key-pick-"] button[data-testid="stBaseButton-pills"]:has(strong):hover {
+[class*="st-key-pick-"] button:has(strong):not([data-testid="stBaseButton-pillsActive"]):not([aria-checked="true"]):hover {
   background: #FFEBC2; border-color: #E0A82E; color: #7A5200; }
 
 /* ---------- scoreboard ---------- */
