@@ -87,11 +87,17 @@ class TestFingerprint(unittest.TestCase):
             with mock.patch.object(code_version, "APP_DIR", root), \
                     mock.patch.object(code_version, "_hash", counted_hash), \
                     mock.patch.object(code_version.time, "monotonic", lambda: clock[0]):
+                code_version._last_check = None
+                self.addCleanup(setattr, code_version, "_last_check", None)  # the fake clock's
+                self.addCleanup(setattr, code_version, "_last_hash", None)
                 first = code_version.current_fingerprint()
+                clock[0] += code_version.CHECK_EVERY_SECONDS
                 self.assertEqual(code_version.current_fingerprint(), first)
                 self.assertEqual(len(hashes), 1)  # nothing changed: the files were not read again
                 (root / "abaka" / "a.py").write_text("x = 22\n")  # another size
-                second = code_version.current_fingerprint()
+                self.assertEqual(code_version.current_fingerprint(), first)  # not looked at again yet...
+                clock[0] += code_version.CHECK_EVERY_SECONDS
+                second = code_version.current_fingerprint()  # ...but two seconds later
                 self.assertNotEqual(second, first)
                 self.assertEqual(second, real_hash(code_version._files()))
                 self.assertEqual(len(hashes), 2)

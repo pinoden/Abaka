@@ -211,6 +211,86 @@ class FilesThenMemory(unittest.TestCase):
         self.assertIn("AB2CD", self.db.rooms)
 
 
+class SlowMemoryRepository(MemoryRepository):
+    """The in-memory database, made slow (or broken) on demand, recording what it was asked to save."""
+
+    def __init__(self):
+        super().__init__()
+        import threading
+        self.gate = threading.Event()
+        self.gate.set()
+        self.saves = []
+        self.broken = False
+
+    def save(self, code, version, data):
+        self.gate.wait(5)
+        if self.broken:
+            raise OSError("database down")
+        self.saves.append((code, version))
+        return super().save(code, version, data)
+
+
+class TestBackgroundWrites(unittest.TestCase):
+    """MirroredRepository(background=True): a move waits for the file, the database follows."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.files = FileRepository(Path(tmp.name))
+        self.db = SlowMemoryRepository()
+        self.repo = MirroredRepository(self.db, self.files, background=True)
+        self.addCleanup(self.db.gate.set)
+
+    def test_a_save_returns_before_the_database_has_it_and_wait_catches_up(self):
+        self.db.gate.clear()  # the database is slow
+        started = time.monotonic()
+        self.assertTrue(self.repo.save("AB2CD", 1, {"version": 1}))
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(self.repo.load("AB2CD"), {"version": 1})  # from the file meanwhile
+        for version in (2, 3, 4):
+            self.repo.save("AB2CD", version, {"version": version})
+        self.db.gate.set()
+        self.repo.wait()
+        self.assertEqual(self.db.rooms["AB2CD"], {"version": 4})
+        self.assertLessEqual(len(self.db.saves), 2)  # versions 2 and 3 were skipped: 4 was newer
+
+    def test_a_store_on_background_writes(self):
+        store = RoomStore(repository=self.repo, starting_throw=False)
+        code, key = store.create_local(["Ann", "Bob"])
+        store.roll(code, key)
+        version = store.version(code)
+        store.retire()  # a code update: everything pending reaches the database first
+        self.assertEqual(self.db.rooms[code]["version"], version)
+
+    def test_a_deleted_room_is_not_written_afterwards(self):
+        self.db.gate.clear()
+        self.repo.save("AB2CD", 1, {"version": 1})  # the writer takes this one and waits on the gate
+        time.sleep(0.1)
+        self.repo.save("AB2CD", 2, {"version": 2})  # pending behind it
+        self.repo.delete("AB2CD")
+        self.db.gate.set()
+        self.repo.wait()
+        self.assertNotIn("AB2CD", self.db.rooms)
+        self.assertNotIn(("AB2CD", 2), self.db.saves)
+
+    def test_a_broken_database_loses_nothing(self):
+        self.db.broken = True
+        with self.assertLogs("abaka", level="WARNING"):
+            self.repo.save("AB2CD", 1, {"version": 1})
+            self.repo.wait()
+        self.assertEqual(self.repo.load("AB2CD"), {"version": 1})  # the file has it
+
+    def test_the_writer_stops_when_idle(self):
+        self.repo.IDLE_SECONDS = 0.05
+        self.repo.save("AB2CD", 1, {"version": 1})
+        self.repo.wait()
+        time.sleep(0.3)
+        self.assertIsNone(self.repo._worker)
+        self.repo.save("AB2CD", 2, {"version": 2})  # starts again
+        self.repo.wait()
+        self.assertEqual(self.db.rooms["AB2CD"], {"version": 2})
+
+
 class TestWhereGamesAreSaved(unittest.TestCase):
     """The line at the foot of the home page, and the secret that names the database."""
 

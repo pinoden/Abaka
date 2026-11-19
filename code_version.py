@@ -13,7 +13,10 @@ and imported again from disk.
 
 The files' contents decide, not their times. To save reading them on every run,
 load_current() hashes them again only when a file's size or time changed, or
-a minute has passed since it last did.
+a minute has passed since it last did. Sizes and times themselves are looked at
+at most every CHECK_EVERY_SECONDS: listing and checking the files took 0.6 ms, the
+largest cost of our own code in a page run, and an update applied two seconds
+later is still applied before anyone notices.
 """
 
 import hashlib
@@ -26,8 +29,10 @@ import time
 APP_DIR = pathlib.Path(__file__).resolve().parent
 PACKAGES = ("abaka", "ui_components")
 REHASH_EVERY_SECONDS = 60  # hash the files at least this often, even if sizes and times look the same
+CHECK_EVERY_SECONDS = 2.0  # look at sizes and times at most this often
 _lock = threading.Lock()
 _last_hash = None  # (sizes and times of the files, their fingerprint, when it was taken)
+_last_check = None  # (when sizes and times were last looked at, the fingerprint then)
 
 
 def _files() -> list:
@@ -62,16 +67,24 @@ def _sizes_and_times(files: list) -> tuple:
 
 
 def current_fingerprint() -> str:
-    """fingerprint(), but read the files only when their sizes or times changed, or once a minute."""
-    global _last_hash
+    """
+    fingerprint(), but read the files only when their sizes or times changed, or once a
+    minute; and look at sizes and times at most every CHECK_EVERY_SECONDS.
+    """
+    global _last_hash, _last_check
+    now = time.monotonic()
+    checked = _last_check
+    if checked is not None and 0 <= now - checked[0] < CHECK_EVERY_SECONDS:
+        return checked[1]
     files = _files()
     seen = _sizes_and_times(files)
-    now = time.monotonic()
     last = _last_hash
     if last is not None and last[0] == seen and now - last[2] < REHASH_EVERY_SECONDS:
-        return last[1]
-    current = _hash(files)
-    _last_hash = (seen, current, now)
+        current = last[1]
+    else:
+        current = _hash(files)
+        _last_hash = (seen, current, now)
+    _last_check = (now, current)
     return current
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import List
-from .models import Category
+from .models import Category, SCHOOL_NUMBERS
 from .constants import SCHOOL_CATS, COMBO_CATS
 
 def after_record(engine, category: Category, slot_index: int) -> None:
@@ -19,8 +19,8 @@ def _check_row_bonus(engine, player_idx: int, category: Category) -> None:
 
     engine.row_bonus_claimed[category] = True
 
-    if category.name.startswith("SCHOOL_"):
-        num = int(category.name.split('_')[1])
+    if category in SCHOOL_NUMBERS:
+        num = SCHOOL_NUMBERS[category]
         # Paying from the school balance ("minus") in this row gave the bonus up (owner, 2026-11-16);
         # the bonus cell was crossed out at that moment (school.py).
         blocked = getattr(engine, "row_bonus_blocked", {}).get((player_idx, category), False)

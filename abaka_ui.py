@@ -34,7 +34,7 @@ code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
     MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code, within_limit)
-from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
+from abaka.clubs import ClubError, ClubStore, is_club_code  # noqa: E402
 from abaka.repository import FileRepository, MirroredRepository, PostgresRepository  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
@@ -123,7 +123,8 @@ def _repository(table: str = "abaka_rooms", subfolder: Optional[str] = None):
     if url is None:
         return files
     database = PostgresRepository(url, table=table)
-    return MirroredRepository(database, files) if files is not None else database
+    # The database is written in the background: a move waits for the file, not the network.
+    return MirroredRepository(database, files, background=True) if files is not None else database
 
 
 @st.cache_resource
@@ -312,17 +313,14 @@ def _render_clubs_card(clubs: ClubStore) -> None:
         with st.container(border=True, key="card-clubs"):
             _card_header("\U0001F3C6", t("Clubs"),
                          t("A leaderboard for your group of friends. Games started from a club count for its table."))
-            known = []
-            for code in ss.get("my_clubs", []):
-                club = clubs.get(code)
-                if club is not None:
-                    known.append(club)
-            ss.my_clubs = [c["code"] for c in known]
+            known = [(code, clubs.name(code)) for code in ss.get("my_clubs", [])]
+            known = [(code, name) for code, name in known if name is not None]
+            ss.my_clubs = [code for code, _ in known]
             if known:
                 with st.container(horizontal=True, key="my-clubs-row"):
-                    for club in known:
-                        if st.button(md(club["name"]), key=f"club-{club['code']}", icon=":material/leaderboard:"):
-                            _open_club(club["code"])
+                    for code, name in known:
+                        if st.button(md(name), key=f"club-{code}", icon=":material/leaderboard:"):
+                            _open_club(code)
             create_col, open_col = st.columns(2, gap="medium")
             with create_col:
                 with st.form("create_club", border=False):
@@ -637,17 +635,12 @@ def _club_result_html(view) -> str:
     """On the results screen of a club game: how the ratings moved (once the game is recorded)."""
     if not view.club or not (view.engine is not None and view.engine.is_game_over()):
         return ""
-    clubs = get_clubs()
-    club = clubs.get(view.club)
-    game = clubs.game(view.club, view.code, view.games_played) if club is not None else None
+    game = get_clubs().game(view.club, view.code, view.games_played)
     if game is None:
         return ""
-    rows = []
-    for p in sorted(game["players"], key=lambda p: -p["score"]):
-        member = club["members"].get(member_key(p["name"]))
-        rating = round(member["rating"]) if member else ""
-        rows.append(f'<span>{escape(p["name"])} <b>{rating}</b> {_change_html(p["change"])}</span>')
-    return (f'<div class="ab-club-result"><div>{t("Club rating · {name}", name=escape(club["name"]))}</div>'
+    rows = [f'<span>{escape(p["name"])} <b>{round(p["rating"])}</b> {_change_html(p["change"])}</span>'
+            for p in sorted(game["players"], key=lambda p: -p["score"])]
+    return (f'<div class="ab-club-result"><div>{t("Club rating · {name}", name=escape(game["club"]))}</div>'
             f'{"".join(rows)}</div>')
 
 

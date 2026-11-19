@@ -106,7 +106,13 @@ class ClubStore:
             return _copy(club) if club is not None else None
 
     def exists(self, code: str) -> bool:
-        return self.get(code) is not None
+        return self.name(code) is not None
+
+    def name(self, code: str) -> Optional[str]:
+        """The club's name, or None if there is no such club (without copying the club)."""
+        with self._lock:
+            club = self._club(normalize_code(code))
+            return club["name"] if club is not None else None
 
     # ----- results -----
     def record(self, result: dict) -> bool:
@@ -152,12 +158,20 @@ class ClubStore:
         return True
 
     def game(self, code: str, room: str, game: int) -> Optional[dict]:
-        """One recorded game of a club (for the results screen), or None."""
-        club = self.get(code) if code else None
-        if club is None:
-            return None
+        """
+        One recorded game of a club, for the results screen: its players with their score,
+        rating change and rating now, and the club's name. None if it is not recorded (yet).
+        Copies only that game (copying a whole club with its 200 games took 0.3 ms).
+        """
         game_id = f"{room}:{game}"
-        return next((g for g in club["games"] if g["id"] == game_id), None)
+        with self._lock:
+            club = self._club(normalize_code(code or ""))
+            found = next((g for g in club["games"] if g["id"] == game_id), None) if club is not None else None
+            if found is None:
+                return None
+            members = club["members"]
+            players = [dict(p, rating=members[member_key(p["name"])]["rating"]) for p in found["players"]]
+            return {**found, "players": players, "club": club["name"]}
 
     # ----- internals (call with self._lock held) -----
     def _club(self, code: str) -> Optional[dict]:
@@ -185,7 +199,8 @@ class ClubStore:
         if self._repository is None:
             return
         try:
-            self._repository.save(club["code"], club["version"], club)
+            # A copy: the repository may write it later (in the background), while the club changes.
+            self._repository.save(club["code"], club["version"], _copy(club))
         except Exception as e:  # noqa: BLE001 - the club stays in memory; the next save retries
             log.warning("could not save club %s: %s", club["code"], e)
 

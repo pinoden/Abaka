@@ -355,12 +355,26 @@ class MirroredRepository:
     goes to both, and a load takes whichever holds the newer version. So a game saved
     only in files (before the database, or while it was unreachable) still loads, and
     its next save puts it in the database too.
+
+    With background=True (the app), save() writes the file and returns; a background
+    thread then writes the database. A move then waits about 1 ms for storage instead
+    of a database round trip (about 40 ms to Neon). Nothing is lost meanwhile: the file
+    already holds the move and loads prefer the newer copy. Only the newest pending
+    version of each room is written (the version rule would refuse older ones anyway),
+    and wait() returns once the database has caught up.
     """
 
-    def __init__(self, primary, mirror: FileRepository) -> None:
+    IDLE_SECONDS = 30  # the background thread stops after this long with nothing to write
+
+    def __init__(self, primary, mirror: FileRepository, background: bool = False) -> None:
         self.primary = primary
         self.mirror = mirror
         self.folder = mirror.folder
+        self.background = background
+        self._pending: Dict[str, tuple] = {}  # code -> (version, data) not yet in the database
+        self._writing = False
+        self._worker: Optional[threading.Thread] = None
+        self._cond = threading.Condition()
 
     def describe(self) -> str:
         describe = getattr(self.primary, "describe", None)
@@ -378,12 +392,47 @@ class MirroredRepository:
 
     def save(self, code: str, version: int, data: dict) -> bool:
         try:
-            self.mirror.save(code, version, data)
+            in_file = self.mirror.save(code, version, data)
         except OSError as e:
             log.warning("could not save the file copy of game %s: %s", code, e)
-        return self.primary.save(code, version, data)
+            in_file = False
+        if not (self.background and in_file):
+            return self.primary.save(code, version, data)  # no file copy: the database must have it now
+        with self._cond:
+            waiting = self._pending.get(code)
+            if waiting is None or version > waiting[0]:
+                self._pending[code] = (version, data)
+            if self._worker is None:
+                self._worker = threading.Thread(target=self._write_behind, name="abaka-db-writer", daemon=True)
+                self._worker.start()
+            self._cond.notify_all()
+        return True
+
+    def _write_behind(self) -> None:
+        """The background thread: write pending saves to the database, newest version per room."""
+        while True:
+            with self._cond:
+                if not self._pending:
+                    self._cond.wait(self.IDLE_SECONDS)
+                if not self._pending:
+                    self._worker = None  # idle: a later save starts a new thread
+                    self._cond.notify_all()
+                    return
+                code = next(iter(self._pending))
+                version, data = self._pending.pop(code)
+                self._writing = True
+            try:
+                self.primary.save(code, version, data)
+            except Exception as e:  # noqa: BLE001 - the file copy still has it; loads take the newer
+                log.warning("could not save game %s to the database: %s", code, _one_line(e))
+            finally:
+                with self._cond:
+                    self._writing = False
+                    self._cond.notify_all()
 
     def delete(self, code: str) -> None:
+        with self._cond:
+            self._pending.pop(code, None)  # a write already under way is refused once the room is deleted
         self.primary.delete(code)
         self.mirror.delete(code)
 
@@ -392,10 +441,16 @@ class MirroredRepository:
         return self.primary.prune(cutoff, keep)
 
     def quarantine(self, code: str, reason) -> None:
+        with self._cond:
+            self._pending.pop(code, None)
         self.primary.quarantine(code, reason)
         self.mirror.quarantine(code, reason)
 
     def wait(self) -> None:
+        """Return once every save so far is in the files and the database (or failed)."""
+        with self._cond:
+            while self._pending or self._writing:
+                self._cond.wait(1.0)
         self.mirror.wait()
         self.primary.wait()
 

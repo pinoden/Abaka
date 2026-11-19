@@ -10,7 +10,7 @@ from typing import List, Optional
 
 from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.engine import GameEngine
-from abaka.models import Category
+from abaka.models import SCHOOL_NUMBERS, Category
 from ui_components.i18n import t
 
 ROW_ORDER = SCHOOL_CATS + COMBO_CATS
@@ -41,11 +41,11 @@ ROW_HINTS = {
 
 
 def is_school(category: Category) -> bool:
-    return category.name.startswith("SCHOOL_")
+    return category in SCHOOL_NUMBERS
 
 
 def school_number(category: Category) -> int:
-    return int(category.name.split("_")[1])
+    return SCHOOL_NUMBERS[category]
 
 
 def row_name(category: Category) -> str:

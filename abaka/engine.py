@@ -4,7 +4,7 @@ import random
 from typing import Dict, List, Optional, Tuple
 from collections import Counter  # <-- for helpful mismatch messages
 
-from .models import Category, Die, roll_dice
+from .models import Category, Die, is_school, roll_dice
 from .scoring import score_category
 from .player import PlayerState
 # from .constants import ROW_W, COL_W, SCHOOL_CATS, COMBO_CATS
@@ -168,7 +168,7 @@ class GameEngine:
         return f"{category.name} conditions not met for this roll."
 
     def record_score(self, category: Category, slot_index: int) -> None:
-        if category.name.startswith("SCHOOL_"):
+        if is_school(category):
             record_school(self, category, slot_index)
         else:
             score = score_category(self.dice, category, first_roll=self.first_roll)
@@ -182,7 +182,7 @@ class GameEngine:
         self._end_turn()
 
     def record_cross(self, category: Category, slot_index: int) -> None:
-        if category.name.startswith("SCHOOL_"):
+        if is_school(category):
             raise ValueError("You can't cross out school directly. Use 'school n' scoring.")
         self.players[self.current].cross(category, slot_index)
         # cancel row & column bonus immediately for this player

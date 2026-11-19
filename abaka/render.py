@@ -1,11 +1,11 @@
 from __future__ import annotations
 from typing import List
-from .models import Category
+from .models import Category, SCHOOL_NUMBERS
 from .constants import ROW_W, COL_W, SCHOOL_CATS, COMBO_CATS
 
 def label_for(cat: Category) -> str:
-    if cat.name.startswith("SCHOOL_"):
-        return cat.name.split("_")[1]
+    if cat in SCHOOL_NUMBERS:
+        return str(SCHOOL_NUMBERS[cat])
     return {
         Category.PAIR: "D",
         Category.TWO_PAIRS: "DD",
