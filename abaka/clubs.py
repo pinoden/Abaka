@@ -114,6 +114,15 @@ class ClubStore:
             club = self._club(normalize_code(code))
             return club["name"] if club is not None else None
 
+    def member_names(self, code: str) -> List[str]:
+        """The names of the club's players (as last typed), the most recently played first."""
+        with self._lock:
+            club = self._club(normalize_code(code))
+            if club is None:
+                return []
+            members = sorted(club["members"].values(), key=lambda m: (-m["last_played"], m["name"].casefold()))
+            return [m["name"] for m in members]
+
     # ----- results -----
     def record(self, result: dict) -> bool:
         """

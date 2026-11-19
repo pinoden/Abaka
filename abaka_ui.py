@@ -21,7 +21,7 @@ import threading
 import time
 from html import escape
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlsplit
 
 import streamlit as st
@@ -34,7 +34,7 @@ code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
     MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code, within_limit)
-from abaka.clubs import ClubError, ClubStore, is_club_code  # noqa: E402
+from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from abaka.repository import FileRepository, MirroredRepository, PostgresRepository  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
@@ -377,22 +377,27 @@ def _render_club(store: RoomStore, clubs: ClubStore, code: str) -> None:
                     st.html(_club_games_html(club))
         with play:
             with st.container(border=True, key="card-club-play"):
+                known = clubs.member_names(code)
                 _card_header("\U0001F3B2", t("New club game"),
+                             t("Pick the club's players, or type a new name.") if known else
                              t("Type the names the same way each time; capital letters do not matter."))
                 local_tab, online_tab = st.tabs([t("Same device"), t("Online")])
                 with local_tab:
                     count = _player_count("club_local_count")
                     with st.form("club_local_game", border=False):
-                        typed = [st.text_input(t("Player {i}", i=i), placeholder=t("Name"), max_chars=20,
-                                               key=f"club_p{i}") for i in range(1, count + 1)]
+                        typed = [_name_field(t("Player {i}", i=i), f"club_p{i}", known)
+                                 for i in range(1, count + 1)]
                         if st.form_submit_button(t("Start game"), type="primary", icon=":material/play_arrow:",
                                                  use_container_width=True):
                             names = [name.strip() or t("Player {i}", i=i) for i, name in enumerate(typed, 1)]
-                            _start_game(lambda: store.create_local(names, club=code))
+                            if len({member_key(n) for n in names}) < len(names):
+                                st.error(t("Each player needs a different name."))
+                            else:
+                                _start_game(lambda: store.create_local(names, club=code))
                 with online_tab:
                     players = _player_count("club_online_count")
                     with st.form("club_online_game", border=False):
-                        name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="club_host")
+                        name = _name_field(t("Your name"), "club_host", known)
                         if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
                                                  use_container_width=True):
                             _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players,
@@ -402,6 +407,19 @@ def _render_club(store: RoomStore, clubs: ClubStore, code: str) -> None:
                 link, _ = _invite_link(code, "club")
                 if link:
                     st.code(link, language=None, wrap_lines=True)
+
+
+def _name_field(label: str, key: str, known: List[str]) -> str:
+    """
+    A player's name. In a club that has players, a list of them that also takes a new name
+    typed in (so the same player gets the same name every time); otherwise a text box.
+    """
+    if not known:
+        return st.text_input(label, placeholder=t("Name"), max_chars=20, key=key)
+    # A different key from the text box: Streamlit keeps a widget's value by key and type.
+    picked = st.selectbox(label, known, index=None, key=f"{key}-pick", accept_new_options=True,
+                          placeholder=t("Pick a player or type a new name"))
+    return picked or ""
 
 
 def _club_home_button() -> None:
@@ -781,8 +799,12 @@ def _render_invite(store: RoomStore, code: str) -> None:
                     sub = t("A game for {n} players; {k} joined so far: {names}. Enter your name to join.",
                             n=view.capacity, k=len(view.names), names=", ".join(view.names))
                 _card_header("\U0001F3B2", t("{host} invited you to play", host=view.names[0]), sub)
+                # A club game: offer the club's players who are not seated yet.
+                seated = {member_key(n) for n in view.names}
+                known = [n for n in (get_clubs().member_names(view.club) if view.club else [])
+                         if member_key(n) not in seated]
                 with st.form("join_game", border=False):
-                    name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="join_name")
+                    name = _name_field(t("Your name"), "join_name", known)
                     if st.form_submit_button(t("Join game"), type="primary", icon=":material/login:",
                                              use_container_width=True):
                         try:
