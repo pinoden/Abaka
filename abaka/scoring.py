@@ -64,3 +64,12 @@ def score_category(dice, category, first_roll=False):
     vals = [d.value for d in dice]
     base, bonus = _calc(vals, category)
     return (base + bonus) * (2 if first_roll else 1)
+
+
+def is_royal_full(dice) -> bool:
+    """The dice make the royal full house, 1-1-1-2-2 (the full house worth +50); a joker showing 1 is wild."""
+    joker = next((d for d in dice if d.is_joker), None)
+    wild = joker is not None and joker.value == 1
+    readings = ([[v if d.is_joker else d.value for d in dice] for v in range(1, 7)] if wild
+                else [[d.value for d in dice]])
+    return any(sorted(values) == [1, 1, 1, 2, 2] for values in readings)

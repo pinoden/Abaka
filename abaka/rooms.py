@@ -36,6 +36,7 @@ from .engine import GameEngine
 from .models import Category
 from .repository import FileRepository
 from .saving import engine_from_data, engine_to_data
+from .scoring import is_royal_full, score_category
 
 # No 0/O or 1/I, so codes are easy to read aloud and type.
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -54,17 +55,21 @@ DISK_SWEEP_EVERY_SECONDS = 60 * 60    # expired files are deleted this often
 RESULTS_KEPT = 100                    # finished games a room remembers for its running score
 
 # Reactions players send each other in an online game, and the effects everyone sees
-# after a great move. Both live in the room's memory only (never saved).
+# after a great throw or a bonus. Both live in the room's memory only (never saved).
 REACTIONS = ("lucky", "nice", "wow", "ouch", "hurry", "gg", "haha", "fire")
 REACTION_EVERY_SECONDS = 2.0          # one reaction per seat this often
 EVENTS_KEPT = 20                      # recent reactions and effects a room keeps for the pages
-FIREWORKS = "fireworks"               # Abaka scored: fireworks for everyone
-SPARKLES = "sparkles"                 # a straight, four of a kind or the royal full house on the first roll
+# Effects, shown on every screen as the dice land (owner, 2026-11-19; see _celebration).
+GRAND_FIREWORKS = "grand_fireworks"   # Abaka or the royal full house on the first roll
+FIREWORKS = "fireworks"               # Abaka or the royal full house after a reroll
+SPARKLES = "sparkles"                 # a straight, full house or four of a kind on the first roll; a bonus earned
 CHAT_KEPT = 50                        # chat messages a room keeps (memory only; deleted when the game ends)
 MAX_MESSAGE_LENGTH = 200
 MESSAGES_PER_WINDOW = 3               # a player may send this many messages...
 MESSAGE_WINDOW_SECONDS = 3.0          # ...in this many seconds (about one a second, a short burst allowed)
-_FIRST_ROLL_HITS =(Category.SMALL_STRAIGHT, Category.LARGE_STRAIGHT, Category.KARE, Category.FULL)
+# Thrown on the first roll, these bring sparkles. When the dice make more than one (a wild joker),
+# the banner names the first in this list.
+_SPARKLE_HITS = (Category.KARE, Category.FULL, Category.LARGE_STRAIGHT, Category.SMALL_STRAIGHT)
 _CODE_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, CODE_LENGTH))
 
 log = logging.getLogger("abaka")
@@ -883,28 +888,53 @@ def _new_engine(room: _Room, starting_throw: bool) -> GameEngine:
 
 def _celebration(before: GameEngine, after: GameEngine) -> Optional[dict]:
     """
-    The effect every player sees after this move, if it earned one: fireworks for Abaka,
-    sparkles for a straight, four of a kind or the royal full house (1-1-1-2-2) scored on the
-    first roll. `before` is the game as it was before the move (installed engines never change).
+    The effect every player sees after this move, if it earned one (owner, 2026-11-19):
+
+    - a throw shows what the dice make, as they land, whatever the player then writes:
+      Abaka or the royal full house (1-1-1-2-2) bring fireworks, bigger on the first roll;
+      a straight, a full house or four of a kind on the first roll bring sparkles;
+    - a move that earns its player a row or column bonus brings sparkles.
+
+    `before` is the game as it was before the move (installed engines never change). The
+    starting throw brings nothing: it is not a turn and never scores.
     """
-    move = after.last_move
-    if move is None or move == before.last_move or not before.dice:
-        return None  # no cell written: a roll, a reroll or a starting throw
-    seat, category, slot = move
-    score = after.players[seat].table[category][slot]
-    if not isinstance(score, int) or isinstance(score, bool) or score <= 0:
-        return None  # crossed out
-    if category == Category.ABAKA:
-        effect = FIREWORKS
-    elif before.first_roll and category in _FIRST_ROLL_HITS:
-        # The royal full house's +50 makes it 114 on the first roll; any other full house
-        # (Abaka counted as one included) scores at most 60 there.
-        if category == Category.FULL and score <= 60:
-            return None
-        effect = SPARKLES
+    if after.dice:  # only a roll or a reroll leaves dice on the table; a written move clears them
+        return _throw_effect(after)
+    if after.last_move is not None and after.last_move != before.last_move:
+        return _bonus_effect(before, after, after.last_move[0])
+    return None
+
+
+def _throw_effect(engine: GameEngine) -> Optional[dict]:
+    dice, first = engine.dice, engine.first_roll
+    if score_category(dice, Category.ABAKA):
+        what = "ABAKA"
+    elif is_royal_full(dice):
+        what = "ROYAL"
     else:
+        hit = next((c for c in _SPARKLE_HITS if score_category(dice, c)), None) if first else None
+        if hit is None:
+            return None
+        return {"kind": "effect", "effect": SPARKLES, "seat": engine.current, "what": hit.name, "first": True}
+    return {"kind": "effect", "effect": GRAND_FIREWORKS if first else FIREWORKS, "seat": engine.current,
+            "what": what, "first": first}
+
+
+def _bonus_effect(before: GameEngine, after: GameEngine, seat: int) -> Optional[dict]:
+    """Sparkles for the row and column bonuses this move earned the player (a crossed-out bonus earns none)."""
+    old, new = before.players[seat], after.players[seat]
+    rows = [(category.name, new.table[category][3]) for category in Category
+            if old.table[category][3] is None and _points(new.table[category][3])]
+    columns = [(col, value) for col, value in enumerate(new.column_bonus)
+               if old.column_bonus[col] is None and _points(value)]
+    if not rows and not columns:
         return None
-    return {"kind": "effect", "effect": effect, "seat": seat, "category": category.name, "score": score}
+    return {"kind": "effect", "effect": SPARKLES, "seat": seat, "what": "BONUS",
+            "rows": rows, "columns": columns}
+
+
+def _points(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _require_rolled(engine: GameEngine) -> None:

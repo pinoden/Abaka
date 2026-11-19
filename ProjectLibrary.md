@@ -195,15 +195,27 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     online game, at any time, one of `rooms.REACTIONS`, to everyone or one
     seat; one per seat every 2 s (`TooFast`). Not a move: no version bump,
     no turn check. Same-device rooms ignore it.
-  - `_act` adds an effect after a move that earned one (`_celebration`):
-    fireworks for Abaka scored (any roll), sparkles for a straight, four of a
-    kind or the royal full house (1-1-1-2-2, recognised by its score above
-    60) scored on the first roll. Online and on one device.
-  - `effects.render_events` shows each event once per page: events from
-    before the page first drew the game, or more than 15 s old when first
-    seen, are skipped; the rest are drawn for their length from the moment
-    this page first drew them, with a negative CSS animation delay, so a
-    redraw continues the animation instead of starting it again.
+  - `_act` adds an effect after a move that earned one (`_celebration`, the
+    owner's rules of Backlog item 23), online and on one device:
+    - A throw (`roll`, `reroll`) shows what the dice make, whatever is
+      written afterwards. A joker showing 1 is wild, as in scoring.
+      - Abaka or the royal full house (1-1-1-2-2, `scoring.is_royal_full`):
+        bigger fireworks on the first roll, fireworks after a reroll.
+      - A straight, a full house or four of a kind on the first roll:
+        sparkles.
+    - A move that earns its player a row or column bonus (a bonus cell that
+      gets a number): sparkles.
+    - The starting throw brings nothing.
+  - `effects.render_events` shows each event once per page.
+    - Skipped: events from before the page first drew the game, and events
+      more than 15 s old when first seen.
+    - A throw's effect waits 0.45 s for the dice to land
+      (`LEAD_IN_SECONDS`, their spin in `dice.py`).
+    - An effect that arrives while another plays waits for it to end, so
+      two never overlap.
+    - The page keeps when each event starts (`fx_state["starts"]`). A
+      redraw continues the animation (a negative CSS animation delay)
+      instead of starting it again.
 - Chat (Backlog item 22, `ui_components/chat.py`): `store.say(code, token,
   text)` keeps the last 50 messages in `room.chat`, in memory only. Anyone
   seated in an online game may write while it is played; not before it
@@ -450,7 +462,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -818,6 +830,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       scores Abaka; sparkles with "Large straight! Ann · +40 · first roll"
       for a straight, four of a kind or the royal full house on the first
       roll. Online and on one device, the mover's screen included, once.
+      Item 23 replaced these rules: effects now come with the throw.
     - Chat (online games): a card under the play panel with the game's
       messages (latest at the bottom, the last 50) and a box with Send.
       Messages up to 200 characters, about one a second. A message from
@@ -825,7 +838,49 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       the move that ends the game** and is never saved; the next game starts
       with an empty chat.
 
+23. **Effects as the dice land, bigger fireworks, sparkles for bonuses.**
+    Done in PR #55.
+    > "I want sparkles on the following combinations if scored from first
+    > throw: Small straight, Large straight, Full house (not royal), Four of
+    > a kind, Abaka. Fireworks on any abaka and royal full house. Bigger
+    > fireworks after abaka and royal full house on the first throw. Those
+    > should be right after the throw, not after recodring it. Also I want
+    > sparkles after recording any type of bonus."
+    - Effects come with the throw, on every screen, as the dice land (after
+      their 0.45 s spin), whatever the player then writes:
+
+      | Thrown | First roll | After a reroll |
+      |---|---|---|
+      | Abaka, royal full house (1-1-1-2-2) | bigger fireworks | fireworks |
+      | Small or large straight, full house, four of a kind | sparkles | nothing |
+
+    - Bigger fireworks: three waves of bursts over the whole screen, a golden
+      flash, a rain of sparkles and a larger banner, for 6 s ("Abaka! Ann ·
+      first roll").
+    - Sparkles when a move earns a row bonus (School or combination) or a
+      column bonus (I, II or III): "Bonus! Ann · Sum row +52".
+    - Writing a combination adds no effect of its own. The +20 and +50
+      inside Four of a kind, Abaka and the royal full house are part of
+      those rows' scores, celebrated at the throw.
+    - Abaka on the first roll gets the bigger fireworks only (they include
+      sparkles), not two effects. The starting throw gets nothing.
+    - Banners now sit in the lower part of the screen, so they never hide
+      the dice.
+
 ## Status (2026-11-19)
+
+- **Effects as the dice land (owner, Backlog item 23):** PR #55.
+  - Checked in headless Chromium on a local server with steered dice (a
+    scratch launcher), at 1300px and 390px:
+    - bigger fireworks for Abaka on the first roll;
+    - fireworks for Abaka after a reroll;
+    - sparkles for a large straight;
+    - "Bonus! … Sum row +52" when the Sum row was completed.
+  - Each banner appeared about 0.67 s after the click (the dice land first),
+    below the dice. No page scrolled sideways.
+  - Online, a phone showed the desktop player's bigger fireworks 1.2 s after
+    the throw.
+  - Load-test row: no slowdown (25% CPU, 6.8 ms median poll).
 
 - **CI required for merging (owner: "I think we need to enforce checks to
   pass before the merge"):** set on GitHub on 2026-11-19 and documented in
@@ -968,16 +1023,20 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 240
-  pass but one step skipped (a typed-in club name, which AppTest 1.48
-  cannot send); on 3.8, 199 pass and 41 are skipped (9 need a database or
-  psycopg; the others need Streamlit). 7 PR tool tests (`test_pr_tool.py`:
+- **Tests:** on Python 3.9 with Streamlit 1.48, all 246 pass but one step
+  skipped (a typed-in club name, which AppTest 1.48 cannot send) and the 9
+  database tests, which need a test database (CI has one); on 3.8, 204 pass
+  and 42 are skipped (9 need a database or psycopg; the others need
+  Streamlit). 7 PR tool tests (`test_pr_tool.py`:
   remote URLs, and `merge` with a fake GitHub: a required job not started
-  yet, a failing job, a branch behind `main`, a conflict). 18 reaction and
+  yet, a failing job, a branch behind `main`, a conflict). 24 reaction and
   celebration tests (`test_reactions.py`: a reaction is not a move, aimed
-  reactions, the rate limit, never saved, which moves celebrate, rematch,
-  and the screens through the app: bubbles, fireworks shown once, escaped
-  names). 10 chat tests (`test_chat.py`: not a move, anyone seated, cleaned
+  reactions, the rate limit, never saved, which throws bring which effect
+  (wild jokers included), effects at the throw and not at the move, none for
+  the starting throw, row, School and column bonuses, a crossed-out bonus,
+  rematch, and the screens through the app: bubbles, bigger fireworks shown
+  once as the dice land, a bonus banner in Russian queued after the throw's,
+  escaped names). 10 chat tests (`test_chat.py`: not a move, anyone seated, cleaned
   and cut, the rate limit, deleted at game over and after a rematch, not
   saved, and two screens through the app with hostile text). 6 picked-dice tests
   (`test_shown_dice.py`: picks are shown but are not a move, only the
@@ -1123,6 +1182,42 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-19: effects as the dice land (Claude Code, PR #55)**
+
+- The owner set new rules for the effects (Backlog item 23).
+  - They come at the throw, not when the move is written.
+  - Abaka and the royal full house: bigger fireworks on the first roll,
+    fireworks after a reroll.
+  - A straight, a full house or four of a kind on the first roll: sparkles.
+  - Sparkles for any bonus written.
+- A throw is judged by what the dice make, read the way scoring reads them
+  (a joker showing 1 is wild), not by what the player writes.
+  - Where the dice make several, the biggest effect wins. Five of a kind is
+    also four of a kind and a full house, so Abaka on the first roll gets
+    the bigger fireworks, which include a rain of sparkles, rather than two
+    effects at once.
+- "Any type of bonus" is read as the bonus cells in the rules' Bonuses
+  section: row bonuses (School and combinations) and column bonuses (I, II,
+  III).
+  - The +20 and +50 inside Four of a kind, Abaka and the royal full house
+    are part of those rows' scores, and are celebrated at the throw.
+  - A completed row or column whose bonus is crossed out ("✕") earns
+    nothing, so it brings no sparkles.
+- The effect waits 0.45 s, the dice's spin, so it plays as the dice land
+  instead of giving the result away while they still spin.
+- Each page queues its effects: one that arrives while another plays starts
+  when it ends. For example, a full house thrown and written at once shows
+  the sparkles, then the bonus.
+- Banners moved from the middle of the screen to its lower part, because at
+  the throw the dice are on screen, and on a phone the middle is where they
+  are. A banner is now as wide as its text; it used to wrap at half the
+  screen.
+- Found while checking: bursts waiting for their turn showed as glowing
+  dots, because their animation's first frame applied during the delay
+  (also before this change). They now stay hidden until they fire
+  (`animation-fill-mode: forwards`).
+- The starting throw brings nothing: it is not a turn and never scores.
 
 **2026-11-19: CI required for merging (Claude Code, PR #54)**
 

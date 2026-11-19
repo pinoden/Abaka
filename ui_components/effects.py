@@ -5,9 +5,12 @@ Reactions: in an online game every seated player can send the table a short reac
 ("Lucky! 🍀", "GG 🤝", ...), to everyone or, with 3+ players, aimed at one player. Each
 screen shows it as a bubble for a few seconds.
 
-Celebrations: fireworks when someone scores Abaka, sparkles for a straight, four of a kind
-or the royal full house (1-1-1-2-2) scored on the first roll. Every screen of the game
-shows them, the mover's own included, online and on one device.
+Celebrations (owner, 2026-11-19), as the dice land, whatever the player then writes:
+bigger fireworks for Abaka or the royal full house (1-1-1-2-2) on the first roll, fireworks
+for either after a reroll, and sparkles for a straight, a full house or four of a kind on
+the first roll. Sparkles also when a move earns a row or column bonus. Every screen of the
+game shows them, the mover's own included, online and on one device. The rules of what
+earns which are in abaka.rooms._celebration.
 
 Both come from the room's recent events (abaka.rooms: `RoomView.events`, kept in memory
 only). A page shows an event once: from the moment it first draws it, for the event's
@@ -18,12 +21,12 @@ opened the game, or older than STALE_SECONDS when first seen, are not shown.
 
 import time
 from html import escape
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import streamlit as st
 
 from abaka.models import Category
-from abaka.rooms import FIREWORKS, TooFast
+from abaka.rooms import FIREWORKS, GRAND_FIREWORKS, SPARKLES, TooFast
 from ui_components.i18n import t
 from ui_components.moves import row_name
 
@@ -39,7 +42,8 @@ REACTIONS = {
     "fire": ("\U0001F525", "On fire!"),
 }
 
-SECONDS = {"reaction": 3.5, FIREWORKS: 4.5, "sparkles": 2.8}  # how long each is on screen
+SECONDS = {"reaction": 3.5, GRAND_FIREWORKS: 6.0, FIREWORKS: 4.5, SPARKLES: 2.8}  # how long each is on screen
+LEAD_IN_SECONDS = 0.45  # a throw's effect waits for the dice to land (their spin in dice.py takes .45s)
 STALE_SECONDS = 15.0   # an event first seen later than this after it happened is skipped
 EVERYONE = -1          # the "to" picker's value for the whole table
 _NOTE_KEY = "reaction_note"
@@ -94,34 +98,69 @@ def _name(names: List[str], seat: int) -> str:
 
 # ------------------------------------------------------------------ effects ----
 
+# Effect -> CSS class, and its bursts: (left %, top %, delay in s). Bigger fireworks come in
+# three waves over the whole screen, with a flash and a rain of sparkles.
+_LOOKS = {
+    GRAND_FIREWORKS: ("grand", 24, 220, [
+        (50, 40, 0.0), (20, 28, 0.15), (80, 26, 0.3),
+        (32, 58, 1.0), (68, 55, 1.2), (50, 20, 1.4), (12, 50, 1.6), (88, 48, 1.6),
+        (26, 34, 2.2), (74, 36, 2.4), (50, 62, 2.7), (40, 18, 3.0), (60, 30, 3.2)]),
+    FIREWORKS: ("big", 18, 160, [(20, 30, 0.0), (78, 24, 0.35), (50, 18, 0.8), (30, 55, 1.3), (70, 52, 1.7),
+                                 (50, 38, 2.2)]),
+    SPARKLES: ("small", 12, 80, [(35, 26, 0.0), (65, 22, 0.3)]),
+}
+_COLUMNS = ("I", "II", "III")
+_STARS = 28  # the rain of sparkles in the bigger fireworks
+
+
 def _effect_html(event: dict, names: List[str], me: Optional[int]) -> str:
     who = t("You") if _is_me(event, me) else escape(_name(names, event["seat"]))
-    try:
-        category = Category[event["category"]]
-    except KeyError:
-        category = None
-    if event["effect"] == FIREWORKS:
-        bursts = [(20, 30, 0.0), (78, 24, 0.35), (50, 18, 0.8), (30, 55, 1.3), (70, 52, 1.7), (50, 38, 2.2)]
-        title, kind, spokes, reach = t("Abaka!"), "big", 18, 160
-    else:
-        bursts = [(35, 26, 0.0), (65, 22, 0.3)]
-        if category == Category.FULL:
-            title = t("Royal full house!")
-        else:
-            title = row_name(category) + "!" if category is not None else ""
-        kind, spokes, reach = "small", 12, 80
-    sparks = []
+    kind, spokes, reach, bursts = _LOOKS.get(event["effect"], _LOOKS[SPARKLES])
+    title, sub = _effect_text(event, who)
+    layers = []
     for b, (x, y, delay) in enumerate(bursts):
         dots = "".join(
             f'<i style="--a:{round(360 * k / spokes)}deg;--c:{_COLORS[(b + k) % len(_COLORS)]}"></i>'
             for k in range(spokes))
-        sparks.append(f'<div class="ab-burst" style="left:{x}%;top:{y}%;--bd:{delay}s;--r:{reach}px">{dots}</div>')
-    sub = f"{who} · +{int(event['score'])}"
-    if event["effect"] != FIREWORKS:
-        sub += f" · {t('first roll')}"
-    return (f'<div class="ab-fx-{kind}">{"".join(sparks)}'
+        layers.append(f'<div class="ab-burst" style="left:{x}%;top:{y}%;--bd:{delay}s;--r:{reach}px">{dots}</div>')
+    if kind == "grand":
+        layers.insert(0, '<div class="ab-flash"></div>')
+        layers.extend(
+            f'<b class="ab-star" style="left:{(k * 37 + 5) % 100}%;--bd:{0.3 + (k * 0.41) % 3.2:.2f}s;'
+            f'--s:{12 + (k * 7) % 12}px;--c:{_COLORS[k % len(_COLORS)]}">✦</b>' for k in range(_STARS))
+    return (f'<div class="ab-fx-{kind}">{"".join(layers)}'
             f'<div class="ab-fx-banner"><div class="ab-fx-title">{title}</div><div class="ab-fx-sub">{sub}</div></div>'
             "</div>")
+
+
+def _effect_text(event: dict, who: str) -> Tuple[str, str]:
+    """The banner: title and the line under it. `who` is already escaped."""
+    what = event.get("what") or event.get("category") or ""
+    if what == "BONUS":
+        parts = [t("{row} row +{points}", row=escape(_row(name)), points=int(points))
+                 for name, points in event.get("rows", ())]
+        parts += [t("column {n} +{points}", n=_COLUMNS[col] if 0 <= col < 3 else "?", points=int(points))
+                  for col, points in event.get("columns", ())]
+        return (t("Bonus!") if len(parts) == 1 else t("Bonuses!")), " · ".join([who] + parts)
+    if what == "ABAKA":
+        title = t("Abaka!")
+    elif what == "ROYAL":
+        title = t("Royal full house!")
+    else:
+        title = escape(_row(what)) + "!"
+    return title, who + (f" · {t('first roll')}" if event.get("first") else "")
+
+
+def _row(name: str) -> str:
+    try:
+        return row_name(Category[name])
+    except KeyError:
+        return name
+
+
+def _lead_in(event: dict) -> float:
+    """A throw's effect starts as the dice land; a bonus at once (the move clears the dice)."""
+    return LEAD_IN_SECONDS if event["kind"] == "effect" and event.get("what") != "BONUS" else 0.0
 
 
 def _is_me(event: dict, me: Optional[int]) -> bool:
@@ -141,25 +180,33 @@ def render_events(code: str, events, names: List[str], me: Optional[int]) -> Non
     latest = events[-1]["id"] if events else 0
     if state is None or state["room"] != code:
         # This page has just opened the game: what happened before is not news.
-        ss.fx_state = {"room": code, "after": latest, "first_seen": {}}
+        ss.fx_state = {"room": code, "after": latest, "starts": {}}
         return
-    first_seen, layers = {}, []
+    # When each event starts on this page. An effect waits for the one before it to finish, so
+    # two never overlap (a full house thrown and, a second later, the bonus it earned).
+    known, starts, layers = state.get("starts", {}), {}, []
+    effects_end = 0.0
     for event in events:
         if event["id"] <= state["after"]:
             continue
-        seen_at = state["first_seen"].get(event["id"])
-        if seen_at is None:
+        kind = event["effect"] if event["kind"] == "effect" else "reaction"
+        length = SECONDS.get(kind, 3.0)
+        start = known.get(event["id"])
+        if start is None:
             if now - event["at"] > STALE_SECONDS:
                 continue  # this page was away; old news
-            seen_at = now
-        first_seen[event["id"]] = seen_at
-        kind = event["effect"] if event["kind"] == "effect" else "reaction"
-        age = now - seen_at
-        if age >= SECONDS.get(kind, 3.0):
+            start = now + _lead_in(event)
+            if kind != "reaction":
+                start = max(start, effects_end)
+        if kind != "reaction":
+            effects_end = max(effects_end, start + length)
+        starts[event["id"]] = start
+        if now - start >= length:
             continue
         html = _reaction_html(event, names, me) if kind == "reaction" else _effect_html(event, names, me)
-        layers.append((kind, f'<div class="ab-fx-item" style="--d:-{age:.2f}s">{html}</div>'))
-    state["first_seen"] = first_seen
+        # --d is the animation delay: the wait still ahead, or minus the time already shown.
+        layers.append((kind, f'<div class="ab-fx-item" style="--d:{start - now:.2f}s">{html}</div>'))
+    state["starts"] = starts
     if not layers:
         return
     effects = "".join(h for kind, h in layers if kind != "reaction")

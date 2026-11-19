@@ -1,11 +1,13 @@
 """
 Reactions and celebrations (owner, 2026-11-19): players of an online game send each other
-reactions ("Lucky!", "GG", ...); everyone sees fireworks when someone scores Abaka, and
-sparkles for a straight, four of a kind or the royal full house scored on the first roll.
-None of it is a move or saved.
+reactions ("Lucky!", "GG", ...). Everyone sees effects as the dice land: bigger fireworks
+for Abaka or the royal full house on the first roll, fireworks for either after a reroll,
+sparkles for a straight, a full house or four of a kind on the first roll; and sparkles
+when a move earns a row or column bonus. None of it is a move or saved.
 """
 
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -13,6 +15,7 @@ from unittest import mock
 
 import abaka.rooms as rooms
 import code_version
+from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.models import Category, Die
 from abaka.repository import FileRepository
 from abaka.rooms import REACTIONS, RoomError, RoomStore, TooFast
@@ -23,7 +26,8 @@ except ImportError:  # the base Python 3.8
     AppTest = None
 
 BUBBLE = '<div class="ab-bubble'
-FIREWORKS_HTML = '<div class="ab-fx-big"'
+GRAND_HTML = '<div class="ab-fx-grand"'
+SPARKLES_HTML = '<div class="ab-fx-small"'
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "abaka_ui.py")
 
 
@@ -39,17 +43,21 @@ def started_game(store, names=("Ann", "Bob")):
     return code, tokens
 
 
-def roll(store, code, tokens, values, reroll=False):
-    """The player whose turn it is rolls, and the dice show `values` (the last one is the joker,
-    never a wild 1 here). With `reroll`, after a reroll (no longer the first roll)."""
-    current = store.view(code).engine.current
-    token = tokens[current] if tokens else store.resume_local(code)
-    store.roll(code, token)
-    if reroll:
-        store.reroll(code, token, [0])
-    engine = store._rooms[code].engine  # the dice the roll "happened" to show
-    engine.dice = [Die(v) for v in values[:4]] + [Die(values[4], is_joker=True)]
-    return token
+def dice(values):
+    """Five dice showing `values`; the last one is the joker (wild when it shows 1)."""
+    return [Die(v) for v in values[:4]] + [Die(values[4], is_joker=True)]
+
+
+def throw(store, code, token, values):
+    """The first roll of the turn, landing on `values`."""
+    with mock.patch("abaka.engine.roll_dice", lambda: dice(values)):
+        store.roll(code, token)
+
+
+def reroll(store, code, token, indices, values):
+    """A reroll of the dice at `indices`, landing on `values`."""
+    with mock.patch("abaka.engine.random.randint", side_effect=list(values)):
+        store.reroll(code, token, indices)
 
 
 class TestReactionsInTheStore(unittest.TestCase):
@@ -130,40 +138,120 @@ class TestCelebrations(unittest.TestCase):
         self.store = RoomStore()
         self.code, self.tokens = started_game(self.store)
 
-    def score(self, values, category, reroll=False):
-        token = roll(self.store, self.code, self.tokens, values, reroll)
-        self.store.score(self.code, token, category, 0)
-        events = self.store.view(self.code).events
-        return events[-1] if events else None
+    def token(self):
+        return self.tokens[self.store.view(self.code).engine.current]
 
-    def test_abaka_brings_fireworks(self):
+    def events(self):
+        return self.store.view(self.code).events
+
+    def first_roll(self, values):
+        """Roll, landing on `values`. Returns the effect that brought (None if none) and the token."""
+        count, token = len(self.events()), self.token()
+        throw(self.store, self.code, token, values)
+        return (self.events()[-1] if len(self.events()) > count else None), token
+
+    def end_turn(self, token):
+        """Cross out a combination cell: never an effect."""
+        engine = self.store.view(self.code).engine
+        table = engine.players[engine.current].table
+        category = next(c for c in COMBO_CATS if None in table[c][:3])
+        self.store.cross(self.code, token, category, table[category][:3].index(None))
+
+    def test_abaka_or_the_royal_full_house_on_the_first_roll_bring_bigger_fireworks(self):
         seat = self.store.view(self.code).engine.current
-        event = self.score([6, 6, 6, 6, 6], Category.ABAKA)
-        self.assertEqual((event["kind"], event["effect"], event["seat"], event["category"], event["score"]),
-                         ("effect", rooms.FIREWORKS, seat, "ABAKA", 160))
+        event, token = self.first_roll([6, 6, 6, 6, 6])
+        self.assertEqual((event["kind"], event["effect"], event["seat"], event["what"], event["first"]),
+                         ("effect", rooms.GRAND_FIREWORKS, seat, "ABAKA", True))
+        self.end_turn(token)
+        # The royal full house, also with the joker's wild 1; Abaka with the joker.
+        for values, what in (([1, 1, 1, 2, 2], "ROYAL"), ([2, 1, 1, 2, 1], "ROYAL"), ([3, 3, 3, 3, 1], "ABAKA")):
+            event, token = self.first_roll(values)
+            self.assertEqual((event["effect"], event["what"]), (rooms.GRAND_FIREWORKS, what), values)
+            self.end_turn(token)
 
-    def test_abaka_after_a_reroll_too(self):
-        self.assertEqual(self.score([2, 2, 2, 2, 2], Category.ABAKA, reroll=True)["effect"], rooms.FIREWORKS)
+    def test_after_a_reroll_fireworks(self):
+        event, token = self.first_roll([2, 2, 2, 2, 5])
+        self.assertEqual((event["effect"], event["what"]), (rooms.SPARKLES, "KARE"))
+        reroll(self.store, self.code, token, [4], [2])
+        event = self.events()[-1]
+        self.assertEqual((event["effect"], event["what"], event["first"]), (rooms.FIREWORKS, "ABAKA", False))
+        self.end_turn(token)
+        event, token = self.first_roll([1, 1, 1, 2, 6])  # three of a kind: nothing yet
+        self.assertIsNone(event)
+        reroll(self.store, self.code, token, [4], [2])
+        self.assertEqual((self.events()[-1]["effect"], self.events()[-1]["what"]), (rooms.FIREWORKS, "ROYAL"))
 
-    def test_first_roll_hits_bring_sparkles(self):
-        for values, category in (([1, 2, 3, 4, 5], Category.SMALL_STRAIGHT), ([6, 2, 3, 4, 5], Category.LARGE_STRAIGHT),
-                                 ([4, 4, 4, 4, 2], Category.KARE), ([1, 1, 1, 2, 2], Category.FULL)):
-            event = self.score(values, category)
-            self.assertEqual((event["effect"], event["category"]), (rooms.SPARKLES, category.name))
-        self.assertEqual(event["score"], 114)  # the royal full house, doubled
+    def test_first_roll_sparkles(self):
+        for values, what in (([1, 2, 3, 4, 5], "SMALL_STRAIGHT"), ([6, 2, 3, 4, 5], "LARGE_STRAIGHT"),
+                             ([3, 3, 5, 5, 3], "FULL"), ([4, 4, 4, 4, 2], "KARE"),
+                             ([3, 3, 3, 5, 1], "KARE")):  # the wild joker makes four 3s (or a full house)
+            event, token = self.first_roll(values)
+            self.assertEqual((event["effect"], event["what"], event["first"]), (rooms.SPARKLES, what, True), values)
+            self.end_turn(token)
 
-    def test_nothing_for_ordinary_moves(self):
-        self.assertIsNone(self.score([3, 3, 3, 5, 5], Category.FULL))  # a full house, not the royal one
-        self.assertIsNone(self.score([1, 2, 3, 4, 5], Category.SMALL_STRAIGHT, reroll=True))  # not the first roll
-        self.assertIsNone(self.score([6, 6, 6, 6, 6], Category.SUM))
-        token = roll(self.store, self.code, self.tokens, [1, 2, 4, 5, 6])
-        self.store.cross(self.code, token, Category.ABAKA, 0)  # crossed out
-        self.assertEqual(self.store.view(self.code).events, ())
+    def test_nothing_for_other_throws(self):
+        for values in ([3, 3, 3, 5, 6], [1, 2, 4, 5, 6], [6, 6, 5, 5, 4]):  # three of a kind, no straight, two pairs
+            event, token = self.first_roll(values)
+            self.assertIsNone(event, values)
+            self.end_turn(token)
+        event, token = self.first_roll([1, 2, 3, 4, 6])
+        reroll(self.store, self.code, token, [4], [5])  # a straight, but not on the first roll
+        self.assertEqual(self.events(), ())
 
-    def test_a_celebration_is_part_of_the_move(self):
+    def test_the_effect_comes_with_the_throw_not_the_move(self):
         version = self.store.version(self.code)
-        self.score([5, 5, 5, 5, 5], Category.ABAKA)
-        self.assertEqual(self.store.version(self.code), version + 2)  # the roll and the move, nothing more
+        event, token = self.first_roll([5, 5, 5, 5, 5])
+        self.assertEqual(self.store.version(self.code), version + 1)  # the throw, nothing more
+        self.store.score(self.code, token, Category.ABAKA, 0)  # writing it down adds nothing
+        self.assertEqual(self.events(), (event,))
+
+    def test_the_starting_throw_brings_nothing(self):
+        code, first = self.store.create("Ann", players=2)
+        tokens = [first, self.store.join(code, "Bob")]
+        with mock.patch("abaka.engine.roll_dice", lambda: dice([6, 6, 6, 6, 6])):
+            for _ in range(6):  # every throw ties, so the starting throw goes on
+                self.store.throw_for_start(code, tokens[self.store.view(code).engine.current])
+        self.assertEqual(self.store.view(code).events, ())
+
+    def table(self):
+        """The table of the player whose turn it is, to set up before their move (tests only)."""
+        engine = self.store._rooms[self.code].engine
+        return engine.current, engine.players[engine.current].table
+
+    def bonus_after(self, values, category, slot):
+        """Roll `values`, write them into `category`, return the bonus effect of that move (or None)."""
+        event, token = self.first_roll(values)
+        count = len(self.events())
+        self.store.score(self.code, token, category, slot)
+        return self.events()[-1] if len(self.events()) > count else None
+
+    def test_a_row_bonus_brings_sparkles(self):
+        seat, table = self.table()
+        table[Category.FULL][:2] = [19, 25]
+        event = self.bonus_after([2, 2, 2, 6, 6], Category.FULL, 2)  # 36 on the first roll completes the row
+        self.assertEqual((event["effect"], event["what"], event["seat"], event["rows"], event["columns"]),
+                         (rooms.SPARKLES, "BONUS", seat, [("FULL", 36)], []))
+        self.assertEqual(self.store.view(self.code).engine.players[seat].table[Category.FULL][3], 36)
+
+    def test_a_school_row_bonus_too(self):
+        seat, table = self.table()
+        table[Category.SCHOOL_3][:2] = ["X", "X"]
+        event = self.bonus_after([3, 3, 3, 5, 6], Category.SCHOOL_3, 2)  # exactly three 3s
+        self.assertEqual(event["rows"], [("SCHOOL_3", 9)])
+
+    def test_row_and_column_bonuses_in_one_move(self):
+        seat, table = self.table()
+        for category in Category:
+            table[category][:3] = ["X"] * 3 if category in SCHOOL_CATS else [10, 10, 10]
+        table[Category.FULL][2] = None
+        event = self.bonus_after([2, 2, 2, 6, 6], Category.FULL, 2)  # completes the row and column III
+        self.assertEqual((event["rows"], event["columns"]), ([("FULL", 36)], [(2, 36)]))
+
+    def test_no_sparkles_for_a_crossed_out_bonus(self):
+        seat, table = self.table()
+        table[Category.FULL][:2] = [19, "X"]
+        self.assertIsNone(self.bonus_after([2, 2, 2, 6, 6], Category.FULL, 2))  # the row is complete, its bonus X
+        self.assertEqual(self.store.view(self.code).engine.players[seat].table[Category.FULL][3], "X")
 
     def test_same_device_games_celebrate_too(self):
         code, key = self.store.create_local(["Ann", "Bob"])
@@ -171,12 +259,11 @@ class TestCelebrations(unittest.TestCase):
             if not self.store.view(code).engine.choosing_first_player:
                 break
             self.store.throw_for_start(code, key)
-        roll(self.store, code, None, [3, 3, 3, 3, 3])
-        self.store.score(code, key, Category.ABAKA, 0)
-        self.assertEqual(self.store.view(code).events[-1]["effect"], rooms.FIREWORKS)
+        throw(self.store, code, key, [3, 3, 3, 3, 3])
+        self.assertEqual(self.store.view(code).events[-1]["effect"], rooms.GRAND_FIREWORKS)
 
     def test_a_rematch_starts_without_events(self):
-        self.score([6, 6, 6, 6, 6], Category.ABAKA)
+        self.first_roll([6, 6, 6, 6, 6])
         room = self.store._rooms[self.code]
         last = room.last_event_id
         room.engine.is_game_over = lambda: True  # as if the game had ended
@@ -250,29 +337,54 @@ class TestOnTheScreens(unittest.TestCase):
         self.assertEqual(len(store.view(code).events), 1)
         self.assertIn("One reaction every two seconds", " ".join(n.proto.body for n in ann.get("toast")))
 
-    def test_fireworks_on_every_screen_once(self):
+    def test_bigger_fireworks_on_every_screen_once_as_the_dice_land(self):
         self.page()
         store = self.stores[-1]
         code, tokens = started_game(store, ("Ann", "Bob <i>"))
         pages = [self.page(room_code=code, seat_token=token) for token in tokens]
-        token = roll(store, code, tokens, [6, 6, 6, 6, 6])
-        store.score(code, token, Category.ABAKA, 0)
+        mover = store.view(code).engine.current
+        with mock.patch("abaka.engine.roll_dice", lambda: dice([6, 6, 6, 6, 6])):
+            pages[mover].button(key="roll").click().run()  # the thrower's own page, in the same run
+        pages[1 - mover].run()  # the other page's poll noticed the throw
         for page in pages:
-            page.run()
             html = self.html(page)
-            self.assertIn(FIREWORKS_HTML, html)
-            self.assertIn("+160", html)
+            self.assertIn(GRAND_HTML, html)
+            self.assertIn("Abaka!", html)
+            self.assertIn("first roll", html)
             self.assertNotIn("Bob <i>", html)  # names are escaped
+            # It waits for the dice to land (their spin), then plays.
+            self.assertGreater(float(re.search(r'class="ab-fx-item" style="--d:(-?[\d.]+)s"', html).group(1)), 0)
         # A page that opens the game afterwards (a reload, a new session) does not show it again.
         later = self.page(room_code=code, seat_token=tokens[0])
-        self.assertNotIn(FIREWORKS_HTML, self.html(later))
+        self.assertNotIn(GRAND_HTML, self.html(later))
         # Nor does a page that has shown it for its full length.
         event_id = store.view(code).events[-1]["id"]
         state = dict(pages[0].session_state["fx_state"])
-        state["first_seen"] = {event_id: time.time() - 10}
+        state["starts"] = {event_id: time.time() - 10}
         pages[0].session_state["fx_state"] = state
         pages[0].run()
-        self.assertNotIn(FIREWORKS_HTML, self.html(pages[0]))
+        self.assertNotIn(GRAND_HTML, self.html(pages[0]))
+
+    def test_a_bonus_shows_what_it_earned(self):
+        self.page()
+        store = self.stores[-1]
+        code, tokens = started_game(store)
+        engine = store._rooms[code].engine
+        mover = engine.current
+        engine.players[mover].table[Category.FULL][:2] = [19, 25]
+        page = self.page(room_code=code, seat_token=tokens[mover], lang="ru")
+        throw(store, code, tokens[mover], [2, 2, 2, 6, 6])
+        store.score(code, tokens[mover], Category.FULL, 2)
+        page.run()
+        html = self.html(page)
+        self.assertIn(SPARKLES_HTML, html)
+        self.assertIn("Бонус!", html)
+        self.assertIn("строка «Фулл-хаус» +36", html)
+        # The full house thrown, then the bonus: one after the other, never on top of each other.
+        from ui_components.effects import SECONDS
+        delays = [float(d) for d in re.findall(r'class="ab-fx-item" style="--d:(-?[\d.]+)s"', html)]
+        self.assertEqual(len(delays), 2)
+        self.assertAlmostEqual(delays[1] - delays[0], SECONDS[rooms.SPARKLES], places=1)
 
     def test_no_reaction_buttons_on_one_device(self):
         self.page()

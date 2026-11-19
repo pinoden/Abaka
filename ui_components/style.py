@@ -288,23 +288,41 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 @keyframes ab-bubble { 0% { opacity: 0; transform: translateY(-14px) scale(.7); }
   8% { opacity: 1; transform: translateY(0) scale(1.06); } 14% { transform: scale(1); }
   80% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-18px); } }
-.ab-fx-big, .ab-fx-small { position: absolute; inset: 0; }
+.ab-fx-grand, .ab-fx-big, .ab-fx-small { position: absolute; inset: 0; }
 .ab-burst { position: absolute; width: 0; height: 0; }
 .ab-burst i { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%;
   background: var(--c); box-shadow: 0 0 8px 1px var(--c); opacity: 0;
-  animation: ab-spark 1.3s cubic-bezier(.15, .7, .3, 1) calc(var(--d) + var(--bd)) both; }
+  animation: ab-spark 1.3s cubic-bezier(.15, .7, .3, 1) calc(var(--d) + var(--bd)) forwards; }
+/* forwards, not both: a burst still waiting for its turn stays hidden (opacity 0), not a dot. */
 .ab-fx-big .ab-burst i { left: -5px; top: -5px; width: 10px; height: 10px; }
 .ab-fx-small .ab-burst i { left: -3px; top: -3px; width: 6px; height: 6px; animation-duration: 1.1s; }
+.ab-fx-grand .ab-burst i { left: -6px; top: -6px; width: 12px; height: 12px; animation-duration: 1.6s; }
+/* Bigger fireworks: a golden flash first, then a rain of sparkles over the bursts. */
+.ab-flash { position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(circle at 50% 42%, rgba(255, 205, 80, .5), rgba(255, 205, 80, 0) 70%);
+  animation: ab-flash 1.6s ease-out var(--d) both; }
+@keyframes ab-flash { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+.ab-star { position: absolute; top: -30px; font-size: var(--s); line-height: 1; color: var(--c); opacity: 0;
+  text-shadow: 0 0 8px var(--c); animation: ab-fall 2.6s linear calc(var(--d) + var(--bd)) both; }
+@keyframes ab-fall { 0% { opacity: 0; transform: translateY(0) rotate(0deg); } 10% { opacity: 1; }
+  75% { opacity: 1; } 100% { opacity: 0; transform: translateY(75vh) rotate(220deg); } }
 @keyframes ab-spark { 0% { opacity: 1; transform: rotate(var(--a)) translateY(0) scale(1.3); }
   70% { opacity: 1; } 100% { opacity: 0; transform: rotate(var(--a)) translateY(calc(-1 * var(--r))) scale(.4); } }
-.ab-fx-banner { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); text-align: center;
-  padding: .9rem 1.6rem; border-radius: 22px; background: rgba(255, 255, 255, .94); max-width: calc(100% - 32px);
+/* Low on the screen: effects come as the dice land, and the banner must not hide them (on phones
+   the dice are in the upper half). As wide as its text, up to the screen. */
+.ab-fx-banner { position: absolute; left: 50%; top: 76%; transform: translate(-50%, -50%); text-align: center;
+  width: max-content; max-width: calc(100% - 32px);
+  padding: .9rem 1.6rem; border-radius: 22px; background: rgba(255, 255, 255, .94);
   box-shadow: 0 20px 50px rgba(20, 24, 40, .25); opacity: 0;
   animation: ab-banner 4.5s ease-out calc(var(--d) + .1s) both; }
-.ab-fx-small .ab-fx-banner { top: 30%; padding: .6rem 1.2rem; animation-name: ab-banner-small;
+.ab-fx-small .ab-fx-banner { padding: .6rem 1.2rem; animation-name: ab-banner-small;
   animation-duration: 2.8s; }
 .ab-fx-title { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.03em; color: #B7791F; line-height: 1.1; }
 .ab-fx-small .ab-fx-title { font-size: 1.5rem; color: #4F46E5; }
+.ab-fx-grand .ab-fx-banner { padding: 1.1rem 2.1rem; border: 2px solid #F6C453; animation-duration: 6s;
+  box-shadow: 0 0 0 8px rgba(246, 196, 83, .22), 0 24px 60px rgba(20, 24, 40, .3); }
+.ab-fx-grand .ab-fx-title { font-size: 3.6rem; text-shadow: 0 2px 14px rgba(246, 196, 83, .55); }
+.ab-fx-grand .ab-fx-sub { font-size: 1.1rem; }
 .ab-fx-sub { font-size: 1rem; font-weight: 600; color: #4A4F68; margin-top: .2rem; }
 @keyframes ab-banner { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.5); }
   10% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); } 16% { transform: translate(-50%, -50%) scale(1); }
@@ -312,8 +330,9 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 @keyframes ab-banner-small { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.6); }
   14% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 78% { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%, -70%); } }
-@media (prefers-reduced-motion: reduce) { .ab-burst { display: none; } }
-@media (max-width: 640px) { .ab-fx-title { font-size: 2rem; } .ab-bubbles { top: 3.6rem; } }
+@media (prefers-reduced-motion: reduce) { .ab-burst, .ab-star { display: none; } }
+@media (max-width: 640px) { .ab-fx-title { font-size: 2rem; } .ab-fx-grand .ab-fx-title { font-size: 2.6rem; }
+  .ab-bubbles { top: 3.6rem; } }
 
 /* ---------- chat (chat.py) ---------- */
 .st-key-card-chat { margin-top: .4rem; padding: 1rem 1.1rem .9rem !important; }
