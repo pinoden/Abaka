@@ -3,6 +3,9 @@
 #   and a Postgres service for the database tests.
 # - engine-py38: the engine must keep working on Python 3.8 (ProjectLibrary.md, Rules for
 #   changes). Streamlit is not installed there, so the app tests are skipped.
+#
+# Both jobs are required checks for merging into main (branch protection), by their names
+# below. Renaming a job blocks every merge until the protection names the new job.
 name: tests
 
 on:

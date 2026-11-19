@@ -47,6 +47,10 @@ Do not rename or move these three: each tool finds its file by name.
    - `ship --title "..." --body-file notes.md` does all three.
    Merge only if the owner asked for it or has said changes may go in without
    asking. Otherwise open the pull request and tell the owner.
+   GitHub refuses a merge until both CI jobs passed on a branch that is up to
+   date with `main`. If `main` moved, `merge` brings it into the branch and
+   waits for CI again; if they conflict, do step 5. Do not rename the CI jobs
+   (`.github/workflows/tests.yml`): the protection names them.
 5. If `main` moved meanwhile: `git pull --rebase origin main` on your branch,
    run the tests again, and push. In `ProjectLibrary.md` keep both sides'
    entries.

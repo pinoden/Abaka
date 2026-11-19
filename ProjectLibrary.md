@@ -10,7 +10,8 @@ keep this file. Claude Code loads the two through CLAUDE.md.
 
 - **Repository:** https://github.com/pinoden/Abaka (git remote `origin`). Finished
   work goes there. `main` is protected: every change goes in through a pull
-  request.
+  request, and GitHub merges one only when both CI jobs passed on a branch
+  that is up to date with `main` (required checks, also for admins).
 - **Live app:** https://mipt-abaka.streamlit.app/, deployed by the owner on
   Streamlit Community Cloud from `main` (main file `abaka_ui.py`). Merging into
   `main` updates it automatically, within a few minutes. Cloud reloads the code
@@ -31,6 +32,7 @@ python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=tr
 python tools/loadtest.py --baseline --record docs/LOADTEST.md   # the release baseline (about 1 min): adds a row, flags a slowdown
 python tools/pr.py status                             # open pull requests and their branches
 python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR, wait for CI, merge
+                                                      # (if main moved: brings it in, waits for CI again)
 ```
 
 ### Notes for this machine
@@ -825,6 +827,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-19)
 
+- **CI required for merging (owner: "I think we need to enforce checks to
+  pass before the merge"):** set on GitHub on 2026-11-19 and documented in
+  PR #54. `main` takes a pull request only when both CI jobs passed on a
+  branch up to date with `main`; this applies to admins too, so also to
+  merges from the GitHub website. `tools/pr.py merge` waits for both jobs by
+  name and brings a moved `main` into the branch.
 - **In-game chat (owner, Backlog item 22):** PR #53. Checked in headless
   Chromium on a local server, a desktop (1300px) and a phone (390px) in one
   online game: a message reached the other screen in 0.3 s, shown as text
@@ -960,10 +968,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 235
+- **Tests:** on Python 3.9 with Streamlit 1.48 and a test database, all 240
   pass but one step skipped (a typed-in club name, which AppTest 1.48
-  cannot send); on 3.8, 194 pass and 41 are skipped (2 of them test `tools/pr.py`, 9
-  need a database or psycopg; the others need Streamlit). 18 reaction and
+  cannot send); on 3.8, 199 pass and 41 are skipped (9 need a database or
+  psycopg; the others need Streamlit). 7 PR tool tests (`test_pr_tool.py`:
+  remote URLs, and `merge` with a fake GitHub: a required job not started
+  yet, a failing job, a branch behind `main`, a conflict). 18 reaction and
   celebration tests (`test_reactions.py`: a reaction is not a move, aimed
   reactions, the rate limit, never saved, which moves celebrate, rematch,
   and the screens through the app: bubbles, fireworks shown once, escaped
@@ -1114,6 +1124,29 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-19: CI required for merging (Claude Code, PR #54)**
+
+- The owner asked to enforce passing checks before a merge. Before, only
+  `tools/pr.py` waited for CI; GitHub itself would have merged a pull
+  request with failing or unfinished CI (for example from its website).
+- Branch protection on `main` now requires the two CI jobs, "App on Python
+  3.13 (as on Streamlit Cloud)" and "Engine on Python 3.8", from the GitHub
+  Actions app (so no other app can report them), and that the branch is up
+  to date with `main` ("strict"). "Include administrators" was already on, so
+  nobody can bypass it. Every other protection setting was kept (read back
+  and compared).
+- Strict, because two agents ship on the same day: a pull request tested
+  against an older `main` could pass its checks and still break `main` once
+  combined. The cost is one more CI run (about 2 minutes) when `main` moved.
+- `tools/pr.py merge` does that run itself: it brings `main` into the branch
+  on GitHub (`update-branch`, a merge commit, only if the branch is still the
+  commit CI tested), waits for CI on the combined code and merges exactly
+  that commit. On a conflict it stops and says to rebase (AGENTS.md step 5).
+- It also waits for both jobs by name. It used to stop waiting when every
+  check run it could see had finished, which could happen before the
+  second job had started.
+- Renaming a CI job now blocks every merge until the protection names the
+  new job; `tests.yml` and AGENTS.md say so.
 **2026-11-19: in-game chat (Claude Code, PR #53)**
 
 - The owner asked "is it hard to add a chat during the game? The chat should
