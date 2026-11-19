@@ -589,6 +589,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-18)
 
+- **Rules confirmed (owner, 2026-11-18):** a first roll doubles score and
+  bonus; only exact 1-5 and 2-6 are straights. The engine already did this;
+  the original engine tests were corrected in PR #40.
 - **Starting throws stay on screen (owner's report, Backlog item 16):** PR #39.
   In a same-device game for three, the last thrower's total no longer vanishes
   when the first player is decided. Checked in headless Chromium on a local
@@ -651,9 +654,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 157 pass and 4 are skipped;
-  on 3.8, 138 pass and 23 are skipped (2 of them test `tools/pr.py`; the 2
-  starting-throw screen tests, `test_ui_starting_throws.py`, need Streamlit). CI runs them on 3.13 with Streamlit
+- **Tests:** on Python 3.9 with Streamlit 1.48, all 161 pass;
+  on 3.8, 142 pass and 19 are skipped (2 of them test `tools/pr.py`; the
+  others need Streamlit). CI runs them on 3.13 with Streamlit
   1.67 and on 3.8. The suites: 13 lifecycle tests (`test_lifecycle.py`), 3 name tests (`test_names.py`: Markdown escaping,
   invisible characters, hostile names through the real app), 5 clone tests (`test_clone.py`: same game as
   `deepcopy`, nothing mutable shared, previews identical), 6 language tests (`test_i18n.py`: every t() text has a
@@ -669,8 +672,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   repository tests (`test_repository.py`: the file repository's contract, a
   store on an in-memory repository), 6 monitoring tests (`test_monitoring.py`: the stats line, failed saves, the
   "Continue a game" list), 11 older
-  rule tests, the original engine's 15 tests (`test_abaka_engine.py`, 4 of
-  them skipped because they expect older rules), 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
+  rule tests, the original engine's 15 tests (`test_abaka_engine.py`, with the
+  first-roll and straight rules the owner confirmed on 2026-11-18), 3 scoreboard tests (`test_scoreboard.py`: crossed bonus cells
   and their preview) and 7 app tests (`test_ui_notices.py`,
   `test_ui_store.py` with the old store retired and rendering that never
   changes the shared engine, `test_ui_saved_games.py`, `test_ui_reruns.py`:
@@ -732,10 +735,6 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ### Known issues
 
-- 4 of the original engine's tests (`tests/test_abaka_engine.py`) expect
-  older rules, and are skipped until the owner says which rules are right:
-  - a first roll doubles only the bonus (the engine doubles score and bonus);
-  - any run of 4 or 5 is a straight (the engine: exactly 1-5 and 2-6).
 - README.md links to a LICENSE file (MIT) that the repository does not have.
 - On screens around 1024px wide, a 5-player game has small dice (about 34px),
   and with 4 or 5 players the scoreboard scrolls sideways inside its card.
@@ -794,6 +793,18 @@ Other ideas, not planned:
 - showing the opponent which dice the active player has picked.
 
 ## Decision log
+
+**2026-11-18: first-roll and straight rules confirmed (Claude Code, PR #40)**
+
+- The owner answered the two open rule questions:
+  > "Bonus gets doubled as well, for example, abaka on first throw with 6's gets 160 points.
+  > There are only 2 straights in this game: 1 2 3 4 5 (small) or 2 3 4 5 6 (large).
+  > 4 consecutive numbers don't score anything"
+- The engine (`scoring.py`: `(base + bonus) * 2` on a first roll; straights
+  exactly `{1..5}` = 15 and `{2..6}` = 20) and the rules text already did
+  this, so no game code changed.
+- The 4 original engine tests that expected the older rules are corrected and
+  run again; nothing is skipped on Python 3.9 any more.
 
 **2026-11-18: starting throws stay on screen (Claude Code, PR #39)**
 

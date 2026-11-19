@@ -1,16 +1,11 @@
 """
 The original engine's tests (the engine was one module, `abaka_engine`; it is the `abaka`
-package now). Four of them expect older rules than the engine's, and are skipped until the
-owner says which rules are right (ProjectLibrary.md, Known issues).
+package now). The first-roll and straight tests follow the rules the owner confirmed on
+2026-11-18: a first roll doubles the score and the bonus (Abaka of sixes: 160), and the only
+straights are exactly 1-2-3-4-5 (small) and 2-3-4-5-6 (large); four in a row scores nothing.
 """
 import unittest
 from abaka import Die, Category, score_category, PlayerState, GameEngine
-
-OLDER_RULE = ("expects an older rule: {}. The current rule is tested in {}. Skipped until the owner "
-              "says which rule is right (ProjectLibrary.md, Known issues).")
-FIRST_ROLL = OLDER_RULE.format("a first roll doubles only the bonus (now: score and bonus)", "test_moves.py")
-STRAIGHTS = OLDER_RULE.format("any run of 4 or 5 is a straight (now: exactly 1-5 and 2-6)",
-                              "test_straights_strict.py")
 
 def dice(*vals, joker_idx=None):
     ds = [Die(v) for v in vals]
@@ -38,28 +33,27 @@ class TestScoring(unittest.TestCase):
     def test_kare_with_bonus(self):
         self.assertEqual(score_category(dice(6,6,6,6,1), Category.KARE), 6*4 + 20)
 
-    @unittest.skip(FIRST_ROLL)
-    def test_kare_first_roll_doubles_bonus(self):
-        self.assertEqual(score_category(dice(4,4,4,4,3), Category.KARE, first_roll=True), 16 + 40)
+    def test_kare_first_roll_doubles_score_and_bonus(self):
+        self.assertEqual(score_category(dice(4,4,4,4,3), Category.KARE, first_roll=True), (16 + 20) * 2)
 
-    @unittest.skip(FIRST_ROLL)
-    def test_abaka_first_roll_doubles_bonus(self):
-        self.assertEqual(score_category(dice(5,5,5,5,5), Category.ABAKA, first_roll=True), 125)
+    def test_abaka_first_roll_doubles_score_and_bonus(self):
+        # The owner's example: Abaka of sixes on the first roll is 160.
+        self.assertEqual(score_category(dice(6,6,6,6,6), Category.ABAKA, first_roll=True), 160)
+        self.assertEqual(score_category(dice(5,5,5,5,5), Category.ABAKA, first_roll=True), (25 + 50) * 2)
 
     def test_royal_full_bonus(self):
         d = dice(1,1,1,2,2)
         self.assertEqual(score_category(d, Category.FULL), sum([1,1,1,2,2]) + 50)
 
 class TestStraights(unittest.TestCase):
-    @unittest.skip(STRAIGHTS)
-    def test_small_straight_any_4_seq(self):
-        self.assertEqual(score_category(dice(1,2,3,4,6), Category.SMALL_STRAIGHT), 1+2+3+4+6)
-        self.assertEqual(score_category(dice(2,3,4,5,1), Category.SMALL_STRAIGHT), 2+3+4+5+1)
-        self.assertEqual(score_category(dice(3,4,5,6,6), Category.SMALL_STRAIGHT), 3+4+5+6+6)
+    def test_small_straight_is_exactly_1_to_5(self):
+        self.assertEqual(score_category(dice(2,3,4,5,1), Category.SMALL_STRAIGHT), 15)
+        self.assertEqual(score_category(dice(1,2,3,4,6), Category.SMALL_STRAIGHT), 0)  # four in a row
+        self.assertEqual(score_category(dice(3,4,5,6,6), Category.SMALL_STRAIGHT), 0)  # four in a row
+        self.assertEqual(score_category(dice(2,3,4,5,6), Category.SMALL_STRAIGHT), 0)  # that is the large one
 
-    @unittest.skip(STRAIGHTS)
-    def test_large_straight(self):
-        self.assertEqual(score_category(dice(1,2,3,4,5), Category.LARGE_STRAIGHT), 15)
+    def test_large_straight_is_exactly_2_to_6(self):
+        self.assertEqual(score_category(dice(1,2,3,4,5), Category.LARGE_STRAIGHT), 0)  # that is the small one
         self.assertEqual(score_category(dice(2,3,4,5,6), Category.LARGE_STRAIGHT), 20)
         self.assertEqual(score_category(dice(2,3,4,5,5), Category.LARGE_STRAIGHT), 0)
 
