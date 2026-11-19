@@ -202,6 +202,9 @@ class RoomStore:
             self._rooms.clear()
         if self._repository is not None:
             self._repository.wait()
+            close = getattr(self._repository, "close", None)  # a database connection
+            if close is not None:
+                close()
         log.info("store retired after a code update; the new store reads the games from disk")
 
     # ----- lobby -----

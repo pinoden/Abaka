@@ -9,3 +9,6 @@ __pycache__/*
 # Agent settings that stay on one machine
 .claude/settings.local.json
 .DS_Store
+
+# Streamlit secrets (the database URL) stay on the machine
+.streamlit/secrets.toml
