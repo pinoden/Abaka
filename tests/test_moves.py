@@ -200,7 +200,7 @@ class TestMostPoints(unittest.TestCase):
         at.run()
         self.assertFalse(at.exception, [e.value for e in at.exception])
         pills = next(g for g in at.get("button_group") if (g.key or "").startswith("pick-"))
-        labels = [o.content for o in pills.options]
+        labels = [getattr(o, "content", o) for o in pills.options]  # AppTest 1.48: protos; 1.67: text
         self.assertEqual([label for label in labels if label.startswith("**")], ["**Four of a kind · 56**"])
         self.assertIn("Sum · 22", labels)
 
