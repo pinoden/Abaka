@@ -16,8 +16,9 @@ def score_category(dice, category, first_roll=False):
             pairs = [v for v, c in cnt.items() if c >= 2]
             score = max((v * 2 for v in pairs), default=0)
         elif cat == Category.TWO_PAIRS:
-            pairs = [v for v, c in cnt.items() if c >= 2]
-            score = sum(v*2 for v in sorted(pairs, reverse=True)[:2]) if len(pairs) >= 2 else 0
+            # Four (or five) of a kind holds two pairs of the same number (owner, 2026-11-19).
+            pairs = sorted((v for v, c in cnt.items() for _ in range(c // 2)), reverse=True)
+            score = sum(v * 2 for v in pairs[:2]) if len(pairs) >= 2 else 0
         elif cat == Category.TRIPS:
             trips = [v for v, c in cnt.items() if c >= 3]
             score = trips[0] * 3 if trips else 0
