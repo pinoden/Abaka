@@ -23,6 +23,10 @@ keep this file. Claude Code loads the two through CLAUDE.md.
 pip install -r requirements.txt                       # streamlit 1.67.0 (pinned; needs Python 3.11+), psycopg 3.3.6
 ABAKA_TEST_DATABASE_URL=postgresql://... python -m unittest tests.test_postgres   # database tests (else skipped)
 streamlit run abaka_ui.py                             # the app (port 8501, all interfaces)
+streamlit run abaka_server.py                         # the app and the API for apps (Streamlit 1.67+; docs/API.md)
+pip install -r requirements-dev.txt && python -m playwright install chromium-headless-shell   # for the website check
+python tools/website_check.py                         # the live website in a real browser (after every merge)
+python tools/website_check.py --serve abaka_ui.py     # the same check on a local server (Streamlit 1.67)
 python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
 python -m unittest tests.test_rooms -v                # one test module
@@ -52,6 +56,17 @@ python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR
     Without `UV_PYTHON_BIN_DIR`, uv also links `python3.13` into
     `~/.local/bin`. The base Python's own pip (20.1) cannot install uv;
     upgrade it first.
+  - `abaka_server.py` (the app with the API) needs Streamlit 1.67, so it runs
+    from that scratch Python: `ABAKA_DATABASE_URL= $S/venv313/bin/python -m
+    streamlit run abaka_server.py`. Its network tests are skipped on 1.48.
+  - The website check (`tools/website_check.py`) runs from it too.
+    - Install Playwright with `uv pip install -p $S/venv313/bin/python -r
+      requirements-dev.txt`.
+    - Playwright 1.65.2 uses Chromium build 1255, already in
+      `~/Library/Caches/ms-playwright`.
+    - For `--cleanup` on the live app, pass the database URL with
+      `$S/neonenv.py`, or any wrapper that reads `.env.local` without
+      printing it.
 - Neon: the repository is linked to the owner's Neon project "Abaka"
   (`restless-haze-52228918`, branch `production`, us-east-1) with the Neon
   CLI (`neon init`, `neon deploy`). `neon.ts` declares Postgres only;
@@ -110,7 +125,10 @@ Python + Streamlit.
 | `abaka/i18n.py` | Every text players see, in English and Russian: `t("...")`, plurals, error messages, `md()`. No Streamlit |
 | `abaka/api.py` | The game as JSON for apps (Android, iOS) and any other client: `handle(request, store, clubs)`, protocol 1, described in `docs/API.md`. No Streamlit |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
-| `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
+| `abaka_server.py` | The app and the API for apps in one process (`streamlit run abaka_server.py`, Streamlit 1.67's `st.App` with two routes) |
+| `server/stores.py` | The process's `RoomStore` and `ClubStore` and where they save (files, Neon); the registry the pages and the API share under `abaka_server.py` |
+| `server/http.py` | The API over HTTP (`POST /api/v1`) and a live WebSocket (`/api/v1/live`) that pushes a watched game's state. Starlette |
+| `code_version.py` | Called first on every run: reloads `abaka`/`ui_components`/`server` if their files changed since they were loaded |
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
 | `ui_components/actions.py` | `on_click` callbacks of the game buttons: make the move, keep a refusal to show once |
 | `ui_components/chat.py` | The chat card of an online game: messages (escaped), the box to write one, a toast for new ones |
@@ -123,7 +141,8 @@ Python + Streamlit.
 saving, the move previews, the texts and the API. Everything in it runs on
 Python 3.8 without Streamlit. `abaka_ui.py` and `ui_components/` are the web
 app, one client of it; the apps for phones will be another (Backlog item 25).
-Code that both need goes in `abaka/`.
+Code that both need goes in `abaka/`. `server/` is the server around the game:
+where its stores save, and the API over the network.
 
 ### Turn state lives in the engine
 
@@ -161,13 +180,25 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     no longer changes, and old stores never pile up.
   - Do not go back to a plain cached `RoomStore()`: an old store reached the
     new code and broke the live app (Decision log, 2026-11-16).
+  - The stores themselves are made by `server/stores.py` (`make_stores`),
+    which also says where they save.
+  - Under `abaka_server.py` the pages use another registry,
+    `server/stores.py`'s (`serve_api()` switches them). The API's routes run
+    outside any page's script run, and that registry is the one both reach.
+    It lives in a module made at run time (`_abaka_process`), which neither
+    Streamlit's file watcher nor `code_version` ever unloads. The same rules
+    apply there: the new code retires the old store, and old code gets the
+    new one.
 - Streamlit re-reads `abaka_ui.py` on every run, but imported modules stay
   loaded, and its file watcher unloads them only while a browser session is
   open. So `abaka_ui` first calls `code_version.load_current()`. It hashes the
-  `.py` files of `abaka/` and `ui_components/` and, if they differ from the
-  loaded code (`abaka.code_fingerprint`), drops those modules so they are
-  imported again from disk. Tests that patch modules before running the app
-  call `code_version.mark_current()` first.
+  `.py` files of `abaka/`, `ui_components/` and `server/` and, if they differ
+  from the loaded code (`abaka.code_fingerprint`), drops those modules so they
+  are imported again from disk. Tests that patch modules before running the
+  app call `code_version.mark_current()` first.
+  - `code_version` itself stays loaded across updates. If the loaded one does
+    not list `server` yet (an update pulled while no page was open),
+    `abaka_ui` reloads it first.
   - The contents decide, but the files are read again only when a size or a
     file time changed, or a minute has passed (`current_fingerprint`). Sizes
     and times are looked at at most every 2 s (`CHECK_EVERY_SECONDS`): the
@@ -416,8 +447,29 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   and puts the thread's language back afterwards.
 - Protocol 1. Adding operations or fields keeps it. Changing what apps already
   rely on makes it 2, because apps on phones update slowly.
-- Nothing carries it over the network yet: the HTTP and WebSocket server is
-  the next step (item 25, A2).
+- Over the network (`server/http.py`), from `streamlit run abaka_server.py`:
+  - `POST /api/v1`: one request per call. A refusal comes with an HTTP status
+    that matches its code (404 `not_found`, 409 `outdated`, 422 `refused`,
+    429 `too_fast`...).
+  - `WS /api/v1/live`: requests as messages (with an `id` echoed in the
+    answer), plus `watch`. A watched game's state is pushed when its `seen`
+    changes, checked every 0.25 s. A push carries only new events and chat
+    messages, and a move made over the connection is not pushed back.
+  - One process serves the pages and the API (Streamlit 1.67's `st.App`), so
+    they share the stores with no messages between servers.
+  - Store calls run in worker threads (`run_in_threadpool`). The event loop
+    also serves the web pages, and a store call may wait for its lock or for
+    the database.
+  - A client address may start 10 games and clubs in 10 minutes, as one
+    browser may (`may_create`, `ApiError` `too_fast`). Behind a proxy,
+    `ABAKA_CLIENT_ADDRESS_HEADER` names the header with the client's address.
+  - A request is at most 16 KB.
+  - The routes in `abaka_server.py` are made once, when the server starts.
+    Each request loads the current code first (`code_version`), and a live
+    connection made by older code closes with 1012 so the app reconnects to
+    the new code.
+  - Streamlit Community Cloud runs `abaka_ui.py` alone, so the live app does
+    not serve the API yet (item 25, stage B).
 
 ### UI conventions
 
@@ -506,6 +558,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - Engine code must keep working on Python 3.8 (no `X | None` at runtime).
 - Every new text shown to players goes through `t("...")` and gets a Russian
   version in `abaka/i18n.py`; `tests/test_i18n.py` fails otherwise.
+- The website must keep working while the apps are built (owner,
+  2026-11-20; AGENTS.md, "The website must keep working"):
+  - `tests/test_website.py` checks it in a real browser in CI;
+  - `python tools/website_check.py` checks the live app after every merge;
+  - a broken live app is reverted at once.
 - Code that is not about drawing the web page goes in `abaka/`, not in
   `ui_components/`, so the apps' API can use it too (Backlog item 25).
 - A new thing players can do in the web app also gets an operation in
@@ -534,7 +591,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: its first step is in PR #58. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -951,8 +1008,21 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - An option that earns a bonus shows it: "Sum · 11 · bonus +52".
     - Nothing is highlighted when crossing out.
 
-25. **Apps for Android and iOS.** In progress: step A1 is in PR #58.
+25. **Apps for Android and iOS.** In progress: stage A is done (PR #58 and
+    PR #59). Stages B to D wait for the owner's decisions below.
     > "Let's start preparing the code base to expand on android/ios"
+    >
+    > "Go ahead" (step A2)
+    >
+    > "Make sure that the websites version won't brake while developing the
+    > app transform"
+    - The website keeps working at every step (AGENTS.md, "The website must
+      keep working"):
+      - CI checks it in a real browser (`tests/test_website.py`);
+      - every merge is checked on the live app (`tools/website_check.py`);
+      - a broken live app is reverted at once;
+      - app work goes in its own files;
+      - the website stays on Streamlit Cloud until the owner moves it.
     - The plan, one PR per step. Tick a step here when its PR is merged.
     - The app is a thin client: the server keeps the game and the rules, and
       the app shows what it is told and sends the player's moves. So the rules
@@ -969,21 +1039,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       and the texts moved into the game package (`abaka/moves.py`,
       `abaka/i18n.py`), so everything that is not the web page is in
       `abaka/`. PR #58.
-    - [ ] A2. An HTTP and WebSocket server for it, in the same process as the
-      web app.
-      - Streamlit 1.67 serves extra routes next to the app:
-        `app = st.App("abaka_ui.py", routes=[...])` in the main file, and
-        `streamlit run` finds it. So the web pages and the API share one
-        `RoomStore`, and web and app players share games with no new
-        machinery.
-      - It needs:
-        - the store registry moved out of `abaka_ui.py`, so the routes and
-          the pages find the same store;
-        - pushing the state over a WebSocket when `seen` changes;
-        - a limit on new games per client (the web limits per browser
-          session).
-      - It runs from a new entry file, locally first; the live app is
-        unchanged until stage B.
+    - [x] A2. The API over the network, in the same process as the web app:
+      `streamlit run abaka_server.py` (see "The API for apps"). PR #59.
+      - `POST /api/v1` for single requests, and `WS /api/v1/live`, which also
+        pushes a watched game's state when it changes.
+      - The pages and the API share one `RoomStore` through
+        `server/stores.py`, so a game made in an app can be joined on the
+        web and the other way round.
+      - A client address may start 10 games in 10 minutes, as on the web.
+      - Streamlit Community Cloud keeps running `abaka_ui.py` alone, with its
+        own store registry: the live app does not serve the API before stage B.
 
     **Stage B: a host for the server (owner decides)**
 
@@ -998,6 +1063,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       (for example Fly.io, Render or Railway; check current prices), with
       Neon as it is, and a domain. The web app moves with it, so web and app
       players keep sharing games.
+      - The move keeps the website working. The new host first runs next to
+        Streamlit Cloud, with its own Neon branch, and passes
+        `tools/website_check.py --url <new host>`. Then the owner decides when
+        players switch: the new address, and the production database.
+      - Streamlit Cloud stays up until then, as the way back.
 
     **Stage C: the app**
 
@@ -1046,6 +1116,52 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - How seats are protected (also in item 11).
 
 ## Status (2026-11-20)
+
+- **The website keeps working while the apps are built (owner, Backlog
+  item 25):** PR #59.
+  - `tools/website_check.py` plays the website in headless Chromium:
+    - the home page in English and Russian, and where games are saved;
+    - a game on one device: starting throw, roll, a die rolled again, the best
+      option written, a row crossed out;
+    - an online game between a desktop and a phone: join, the starting
+      throws, a roll seen on the other screen, the turn passing, a chat
+      message and a reaction;
+    - no error box, no page error, no sideways scrolling on the phone.
+  - CI runs it on every pull request (`tests/test_website.py`), on
+    `abaka_ui.py` as Cloud runs it and on `abaka_server.py`. The app job
+    installs Chromium and fails if the browser is missing.
+  - Proven to catch breakage, on a scratch copy of the code:
+    - with the most-points mark removed, both one-device games failed;
+    - with the chat raising an error, the online game failed and the report
+      named the error.
+  - Locally on Streamlit 1.67 the whole check takes about 30 s per server.
+  - AGENTS.md now has the rules: browser checks in CI, the live check after
+    every merge, an immediate revert if the live app breaks, app work in its
+    own files, and Cloud kept until the owner moves the website.
+
+- **The API over the network (owner: "Go ahead", Backlog item 25):** PR #59,
+  step A2. `streamlit run abaka_server.py` serves the web app and the API
+  together (`POST /api/v1`, `WS /api/v1/live`); the live app is unchanged.
+  - Checked on a local server with Streamlit 1.67, in headless Chromium:
+    - A game made through the API was joined from a web page. The API's
+      live connection got the new state 175 ms after the click.
+    - After the app's starting throw, the web page offered the other player
+      his throw 1.3 s later (pages check once a second).
+    - His throw on the page was pushed to the app.
+  - The web app alone (`streamlit run abaka_ui.py`, as on Cloud) was checked
+    the same way as before. A game in English and the home page in Russian
+    showed no errors, and the store now comes from `server/stores.py`.
+  - 9 new tests (`tests/test_server.py`):
+    - a real server, for the HTTP statuses, the limit on new games, a
+      server fault, pushes and what they carry, and the closing on a code
+      update;
+    - `streamlit run abaka_server.py` itself;
+    - a page joining a game made through the API.
+  - The network tests run on Python 3.13 with Streamlit 1.67 (CI, and the
+    scratch Python here).
+  - Load-test row: no slowdown (26% CPU, 7.1 ms median poll).
+  - Next: the owner's decisions in item 25 (the host, the app's technology,
+    the store accounts).
 
 - **Preparing for apps on Android and iOS (owner, Backlog item 25):**
   PR #58, step A1 of the plan.
@@ -1237,11 +1353,22 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, all 270 pass but one step
-  skipped (a typed-in club name, which AppTest 1.48 cannot send) and the 9
-  database tests, which need a test database (CI has one); on 3.8, 227 pass
-  and 43 are skipped (9 need a database or psycopg; the others need
-  Streamlit). 18 API tests (`test_api.py`: complete games for 2 and 5
+- **Tests:** on Python 3.9 with Streamlit 1.48, 279 run and these are
+  skipped: one step (a typed-in club name, which AppTest 1.48 cannot send), the
+  9 database tests, which need a test database (CI has one), the 7 network
+  tests, which need Streamlit 1.67's packages, and the website checks, which
+  need Streamlit 1.67 and Chromium (CI has them all). On 3.8, 279 run and 53
+  are skipped (9 need a database or psycopg; the others need Streamlit). On
+  3.13 with Streamlit 1.67 and Chromium, all 281 pass but the 9 database
+  tests. 2 website tests (`test_website.py`: `tools/website_check.py` in
+  headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
+  9 server tests (`test_server.py`: HTTP statuses for every refusal,
+  the limit on new games per client and behind a proxy, a server fault
+  answered with `retry` without the token in the log, the live connection's
+  pushes (only new chat, no echo of the app's own move), a closed game
+  reported once, connections closed with 1012 after a code update, one store
+  until the code changes, a page joining a game made through the API, and
+  `streamlit run abaka_server.py` serving the page and the API). 18 API tests (`test_api.py`: complete games for 2 and 5
   players online and on one device through the API only, every preview
   matched by the move it describes; what a seat and an outsider see, tokens
   never in a state, outdated and out-of-turn moves, a seat taken back, picks,
@@ -1404,6 +1531,95 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-20: the website kept working while the apps are built (Claude Code, PR #59)**
+
+- The owner asked to make sure the website will not break while the apps are
+  built.
+- What could break it:
+  - a change to code the website shares with the apps (`abaka/`,
+    `server/stores.py`, `abaka_ui.py`);
+  - Streamlit 1.67 behaving differently from the local 1.48;
+  - later, moving the website to another host.
+- What protects it:
+  - **A check in a real browser, required for every merge.** AppTest runs the
+    script but not the page. A broken style or a missing element passes it
+    (the gold option in PR #56 did). So `tests/test_website.py` drives the
+    website's main flows in headless Chromium, in the CI job branch
+    protection already requires, without renaming it.
+    `ABAKA_REQUIRE_BROWSER` turns a missing browser into a failure: a skipped
+    check would protect nothing while looking green.
+  - **One check for CI and for the live app.** `tools/website_check.py` runs
+    in both, so after a merge the same steps run where players are, at a
+    desktop and a phone width.
+  - **Proven by breaking things on purpose** (a scratch copy, not the repo).
+    A check that cannot fail protects nothing.
+  - **A revert first, then the fix,** if the live app breaks: a revert goes
+    through CI like any change, and players get the working version back
+    within minutes.
+  - **For the move to a new host (stage B),** the new host runs next to
+    Cloud on its own Neon branch until the owner switches. Two servers
+    writing the same games would lose moves.
+- The check plays with its own games ("Test Ann", "Test Bob"). `--cleanup`
+  marks only those deleted, and only in the database given in
+  `ABAKA_DATABASE_URL`.
+- Playwright is pinned in `requirements-dev.txt`, apart from
+  `requirements.txt`. Streamlit Cloud installs only the latter, and a change
+  there restarts the live app.
+- The guard is in the same pull request as step A2, so the first app change
+  that touches the website's code passes it before it merges.
+
+**2026-11-20: the API over the network (Claude Code, PR #59)**
+
+- The owner said "Go ahead" for step A2 of item 25.
+- One process serves the pages and the API (`abaka_server.py`, Streamlit
+  1.67's `st.App` with two routes). Separate servers would each hold games in
+  memory and would need to tell each other about every move (Stage 3 work).
+  In one process they share the `RoomStore` as they are.
+- The live app is not switched. Cloud keeps running `abaka_ui.py`, with its
+  `st.cache_resource` registry unchanged; only the code that makes the stores
+  moved, to `server/stores.py`. The reasons:
+  - The registry's key is its function's module and source. Moving it would
+    make a second registry at the next update. Old pages would keep the old
+    store while new pages used a new one, the failure of 2026-11-16.
+  - Cloud cannot serve an app anyway (item 25, stage B).
+- Under `abaka_server.py` the registry is a module made at run time, not an
+  `st.cache_resource`:
+  - the API's routes run outside any script run, where Streamlit warns about
+    a missing ScriptRunContext;
+  - uvicorn imports the entry file as a module, so a cached function there
+    would be keyed apart from the pages' copy;
+  - a module without a file is never unloaded by Streamlit's watcher or by
+    `code_version`.
+- One endpoint for every operation (`POST /api/v1`), rather than a URL per
+  operation: the messages are the API's own, and the same ones travel over
+  the WebSocket.
+- HTTP statuses still follow the codes (404, 409, 422, 429...), so proxies,
+  logs and HTTP clients read them correctly.
+- Pushes, rather than apps polling `seen`:
+  - A phone keeps one connection open instead of asking every second.
+  - The server checks `seen` for each watched game four times a second. That
+    costs about a microsecond in the store, plus a hop to a worker thread.
+  - The store has no change notifications yet. They would replace the check,
+    with no change for apps.
+- Store calls run in worker threads. In ASGI mode Streamlit serves the pages
+  on the same event loop, and a store call can wait for the database (Neon
+  waking up takes seconds).
+- The routes are made once, at start, so after a code update applied in place
+  they would run old code against new stores. Each request therefore loads
+  the current code (`code_version`) and imports `server/http.py` again. Live
+  connections from older code close with 1012, so apps reconnect to the new
+  code. A deploy on a host of our own restarts the process anyway.
+- `abaka_ui.py` reloads `code_version` if the loaded one does not list
+  `server/`. That module is never reloaded itself. After an update pulled while
+  no page was open, it would not notice later changes to `server/stores.py`,
+  which the live app now uses.
+- The limit on new games is per client address (10 in 10 minutes, as per
+  browser on the web). A proxy hides addresses, so
+  `ABAKA_CLIENT_ADDRESS_HEADER` names the header to trust; it is only set on a
+  host whose proxy writes that header.
+- Not done yet: cross-origin requests (CORS; apps do not need them), and
+  limits on connections per client.
 
 **2026-11-20: preparing for apps on Android and iOS (Claude Code, PR #58)**
 

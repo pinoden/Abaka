@@ -78,10 +78,13 @@ class ApiError(Exception):
         return {"error": self.code, "message": self.message}
 
 
-def handle(request: Any, store: RoomStore, clubs: Optional[ClubStore] = None) -> dict:
+def handle(request: Any, store: RoomStore, clubs: Optional[ClubStore] = None,
+           may_create: Optional[Callable[[], bool]] = None) -> dict:
     """
     Answer one request (JSON data) with JSON data, or raise ApiError. `clubs` is the
-    server's ClubStore (without it, the club operations find no club).
+    server's ClubStore (without it, the club operations find no club). `may_create`, if
+    given, is asked before a new game or club is made: False refuses it as too_fast (the
+    server limits how many one client may start, as the web does per browser).
     """
     if not isinstance(request, dict):
         raise ApiError("bad_request", "A request is a JSON object.")
@@ -94,6 +97,8 @@ def handle(request: Any, store: RoomStore, clubs: Optional[ClubStore] = None) ->
         run = _OPS.get(op) if isinstance(op, str) else None
         if run is None:
             raise ApiError("bad_request", "Unknown operation: %r." % (op,))
+        if op in CREATING and may_create is not None and not may_create():
+            raise ApiError("too_fast", t("You started a lot of games just now. Please wait a few minutes."))
         try:
             return run(_Request(request), store, clubs)
         except ApiError:
@@ -106,6 +111,12 @@ def handle(request: Any, store: RoomStore, clubs: Optional[ClubStore] = None) ->
             raise ApiError(_ROOM_ERRORS.get(str(e), "refused"), error(str(e))) from None
         except (ValueError, RuntimeError, IndexError) as e:  # the engine's rules, and ClubError
             raise ApiError("refused", error(str(e))) from None
+
+
+def failure(request: Any) -> ApiError:
+    """What to answer when the server itself failed on a request (a bug): retry, in its language."""
+    with _language(request.get("lang") if isinstance(request, dict) else None):
+        return ApiError("retry", t("Something went wrong on the server. Please try again."))
 
 
 @contextmanager
@@ -327,6 +338,7 @@ _OPS: Dict[str, Callable[[_Request, RoomStore, Optional[ClubStore]], dict]] = {
     "create_club": _create_club,
 }
 OPERATIONS = tuple(_OPS)
+CREATING = ("create", "create_local", "create_club")  # what may_create limits
 
 
 # --------------------------------------------------------------------- state ----
@@ -513,4 +525,4 @@ def _plain(value: Any) -> Any:
     return value
 
 
-__all__ = ["ApiError", "ERRORS", "OPERATIONS", "PROTOCOL", "handle"]
+__all__ = ["ApiError", "CREATING", "ERRORS", "OPERATIONS", "PROTOCOL", "failure", "handle"]

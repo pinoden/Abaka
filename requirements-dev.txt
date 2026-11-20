@@ -1,0 +1,4 @@
+# For development and CI only. Streamlit Cloud installs requirements.txt alone.
+# The website in a real browser: tools/website_check.py and tests/test_website.py.
+# Then: python -m playwright install chromium-headless-shell
+playwright==1.65.2

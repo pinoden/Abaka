@@ -27,7 +27,7 @@ import threading
 import time
 
 APP_DIR = pathlib.Path(__file__).resolve().parent
-PACKAGES = ("abaka", "ui_components")
+PACKAGES = ("abaka", "ui_components", "server")  # the first holds the fingerprint (load_current)
 REHASH_EVERY_SECONDS = 60  # hash the files at least this often, even if sizes and times look the same
 CHECK_EVERY_SECONDS = 2.0  # look at sizes and times at most this often
 _lock = threading.Lock()

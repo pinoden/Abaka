@@ -18,9 +18,9 @@ is Backlog item 25 in `ProjectLibrary.md`.
 - **Messages are JSON.** A request is an object naming its operation (`op`); the
   answer is an object, or an error. In Python:
   `api.handle(request, store, clubs) -> response`, raising `ApiError`.
-- **Transport (next step).** The HTTP and WebSocket server that carries these
-  messages is the next stage of the plan. This document will then add its URLs. The
-  messages stay as they are.
+- **Over the network:** `POST /api/v1` for one request at a time, and a live
+  WebSocket that also pushes a game's state whenever it changes (see "Over the
+  network" below).
 
 ## Requests
 
@@ -296,6 +296,69 @@ what the app should do:
 | `too_fast` | Too many reactions or messages: show the message. |
 | `retry` | The server is busy or was just updated: try again in a moment. |
 | `refused` | The rules or the game refused it (not your turn, the game is full, a row that cannot be written): show the message. |
+
+## Over the network
+
+`streamlit run abaka_server.py` (Streamlit 1.67 or newer) serves the web app and
+the API from one process, so web and app players share the games. The code is
+`server/http.py`. Streamlit Community Cloud runs the web app alone, so the live
+app does not offer the API until the server moves to a host of its own (Backlog
+item 25, stage B).
+
+| Route | What it does |
+|---|---|
+| `POST /api/v1` | One request: its JSON in the body, the answer as JSON. |
+| `WS /api/v1/live` | Requests and answers as messages, and the state of a watched game pushed whenever it changes. |
+
+### HTTP
+
+- **Answer:** `200` with the answer.
+- **Refusal:** an error status with `{"error", "message"}`:
+
+  | Code | Status |
+  |---|---|
+  | `bad_request` | 400 (413 for a body larger than 16 KB) |
+  | `protocol` | 400 |
+  | `not_seated` | 403 |
+  | `not_found` | 404 |
+  | `outdated` | 409 |
+  | `refused` | 422 |
+  | `too_fast` | 429 |
+  | `retry` | 503, or 500 when the server itself failed |
+- **Limit on new games:** one client address may start at most 10 games and
+  clubs (`create`, `create_local`, `create_club`) in 10 minutes, as one browser
+  may on the web. Beyond that: `too_fast`.
+- **Behind a proxy**, set `ABAKA_CLIENT_ADDRESS_HEADER` to the header that carries
+  the client's address (for example `Fly-Client-IP`). Otherwise every client counts
+  as the proxy.
+
+### The live connection
+
+Open `ws://<host>/api/v1/live` (`wss://` with TLS) and send requests as text
+messages: any operation above, with an optional `id` that comes back with its
+answer. One more request exists only here:
+
+| Request | What it does |
+|---|---|
+| `{"op": "watch", "code", "token", "lang", "since"}` | Answers like `state`, and from then on pushes the game's state whenever it changes. A connection watches one game; `watch` another to switch. |
+
+The server sends:
+
+| Message | When |
+|---|---|
+| `{"type": "reply", "id", "response"}` | The answer to a request. |
+| `{"type": "error", "id", "error", "message"}` | A refused request (`id` is null for a message that was not JSON). |
+| `{"type": "state", "state"}` | The watched game changed. A push lists only events and chat messages the connection has not sent before. |
+
+- The server looks for changes four times a second, so a push follows a change
+  within about a quarter of a second.
+- A move the app makes over the connection comes back as its reply and is not
+  pushed again.
+- If the watched game is closed, the server sends one `not_found` error and stops
+  watching.
+- When the server's code is updated while it runs, it closes the connection with
+  code 1012 (service restart). Reconnect and `watch` again; a deploy that restarts
+  the server closes it too.
 
 ## Versions
 

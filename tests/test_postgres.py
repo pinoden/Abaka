@@ -314,7 +314,7 @@ class TestWhereGamesAreSaved(unittest.TestCase):
 
     def test_the_database_secret_may_use_neons_name(self):
         try:
-            import abaka_ui
+            from server import stores  # where the app reads it (the pages and the API alike)
         except ImportError:  # no Streamlit
             self.skipTest("Streamlit is not installed")
         from unittest import mock
@@ -323,16 +323,16 @@ class TestWhereGamesAreSaved(unittest.TestCase):
             for secrets_, expected in (({"DATABASE_URL": " postgresql://neon "}, "postgresql://neon"),
                                        ({"ABAKA_DATABASE_URL": "postgresql://a", "DATABASE_URL": "x"}, "postgresql://a"),
                                        ({}, None)):
-                with mock.patch.object(abaka_ui.st, "secrets", secrets_):
-                    self.assertEqual(abaka_ui._database_url(), expected)
+                with mock.patch.object(stores.st, "secrets", secrets_):
+                    self.assertEqual(stores.database_url(), expected)
             os.environ["ABAKA_DATABASE_URL"] = ""  # set but empty: no database, whatever the secrets say
-            with mock.patch.object(abaka_ui.st, "secrets", {"DATABASE_URL": "postgresql://neon"}):
-                self.assertIsNone(abaka_ui._database_url())
+            with mock.patch.object(stores.st, "secrets", {"DATABASE_URL": "postgresql://neon"}):
+                self.assertIsNone(stores.database_url())
         os.environ.pop("ABAKA_DATABASE_URL", None)
         os.environ["DATABASE_URL"] = "postgresql://production"  # Neon's .env.local name: never used
         try:
-            with mock.patch.object(abaka_ui.st, "secrets", {}):
-                self.assertIsNone(abaka_ui._database_url())
+            with mock.patch.object(stores.st, "secrets", {}):
+                self.assertIsNone(stores.database_url())
         finally:
             del os.environ["DATABASE_URL"]
 
