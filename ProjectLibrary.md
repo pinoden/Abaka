@@ -140,7 +140,8 @@ Python + Streamlit.
 `abaka/` is the game without its web page: the rules, the rooms, the clubs,
 saving, the move previews, the texts and the API. Everything in it runs on
 Python 3.8 without Streamlit. `abaka_ui.py` and `ui_components/` are the web
-app, one client of it; the apps for phones will be another (Backlog item 25).
+app, one client of it; the apps for phones will be another, in `mobile/`
+(Backlog item 25).
 Code that both need goes in `abaka/`. `server/` is the server around the game:
 where its stores save, and the API over the network.
 
@@ -591,7 +592,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, and where the app's code lives in PR #60. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1009,7 +1010,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Nothing is highlighted when crossing out.
 
 25. **Apps for Android and iOS.** In progress: stage A is done (PR #58 and
-    PR #59). Stages B to D wait for the owner's decisions below.
+    PR #59), and the app's code will live in `mobile/` in this repository
+    (PR #60). Stages B to D wait for the owner's decisions below.
     > "Let's start preparing the code base to expand on android/ios"
     >
     > "Go ahead" (step A2)
@@ -1031,6 +1033,44 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - A native client is the safer path to the App Store than the web page in
       a wrapper: Apple asks apps to do more than repackage a website (App
       Review Guideline 4.2).
+
+    **Where the app's code lives (the owner agreed, 2026-11-20)**
+
+    > "Do we need separate (GitHub) projects for an app folder and a website
+    > app?" … "Add to the app plan"
+
+    - In this repository, in `mobile/`, next to the website and the server,
+      not in a GitHub project of its own. The reasons are in the Decision log
+      (2026-11-20, the phone app in this repository).
+      - The folder is made with the app (C2). Its name does not depend on the
+        technology (C1).
+      - Not `app/`: in this file "the app" usually means the website.
+    - `mobile/` holds everything the app needs to build, with its own
+      `package.json` and lock file. The root `package.json` stays Neon's
+      config, and `.gitignore` already ignores `mobile/node_modules/`.
+    - The website never runs it:
+      - Streamlit Cloud runs `abaka_ui.py` and installs only
+        `requirements.txt`, so a merge that changes only `mobile/` changes
+        nothing the website runs. It still gets the website check after the
+        merge, like every merge.
+      - A server image for the host of stage B leaves `mobile/` out.
+    - CI:
+      - the two required jobs keep running on every pull request, the app's
+        included, so no app change merges with the website broken;
+      - the app gets a job of its own (its checks and tests, and its API
+        client against a real `abaka_server.py`), required like the other two;
+      - no `paths` filters on required jobs: GitHub blocks a merge while a
+        required job has not reported, and a workflow a filter skips never
+        reports.
+    - The app's own texts come from `abaka/i18n.py` (C2). A script exports
+      them into `mobile/`, the export is committed, and CI fails when it is
+      out of date, so building the app needs no Python.
+    - When the folder is made, `mobile/AGENTS.md` gets the app's commands and
+      conventions, and AGENTS.md points to it, so both agents read it.
+    - One repository, separate releases. The website changes on every merge;
+      the app only when the owner publishes it, and old versions stay on some
+      phones for months. So the server keeps answering every app version in
+      use: protocol 1 never changes (`docs/API.md`, Versions).
 
     **Stage A: the game as an API (no new services or accounts)**
 
@@ -1082,7 +1122,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         room, the game (dice, moves, scoreboard, reactions, chat), results;
       - English and Russian. The game's texts come from the server (`info`,
         move labels, errors). The app's own texts reuse `abaka/i18n.py`,
-        exported when the app is built.
+        exported into `mobile/` (see "Where the app's code lives").
     - [ ] C3. Links: a game's link opens the app when it is installed
       (universal links and app links, served from the domain).
 
@@ -1116,6 +1156,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - How seats are protected (also in item 11).
 
 ## Status (2026-11-20)
+
+- **Where the phone app's code lives (owner: "Add to the app plan", Backlog
+  item 25):** PR #60. In this repository, in `mobile/`, made with the app
+  (C2). The plan lists the folder's rules:
+  - its own `package.json`;
+  - the CI jobs running on every pull request, plus a required job for the
+    app;
+  - the texts exported from `abaka/i18n.py` and checked;
+  - a guide for agents in the folder.
+  No code changed.
 
 - **The website keeps working while the apps are built (owner, Backlog
   item 25):** PR #59.
@@ -1531,6 +1581,37 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-20: the phone app in this repository (Claude Code, PR #60)**
+
+- The owner asked whether the app and the website need separate GitHub
+  projects, and agreed to one repository ("Add to the app plan").
+- Why one:
+  - The app is a thin client of this server, so most features change both
+    sides: a field in the API and the screen that shows it. One pull request
+    carries both, and CI tests them together before either merges. With two
+    repositories, a break between them would show only after both merged.
+  - The app reuses the texts in `abaka/i18n.py`, with no copies kept in step
+    by hand.
+  - Both agents keep one AGENTS.md, one log, one set of required checks and
+    `tools/pr.py`, and see each other's pull requests. A second repository
+    would double these and split the log.
+  - The website and the server cannot be split anyway: they are one program
+    and share the games in memory.
+- It costs the website nothing:
+  - Streamlit Cloud ignores the folder, as it ignores the Neon files at the
+    root;
+  - every pull request, the app's included, passes the website checks before
+    it merges.
+- `mobile/`, not `app/`: "the app" in this file usually means the website,
+  and `abaka_server.py` already has an `app`.
+- The export of the texts is committed, not made at build time:
+  - an app build (in Expo's cloud, if C1 picks Expo) needs no Python;
+  - CI sees when the export is out of date.
+- Split it only if someone should see the app alone (an outside developer,
+  for example) or the repository becomes unwieldy.
+  `git subtree split --prefix=mobile` moves the folder out with its history,
+  so starting together closes nothing.
 
 **2026-11-20: the website kept working while the apps are built (Claude Code, PR #59)**
 
