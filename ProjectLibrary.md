@@ -1059,6 +1059,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     points it got.
   - All tests also pass on Python 3.13 with Streamlit 1.67 on this machine,
     as on Cloud (a scratch install; see Notes for this machine).
+  - Load-test row: no slowdown (25% CPU, 6.9 ms median poll; `main` just
+    before it: 26%, 8.0 ms). A first run was flagged while Spotlight indexed
+    the machine; it was not kept.
   - Next: A2, the server that carries the API, and the owner's decisions in
     item 25.
 
