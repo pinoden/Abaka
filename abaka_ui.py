@@ -12,21 +12,21 @@ browsers send moves to it and poll it, so both players see every roll and score
 as it happens.
 """
 
-import logging
-import os
+import importlib
 import socket
 import sys
-import tempfile
 import threading
 import time
 from html import escape
-from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlsplit
 
 import streamlit as st
 
 import code_version
+
+if "server" not in code_version.PACKAGES:  # a code_version loaded before server/ existed (an update
+    code_version = importlib.reload(code_version)  # pulled while no page was open): it would not reload server/
 
 # Before importing the game's modules: make sure they match the files on disk (a
 # commit pulled while nobody had the app open would otherwise leave old ones loaded).
@@ -35,7 +35,6 @@ code_version.load_current()
 from abaka.rooms import (  # noqa: E402
     MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, normalize_code, within_limit)
 from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
-from abaka.repository import FileRepository, MirroredRepository, PostgresRepository  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.chat import render_chat  # noqa: E402
 from ui_components.effects import render_events, render_reaction_bar  # noqa: E402
@@ -44,6 +43,7 @@ from ui_components.main_ui import (  # noqa: E402
     initialize_session_state, render_game, render_language_switch, render_top_bar, reset_turn_selection)
 from ui_components.rules import rules_md  # noqa: E402
 from ui_components.style import brand_html, chip, inject_global_css  # noqa: E402
+from server import stores  # noqa: E402
 
 # How often a page checks its room for changes (other players' moves):
 POLL_FAST = 1.0    # someone else is acting, or players are joining
@@ -55,78 +55,8 @@ MY_GAMES_KEPT = 10   # games a browser remembers for "Continue a game"...
 MY_GAMES_SHOWN = 4   # ...and how many unfinished ones it shows
 MY_CLUBS_KEPT = 6    # clubs a browser remembers for the home page
 CLUB_GAMES_SHOWN = 10  # recent games on a club's page
-STATS_EVERY_SECONDS = 60  # the store logs a stats line this often while pages are open
 
-
-def _log_to_stderr() -> None:
-    """Send the game's log ("abaka": stats line, failed saves) to stderr, which Streamlit
-    Cloud shows under Manage app. Once per process: this script runs on every rerun."""
-    logger = logging.getLogger("abaka")
-    if logger.handlers:
-        return
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-
-
-_log_to_stderr()
-
-
-def _save_dir() -> Optional[Path]:
-    """
-    Where games are saved: $ABAKA_SAVE_DIR if set (empty: do not save), else
-    ~/.abaka/games, or a temporary folder if the home folder is not writable.
-    """
-    configured = os.environ.get("ABAKA_SAVE_DIR")
-    if configured is not None:
-        return Path(configured) if configured.strip() else None
-    for folder in (Path.home() / ".abaka" / "games", Path(tempfile.gettempdir()) / "abaka-games"):
-        try:
-            folder.mkdir(parents=True, exist_ok=True)
-            return folder
-        except OSError:
-            continue
-    return None
-
-
-def _database_url() -> Optional[str]:
-    """
-    The Postgres URL (Neon on the live app): $ABAKA_DATABASE_URL if set (empty: no
-    database), else the ABAKA_DATABASE_URL or DATABASE_URL secret (Streamlit Cloud: the
-    app's Settings, then Secrets; DATABASE_URL is the name Neon gives it). None: games are
-    saved in files only.
-
-    A DATABASE_URL environment variable is not used: it names the production database in
-    Neon's .env.local, and tests and local runs must never reach it unless asked to.
-    """
-    url = os.environ.get("ABAKA_DATABASE_URL")
-    if url is None:
-        try:
-            url = st.secrets.get("ABAKA_DATABASE_URL") or st.secrets.get("DATABASE_URL")
-        except Exception:  # noqa: BLE001 - no secrets file at all
-            url = None
-    url = str(url or "").strip()
-    return url or None
-
-
-def _repository(table: str = "abaka_rooms", subfolder: Optional[str] = None):
-    """
-    Where a store keeps its data: the database (with a copy in files) if there is one,
-    else files. Games use the table abaka_rooms and the save folder; clubs use
-    abaka_clubs and its clubs/ subfolder.
-    """
-    folder = _save_dir()
-    if folder is not None and subfolder:
-        folder = folder / subfolder
-    files = FileRepository(folder) if folder is not None else None
-    url = _database_url()
-    if url is None:
-        return files
-    database = PostgresRepository(url, table=table)
-    # The database is written in the background: a move waits for the file, not the network.
-    return MirroredRepository(database, files, background=True) if files is not None else database
+stores.log_to_stderr()  # the game's log to stderr (Streamlit Cloud: Manage app); where games are saved: server/stores.py
 
 
 @st.cache_resource
@@ -153,36 +83,32 @@ def get_store() -> RoomStore:
     freed; writes under way finish) and a new one loads the saved games from disk.
     Pages still running the old code get the new store too, so nobody keeps polling
     a store that no longer changes, and old stores never pile up in memory.
+
+    A server started from abaka_server.py also serves the API for apps; its pages
+    then share the API's stores (server/stores.py, the same rules).
     """
+    if stores.serving_api():
+        return stores.get_store()
     registry = _store_registry()
     with registry["lock"]:
         store = registry["store"]
         if store is None or (type(store) is not RoomStore and _running_current_code()):
             if store is not None:
                 store.retire()
-            # The clubs' tables, made with the store so the store reports finished club games to them.
-            club_repository = _repository("abaka_clubs", "clubs")
-            clubs = registry["clubs"] = ClubStore(repository=club_repository)
-            repository = _repository()
-            store = registry["store"] = RoomStore(repository=repository, report_every=STATS_EVERY_SECONDS,
-                                                  on_game_over=clubs.record)
-            where = (repository.describe() if hasattr(repository, "describe")
-                     else getattr(repository, "folder", None) or "memory only")
-            logging.getLogger("abaka").info("store started; games are saved in %s", where)
-            for saved in (repository, club_repository):
-                if isinstance(saved, MirroredRepository):
-                    # Saved in files before the database (or while it was unreachable).
-                    threading.Thread(target=saved.import_files, name="abaka-import", daemon=True).start()
+            store, registry["clubs"] = stores.make_stores()  # the clubs come with the store
+            registry["store"] = store
         return store
 
 
 def get_clubs() -> ClubStore:
     """The ClubStore made together with the current RoomStore (see get_store)."""
+    if stores.serving_api():
+        return stores.get_clubs()
     get_store()
     registry = _store_registry()
     with registry["lock"]:
         if registry.get("clubs") is None:  # a store made by code from before clubs
-            registry["clubs"] = ClubStore(repository=_repository("abaka_clubs", "clubs"))
+            registry["clubs"] = ClubStore(repository=stores.repository("abaka_clubs", "clubs"))
         return registry["clubs"]
 
 

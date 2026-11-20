@@ -35,6 +35,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 streamlit run abaka_ui.py   # the app, on port 8501, reachable from your local network
+streamlit run abaka_server.py   # the app and the API for apps (docs/API.md) on one port
 python -m abaka             # the same game in the terminal (python main.py does the same)
 ```
 
@@ -56,7 +57,10 @@ abaka/                 the game itself, no Streamlit
   api.py               the game as JSON, for apps (Android, iOS): docs/API.md
   cli.py, render.py    the terminal version
 ui_components/         the Streamlit interface (see ui_components/README.md)
+server/                the server around the game: where its stores save (stores.py),
+                       the API over HTTP and a live WebSocket (http.py)
 abaka_ui.py            the app: home, invite and waiting screens, online updates
+abaka_server.py        the app and the API for apps in one process (Streamlit 1.67+)
 code_version.py        reloads the game modules when their files change (app updates)
 .streamlit/            server settings and colour theme
 tests/                 unittest tests

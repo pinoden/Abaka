@@ -416,4 +416,5 @@ RU = {
     # The API for apps (abaka/api.py)
     "This app and the server do not match. Update the app, or try again later.":
         "Версии приложения и сервера не совпадают. Обновите приложение или попробуйте позже.",
+    "Something went wrong on the server. Please try again.": "На сервере что-то пошло не так. Попробуйте ещё раз.",
 }
