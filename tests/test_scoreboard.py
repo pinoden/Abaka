@@ -7,7 +7,7 @@ import unittest
 
 from abaka.engine import GameEngine
 from abaka.models import Category, Die
-from ui_components.moves import cross_options, score_options
+from abaka.moves import cross_options, score_options
 
 try:
     from ui_components.scoreboard import build_scoreboard_html

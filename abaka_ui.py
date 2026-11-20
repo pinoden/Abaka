@@ -39,7 +39,7 @@ from abaka.repository import FileRepository, MirroredRepository, PostgresReposit
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.chat import render_chat  # noqa: E402
 from ui_components.effects import render_events, render_reaction_bar  # noqa: E402
-from ui_components.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
+from abaka.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
     initialize_session_state, render_game, render_language_switch, render_top_bar, reset_turn_selection)
 from ui_components.rules import rules_md  # noqa: E402

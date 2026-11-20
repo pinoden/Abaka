@@ -25,7 +25,7 @@ class TestTwoPairsFromFourOfAKind(unittest.TestCase):
         self.assertEqual(score_category(dice(6, 6, 6, 2, joker=1), Category.TWO_PAIRS), 24)
 
     def test_the_move_is_offered(self):
-        from ui_components.moves import score_options
+        from abaka.moves import score_options
         g = GameEngine(["Denis", "Andrey"])
         g.start_turn()
         g.dice = dice(6, 6, 6, 1, joker=6)

@@ -14,8 +14,8 @@ import streamlit as st
 
 from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.engine import GameEngine
-from ui_components.i18n import t
-from ui_components.moves import Move, is_school, row_hint, row_name, school_number
+from abaka.i18n import t
+from abaka.moves import Move, is_school, row_hint, row_name, school_number
 from ui_components.style import die_uri
 
 CROSS = "✕"

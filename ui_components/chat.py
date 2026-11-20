@@ -14,7 +14,7 @@ from typing import Callable, List
 import streamlit as st
 
 from abaka.rooms import MAX_MESSAGE_LENGTH
-from ui_components.i18n import error, md, t
+from abaka.i18n import error, md, t
 
 _TEXT_KEY = "chat-text"
 _NOTE_KEY = "chat_note"

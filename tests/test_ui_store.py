@@ -115,7 +115,7 @@ class TestRenderingLeavesTheGameAlone(unittest.TestCase):
             elif not engine.dice:
                 store.roll(code, key)
             else:
-                from ui_components.moves import cross_options, score_options
+                from abaka.moves import cross_options, score_options
                 move = (score_options(engine) or cross_options(engine))[0]
                 (store.cross if move.cross else store.score)(code, key, move.category, move.slot)
         self.assertEqual(phases, 12)

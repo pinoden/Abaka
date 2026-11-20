@@ -11,7 +11,7 @@ from typing import List, Optional
 from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.engine import GameEngine
 from abaka.models import SCHOOL_NUMBERS, Category
-from ui_components.i18n import t
+from .i18n import t
 
 ROW_ORDER = SCHOOL_CATS + COMBO_CATS
 

@@ -11,16 +11,18 @@ from pathlib import Path
 
 from abaka.models import Category
 from abaka.rooms import RoomStore
-from ui_components import i18n
-from ui_components.i18n import RU, error, players_count, reroll_dice, rerolls_left, set_language, t
-from ui_components.moves import ROW_HINTS, _COMBO_NAMES, Move, row_hint, row_name
+from abaka import i18n
+from abaka.i18n import RU, error, players_count, reroll_dice, rerolls_left, set_language, t
+from abaka.moves import ROW_HINTS, _COMBO_NAMES, Move, row_hint, row_name
 
 ROOT = Path(__file__).resolve().parent.parent
-UI_FILES = [ROOT / "abaka_ui.py"] + sorted((ROOT / "ui_components").glob("*.py"))
+# The web app, and the game package (move texts, and the API that gives them to apps).
+UI_FILES = ([ROOT / "abaka_ui.py"] + sorted((ROOT / "ui_components").glob("*.py"))
+            + sorted((ROOT / "abaka").glob("*.py")))
 
 
 def texts_passed_to_t():
-    """Every string literal passed as the first argument of t(...) in the UI code."""
+    """Every string literal passed as the first argument of t(...) in the code players see."""
     found = {}
     for path in UI_FILES:
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):

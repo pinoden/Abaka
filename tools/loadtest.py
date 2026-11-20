@@ -72,7 +72,7 @@ def make_games(save_dir: str, rooms: int, seed: int = 1) -> list:
 
 
 def _any_cell(store, code):
-    from ui_components.moves import cross_options, score_options
+    from abaka.moves import cross_options, score_options
     g = store.view(code).engine
     move = (score_options(g) or cross_options(g))[0]
     return move.category, move.slot

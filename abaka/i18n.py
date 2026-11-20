@@ -1,13 +1,14 @@
 """
-Interface text in English and Russian.
+Every text players see, in English and Russian: the web app's and the API's.
 
 Texts are written in English in the code and wrapped in t("..."), which returns
 the Russian version when the page is in Russian. tests/test_i18n.py checks that
 every t("...") text in the code has a Russian version here.
 
-The language is set once at the start of every script run (abaka_ui.main), per
-thread, because Streamlit runs each browser session's script in its own thread.
-No Streamlit here, so moves.py and the tests can use it.
+The language is set per thread: by the web app at the start of every script run
+(abaka_ui.main), because Streamlit runs each browser session's script in its own
+thread, and by the API for each request (api.handle). No Streamlit here, so
+moves.py, the API and the tests can use it.
 """
 
 import re
@@ -412,4 +413,7 @@ RU = {
     "Best": "Лучший",
     "Everyone starts at 1000. Beating a stronger player earns more.": "Все начинают с 1000. Победа над сильным игроком даёт больше.",
     "Latest games": "Последние игры",
+    # The API for apps (abaka/api.py)
+    "This app and the server do not match. Update the app, or try again later.":
+        "Версии приложения и сервера не совпадают. Обновите приложение или попробуйте позже.",
 }

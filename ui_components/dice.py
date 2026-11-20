@@ -12,7 +12,7 @@ import streamlit as st
 
 from abaka.engine import GameEngine
 from ui_components.actions import reroll_all, reroll_picked
-from ui_components.i18n import reroll_dice, rerolls_left, t
+from abaka.i18n import reroll_dice, rerolls_left, t
 from ui_components.style import ACCENT, die_uri
 
 MAX_ROLLS = 3

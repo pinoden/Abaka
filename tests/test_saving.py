@@ -14,7 +14,7 @@ from abaka.engine import GameEngine
 from abaka.models import Category
 from abaka.rooms import ROOM_TTL_SECONDS, RoomEngine, RoomError, RoomStore
 from abaka.saving import engine_from_data, engine_to_data, engines_equal
-from ui_components.moves import cross_options, score_options
+from abaka.moves import cross_options, score_options
 
 
 def play_some(engine, rng, turns):

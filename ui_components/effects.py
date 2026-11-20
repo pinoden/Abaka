@@ -27,8 +27,8 @@ import streamlit as st
 
 from abaka.models import Category
 from abaka.rooms import FIREWORKS, GRAND_FIREWORKS, SPARKLES, TooFast
-from ui_components.i18n import t
-from ui_components.moves import row_name
+from abaka.i18n import t
+from abaka.moves import row_name
 
 # Reaction key (abaka.rooms.REACTIONS) -> emoji and label. Labels go through t() when shown.
 REACTIONS = {

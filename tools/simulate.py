@@ -5,7 +5,7 @@ Random complete games, played the way the UI plays them, with rule checks after 
   python tools/simulate.py 200 40            # about 2-3 minutes
   python tools/simulate.py 20 5 --board      # quick, also builds the scoreboard (needs Streamlit)
 
-Games are played through the same move lists the UI offers (ui_components/moves.py),
+Games are played through the same move lists the UI offers (abaka/moves.py),
 directly on GameEngine and through RoomStore/RoomEngine, plus several rooms played at
 once from many threads while other threads keep trying moves out of turn. After every
 move it checks the written cell, the last move, the turn order, the school balance, the
@@ -26,7 +26,7 @@ from abaka.constants import COMBO_CATS, SCHOOL_CATS  # noqa: E402
 from abaka.engine import GameEngine  # noqa: E402
 from abaka.models import Category  # noqa: E402
 from abaka.rooms import RoomEngine, RoomError, RoomStore  # noqa: E402
-from ui_components.moves import cross_options, is_school, school_number, score_options  # noqa: E402
+from abaka.moves import cross_options, is_school, school_number, score_options  # noqa: E402
 
 BOARD = "--board" in sys.argv
 if BOARD:
