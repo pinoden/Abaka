@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from ui_components.i18n import get_language, t
+from abaka.i18n import get_language, t
 
 RULES_MD = """
 **Players.** 2 to 5, taking turns in order.

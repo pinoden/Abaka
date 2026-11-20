@@ -12,8 +12,8 @@ import streamlit as st
 
 from abaka.engine import GameEngine
 from ui_components.actions import run_action
-from ui_components.i18n import t
-from ui_components.moves import Move, cross_options, most_points, score_options
+from abaka.i18n import t
+from abaka.moves import Move, cross_options, most_points, score_options
 
 SCORE, CROSS = "Score", "Cross out"  # values of the switch (and in widget keys); shown through t()
 

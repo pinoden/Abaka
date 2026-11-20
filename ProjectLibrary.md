@@ -42,6 +42,16 @@ python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR
   `~/opt/anaconda3/envs/Python39/bin/python -m streamlit run abaka_ui.py`.
   - That is older than the pinned 1.67, which needs Python 3.11+, and no
     newer Python is installed here.
+  - To run the tests on Python 3.13 with Streamlit 1.67, as CI and Cloud do,
+    make a throwaway one with uv, all in a scratch folder `$S`:
+    `python3 -m venv $S/uvenv`, `$S/uvenv/bin/pip install -U pip uv`, then
+    `UV_CACHE_DIR=$S/uvcache UV_PYTHON_INSTALL_DIR=$S/pythons
+    UV_PYTHON_BIN_DIR=$S/bin $S/uvenv/bin/uv python install 3.13`,
+    `uv venv -p 3.13 $S/venv313` and
+    `uv pip install -p $S/venv313/bin/python -r requirements.txt`.
+    Without `UV_PYTHON_BIN_DIR`, uv also links `python3.13` into
+    `~/.local/bin`. The base Python's own pip (20.1) cannot install uv;
+    upgrade it first.
 - Neon: the repository is linked to the owner's Neon project "Abaka"
   (`restless-haze-52228918`, branch `production`, us-east-1) with the Neon
   CLI (`neon init`, `neon deploy`). `neon.ts` declares Postgres only;
@@ -96,17 +106,24 @@ Python + Streamlit.
 | `abaka/clubs.py` | Clubs: `ClubStore` (a club's table, saved through a repository), the multiplayer Elo `rating_changes`, `member_key`. No Streamlit |
 | `abaka/saving.py` | `GameEngine` <-> plain JSON data (`engine_to_data`, `engine_from_data`) for saved games |
 | `abaka/repository.py` | Where rooms are kept between runs: the repository methods; `FileRepository` (one JSON file per room), `PostgresRepository` (one row per room; Neon on the live app) and `MirroredRepository` (both). No Streamlit |
+| `abaka/moves.py` | Possible moves with exact score previews (tries each on a copy of the engine), and the option with the most points. No Streamlit |
+| `abaka/i18n.py` | Every text players see, in English and Russian: `t("...")`, plurals, error messages, `md()`. No Streamlit |
+| `abaka/api.py` | The game as JSON for apps (Android, iOS) and any other client: `handle(request, store, clubs)`, protocol 1, described in `docs/API.md`. No Streamlit |
 | `abaka_ui.py` | Streamlit entry point and screens: home, invite, waiting room; online polling |
 | `code_version.py` | Called first on every run: reloads `abaka`/`ui_components` if their files changed since they were loaded |
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
-| `ui_components/moves.py` | Possible moves with exact score previews (tries each on a copy of the engine). No Streamlit |
 | `ui_components/actions.py` | `on_click` callbacks of the game buttons: make the move, keep a refusal to show once |
 | `ui_components/chat.py` | The chat card of an online game: messages (escaped), the box to write one, a toast for new ones |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
-| `ui_components/i18n.py` | Interface text in English and Russian: `t("...")`, plurals, error messages. No Streamlit |
 | `tests/` | `unittest` tests |
+
+`abaka/` is the game without its web page: the rules, the rooms, the clubs,
+saving, the move previews, the texts and the API. Everything in it runs on
+Python 3.8 without Streamlit. `abaka_ui.py` and `ui_components/` are the web
+app, one client of it; the apps for phones will be another (Backlog item 25).
+Code that both need goes in `abaka/`.
 
 ### Turn state lives in the engine
 
@@ -371,6 +388,37 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     `get_clubs()` returns the `ClubStore` made together with the current
     `RoomStore` in `get_store()`.
 
+### The API for apps (Backlog item 25)
+
+- `abaka/api.py` is the game for clients other than the web page, such as the
+  Android and iOS apps to come. `handle(request, store, clubs)` takes a
+  request as JSON data and returns JSON data, or raises `ApiError`, which
+  carries:
+  - a code that tells the app what to do (`outdated`: draw the new state;
+    `not_seated`: offer to rejoin; and so on);
+  - a message in the request's language.
+- `docs/API.md` is the protocol: every operation, the fields of a state, the
+  errors, and the rules for versions. `tests/test_api.py` checks that it names
+  every operation and error code.
+- It uses the same `RoomStore` and `ClubStore` as the web app, and every move
+  goes through the store's methods (turn check, lock, version). So web and app
+  players can share a game.
+- The server is the referee. A state lists:
+  - the moves of the player whose turn it is, with the previews from
+    `abaka/moves.py` (and `best` for the most points);
+  - what this player may do now (`can`).
+  Apps offer just that and never apply the rules themselves.
+- A state is drawn for one seat, the holder of the token. Tokens never appear
+  in a state. Without a seat, the state shows only what the invite page shows.
+- A move carries the `version` of the state it was chosen on. If the room has
+  changed since, it is refused as `outdated`, like the web's buttons.
+- Texts come in the request's `lang` (en/ru). The call sets it for its thread
+  and puts the thread's language back afterwards.
+- Protocol 1. Adding operations or fields keeps it. Changing what apps already
+  rely on makes it 2, because apps on phones update slowly.
+- Nothing carries it over the network yet: the HTTP and WebSocket server is
+  the next step (item 25, A2).
+
 ### UI conventions
 
 - `abaka_ui.main()` picks the screen: seated in a room -> the game (online or
@@ -457,7 +505,14 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 
 - Engine code must keep working on Python 3.8 (no `X | None` at runtime).
 - Every new text shown to players goes through `t("...")` and gets a Russian
-  version in `ui_components/i18n.py`; `tests/test_i18n.py` fails otherwise.
+  version in `abaka/i18n.py`; `tests/test_i18n.py` fails otherwise.
+- Code that is not about drawing the web page goes in `abaka/`, not in
+  `ui_components/`, so the apps' API can use it too (Backlog item 25).
+- A new thing players can do in the web app also gets an operation in
+  `abaka/api.py` and a section in `docs/API.md`, so apps can offer it. Never
+  change what an existing field or operation means in protocol 1: add a new
+  one instead (`docs/API.md`, Versions). Apps installed on phones cannot be
+  updated at once.
 - Player names reach other players' browsers. In raw HTML (`st.html`,
   `scoreboard.py`) names go through `html.escape`. In places Streamlit renders
   as Markdown (captions, toasts, button labels) they go through `i18n.md()`:
@@ -479,7 +534,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: its first step is in PR #58. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -896,7 +951,116 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - An option that earns a bonus shows it: "Sum · 11 · bonus +52".
     - Nothing is highlighted when crossing out.
 
-## Status (2026-11-19)
+25. **Apps for Android and iOS.** In progress: step A1 is in PR #58.
+    > "Let's start preparing the code base to expand on android/ios"
+    - The plan, one PR per step. Tick a step here when its PR is merged.
+    - The app is a thin client: the server keeps the game and the rules, and
+      the app shows what it is told and sends the player's moves. So the rules
+      stay in one place (the owner changes them often), and players on the web
+      and in the app can share a table.
+    - A native client is the safer path to the App Store than the web page in
+      a wrapper: Apple asks apps to do more than repackage a website (App
+      Review Guideline 4.2).
+
+    **Stage A: the game as an API (no new services or accounts)**
+
+    - [x] A1. The game as JSON for any client: `abaka/api.py`, protocol 1,
+      described in `docs/API.md` (see "The API for apps"). The move previews
+      and the texts moved into the game package (`abaka/moves.py`,
+      `abaka/i18n.py`), so everything that is not the web page is in
+      `abaka/`. PR #58.
+    - [ ] A2. An HTTP and WebSocket server for it, in the same process as the
+      web app.
+      - Streamlit 1.67 serves extra routes next to the app:
+        `app = st.App("abaka_ui.py", routes=[...])` in the main file, and
+        `streamlit run` finds it. So the web pages and the API share one
+        `RoomStore`, and web and app players share games with no new
+        machinery.
+      - It needs:
+        - the store registry moved out of `abaka_ui.py`, so the routes and
+          the pages find the same store;
+        - pushing the state over a WebSocket when `seen` changes;
+        - a limit on new games per client (the web limits per browser
+          session).
+      - It runs from a new entry file, locally first; the live app is
+        unchanged until stage B.
+
+    **Stage B: a host for the server (owner decides)**
+
+    - [ ] B1. Streamlit Community Cloud cannot be an app's server:
+      - it puts an app to sleep when nobody has used it for a while, and only
+        a visit in a browser wakes it, so an app would get a wake-up page
+        instead of its data;
+      - it runs the app inside its own page, under `/~/+/`;
+      - app links (below) need files served at the root of the app's own
+        domain.
+      So the server, web app and API together, moves to a small paid host
+      (for example Fly.io, Render or Railway; check current prices), with
+      Neon as it is, and a domain. The web app moves with it, so web and app
+      players keep sharing games.
+
+    **Stage C: the app**
+
+    - [ ] C1. The app's technology (owner decides). Recommended: React
+      Native with Expo, in TypeScript.
+      - One code base for iOS and Android, built in Expo's cloud.
+      - Updates to the app's code without a store review.
+      - Alternatives: Flutter (also one code base) or two native apps
+        (twice the work).
+    - [ ] C2. The screens, as on the web:
+      - home (new game, open by code, continue, clubs), invite and waiting
+        room, the game (dice, moves, scoreboard, reactions, chat), results;
+      - English and Russian. The game's texts come from the server (`info`,
+        move labels, errors). The app's own texts reuse `abaka/i18n.py`,
+        exported when the app is built.
+    - [ ] C3. Links: a game's link opens the app when it is installed
+      (universal links and app links, served from the domain).
+
+    **Stage D: the stores (the owner's accounts)**
+
+    - [ ] D1. Apple Developer Program (99 USD a year) and Google Play
+      Console (25 USD once), in the owner's name. Also needed:
+      - the app's name, icon and identifier;
+      - a privacy policy page: names and games are stored, and the chat is
+        deleted when the game ends;
+      - store listings, and test releases first (TestFlight, Play internal
+        testing).
+
+    **Stage E: after the first release**
+
+    - [ ] "Your turn!" notifications (Apple's and Google's push services):
+      the server keeps each seat's device address.
+    - [ ] Seat protection, already open in item 11, matters more for a public
+      app. The token on the device is already personal, but anyone with the
+      code can still take a seat by its name.
+    - [ ] Optional: games on one device without a network, by running the
+      rules in the app (a port of the engine, checked against games recorded
+      from the Python engine). Until then, every game needs the server.
+
+    **Owner decisions still open**
+
+    - The app's technology (recommended: Expo).
+    - The host for the server, its budget, and a domain.
+    - The store accounts, the app's name and its identifier.
+    - Whether games on one device must work without a network.
+    - How seats are protected (also in item 11).
+
+## Status (2026-11-20)
+
+- **Preparing for apps on Android and iOS (owner, Backlog item 25):**
+  PR #58, step A1 of the plan.
+  - `abaka/api.py` gives apps the whole game as JSON (protocol 1,
+    `docs/API.md`), over the same rooms as the web app.
+  - The move previews and the texts moved from `ui_components/` to
+    `abaka/`; the web app is unchanged.
+  - 18 new tests (`tests/test_api.py`). They include complete games for 2
+    and 5 players online, and on one device, played only through the API.
+    Every offered move was accepted, and its preview matched the cell and the
+    points it got.
+  - All tests also pass on Python 3.13 with Streamlit 1.67 on this machine,
+    as on Cloud (a scratch install; see Notes for this machine).
+  - Next: A2, the server that carries the API, and the owner's decisions in
+    item 25.
 
 - **The option with the most points (owner, Backlog item 24):** PR #56 and
   PR #57.
@@ -1070,11 +1234,17 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, all 252 pass but one step
+- **Tests:** on Python 3.9 with Streamlit 1.48, all 270 pass but one step
   skipped (a typed-in club name, which AppTest 1.48 cannot send) and the 9
-  database tests, which need a test database (CI has one); on 3.8, 209 pass
+  database tests, which need a test database (CI has one); on 3.8, 227 pass
   and 43 are skipped (9 need a database or psycopg; the others need
-  Streamlit). 7 PR tool tests (`test_pr_tool.py`:
+  Streamlit). 18 API tests (`test_api.py`: complete games for 2 and 5
+  players online and on one device through the API only, every preview
+  matched by the move it describes; what a seat and an outsider see, tokens
+  never in a state, outdated and out-of-turn moves, a seat taken back, picks,
+  reactions and chat, a web move seen by an app, the shared game never
+  changed by drawing a state, club games, malformed requests, languages, and
+  `docs/API.md` naming every operation and error). 7 PR tool tests (`test_pr_tool.py`:
   remote URLs, and `merge` with a fake GitHub: a required job not started
   yet, a failing job, a branch behind `main`, a conflict). 24 reaction and
   celebration tests (`test_reactions.py`: a reaction is not a move, aimed
@@ -1231,6 +1401,53 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-20: preparing for apps on Android and iOS (Claude Code, PR #58)**
+
+- The owner asked to start preparing the code base for Android and iOS. The
+  plan is Backlog item 25; this PR is its first step, which needs no owner
+  decision: the game as JSON, for any client.
+- A thin client, with the server as the referee, rather than the rules in the
+  app.
+  - The owner changes the rules often (items 19, 20, 23 in one day). With the
+    rules on the server, a change reaches every app at once, with no store
+    review.
+  - Two copies of the rules, in Python and in the app's language, would drift
+    apart.
+  - Web and app players can share a table, because both use one `RoomStore`.
+- Not the web page in an app wrapper:
+  - Apple turns down apps that only repackage a website (App Review
+    Guideline 4.2);
+  - every tap would still be a Streamlit rerun;
+  - Community Cloud's sleep would show in the app.
+- `handle(request, store, clubs)` does not know how messages travel. The same
+  JSON can go over HTTP or a WebSocket, and the tests play whole games
+  without a server.
+- The move previews (`moves.py`) and the texts (`i18n.py`) moved from
+  `ui_components/` to `abaka/`. The API needs both, and the game package
+  should not import the web page's package. Imports changed; the code did not.
+- Error codes are few, chosen by what the app does next (`outdated`: draw the
+  new state; `not_seated`: offer to rejoin; `refused`: show the message), not
+  one per message. The messages are the store's own, translated as on the web.
+- A move must name the `version` it was chosen on. In the store that is
+  optional, but a double tap on a phone is the usual case, so the API
+  requires it.
+- A state is drawn for one seat. Someone with only the code sees what the
+  invite page shows, as on the web. Tokens never appear in a state.
+- A second rematch tap answers with the new game, as the web does, instead
+  of an error.
+- Left out of protocol 1, because they live in Streamlit modules: the rules
+  text and the reaction labels. Adding them later keeps protocol 1.
+- Found while planning, from Streamlit 1.67's source:
+  - `st.App(script, routes=[...])` serves extra routes next to the app, and
+    `streamlit run` picks it up from the main file. So the API can run in the
+    web app's process and share its store: step A2.
+  - Uvicorn would import the main file as a module, so Streamlit would key
+    its `st.cache_resource` registry apart from the script's. The registry
+    has to move out of `abaka_ui.py` first; that is part of A2.
+- Python 3.13 with Streamlit 1.67 now runs on this machine from a scratch
+  folder (Notes for this machine). The full suite passed there before CI ran:
+  two of the last three CI failures were 1.67 differences.
 
 **2026-11-19: the gold option on the live app (Claude Code, PR #57)**
 

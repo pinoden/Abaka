@@ -11,7 +11,7 @@ from unittest import mock
 import abaka.rooms as rooms
 import code_version
 from abaka.rooms import clean_name
-from ui_components.i18n import md
+from abaka.i18n import md
 
 try:
     from streamlit.testing.v1 import AppTest

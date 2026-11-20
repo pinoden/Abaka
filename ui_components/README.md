@@ -3,16 +3,21 @@
 The Streamlit interface. `abaka_ui.py` (project root) picks the screen; these
 modules draw it.
 
+What the web page shares with the apps for phones lives in the game package:
+- `abaka/moves.py` works out which rows can be written and what each would
+  score, by trying the move on a copy of the game;
+- `abaka/i18n.py` holds the texts in English and Russian: `t("...")`, plurals,
+  error messages, and `md()` for names in Markdown;
+- `abaka/api.py` gives the game to apps as JSON (`docs/API.md`).
+
 | Module | What it does |
 |---|---|
 | `main_ui.py` | Game screen for both modes: top bar with menu, play panel (left), scoreboard (right), the starting throw, results |
 | `dice.py` | The five dice as tappable buttons drawn with CSS, the roll animation and the two Reroll buttons |
 | `move_selection.py` | Score / Cross out switch, the list of possible rows with their scores, the confirm button |
 | `actions.py` | What the game buttons do when clicked (`on_click` callbacks): make the move, keep a refusal to show once |
-| `moves.py` | Works out which rows can be written and what each would score, by trying the move on a copy of the game. No Streamlit, unit-tested in `tests/test_moves.py` |
 | `scoreboard.py` | The score table, including the preview of the picked move |
 | `rules.py` | "How to play" text and dialog, in English and Russian |
-| `i18n.py` | Interface text in English and Russian: `t("...")`, plurals, error messages, `md()` for names in Markdown. No Streamlit |
 | `style.py` | Page CSS, dice artwork (SVG), small HTML helpers |
 
 ## How styling works

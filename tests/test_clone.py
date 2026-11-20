@@ -10,7 +10,7 @@ import unittest
 from abaka.engine import GameEngine
 from abaka.player import PlayerState
 from abaka.saving import engine_to_data
-from ui_components.moves import cross_options, score_options
+from abaka.moves import cross_options, score_options
 
 IMMUTABLE = (int, float, bool, str, tuple, frozenset, type(None))
 

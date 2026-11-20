@@ -86,7 +86,7 @@ class TestPicksInTheStore(unittest.TestCase):
 
 
 def _a_cell(engine):
-    from ui_components.moves import cross_options, score_options
+    from abaka.moves import cross_options, score_options
     move = (score_options(engine) or cross_options(engine))[0]
     return move.category, move.slot
 

@@ -16,7 +16,7 @@ from abaka.clubs import (START_RATING, ClubError, ClubStore, is_club_code, membe
                          rating_changes)
 from abaka.repository import FileRepository
 from abaka.rooms import RoomStore
-from ui_components.moves import cross_options, score_options
+from abaka.moves import cross_options, score_options
 
 try:
     from streamlit.testing.v1 import AppTest

@@ -36,7 +36,7 @@ def started_game(store, names=("Ann", "Bob")):
 
 def finish_game(store, code, tokens):
     """Play the game to its end with the first move offered each turn."""
-    from ui_components.moves import cross_options, score_options
+    from abaka.moves import cross_options, score_options
     for _ in range(1000):
         engine = store.view(code).engine
         if engine.is_game_over():

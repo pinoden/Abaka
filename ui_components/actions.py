@@ -14,7 +14,7 @@ drawing of the play panel (show_action_error).
 import streamlit as st
 
 from abaka.rooms import OutdatedPage
-from ui_components.i18n import error
+from abaka.i18n import error
 
 _ERROR_KEY = "action_error"
 

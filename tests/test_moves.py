@@ -8,7 +8,7 @@ from abaka.constants import COMBO_CATS
 from abaka.engine import GameEngine
 from abaka.models import Category, Die
 from abaka.rooms import RoomEngine, RoomStore
-from ui_components.moves import cross_options, most_points, plain_engine, row_name, score_options
+from abaka.moves import cross_options, most_points, plain_engine, row_name, score_options
 
 try:
     from streamlit.testing.v1 import AppTest

@@ -159,7 +159,7 @@ class TestStartLimit(unittest.TestCase):
 
 
 def _any_move(store, code):
-    from ui_components.moves import cross_options, score_options
+    from abaka.moves import cross_options, score_options
     g = store.view(code).engine
     move = (score_options(g) or cross_options(g))[0]
     return move.category, move.slot

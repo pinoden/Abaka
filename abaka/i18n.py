@@ -412,4 +412,7 @@ RU = {
     "Best": "Лучший",
     "Everyone starts at 1000. Beating a stronger player earns more.": "Все начинают с 1000. Победа над сильным игроком даёт больше.",
     "Latest games": "Последние игры",
+    # The API for apps (abaka/api.py)
+    "This app and the server do not match. Update the app, or try again later.":
+        "Версии приложения и сервера не совпадают. Обновите приложение или попробуйте позже.",
 }

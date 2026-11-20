@@ -15,7 +15,7 @@ import streamlit as st
 from abaka.engine import GameEngine
 from ui_components.actions import run_action, show_action_error
 from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
-from ui_components.i18n import LANGUAGES, and_join, md, picked_dice_note, rerolled_dice_note, t
+from abaka.i18n import LANGUAGES, and_join, md, picked_dice_note, rerolled_dice_note, t
 from ui_components.move_selection import render_move_picker
 from ui_components.rules import rules_dialog
 from ui_components.scoreboard import render_scoreboard

@@ -48,7 +48,12 @@ abaka/                 the game itself, no Streamlit
   scoring.py           what each combination scores
   school.py, bonus.py  School rows and their balance; row and column bonuses
   rooms.py             every game, online and on one device: RoomStore, saved to disk
+  clubs.py             clubs and their rating tables
+  repository.py        where games are saved: files, Postgres, or both
   saving.py            games to and from JSON
+  moves.py             the moves a player can make now, with exact previews
+  i18n.py              every text players see, in English and Russian
+  api.py               the game as JSON, for apps (Android, iOS): docs/API.md
   cli.py, render.py    the terminal version
 ui_components/         the Streamlit interface (see ui_components/README.md)
 abaka_ui.py            the app: home, invite and waiting screens, online updates
@@ -57,7 +62,8 @@ code_version.py        reloads the game modules when their files change (app upd
 tests/                 unittest tests
 tools/                 simulate.py: random complete games with rule checks;
                        loadtest.py: simulated browsers, server CPU and latency
-docs/                  ARCHITECTURE_REVIEW.md: review for many games at once
+docs/                  API.md: the API for apps; LOADTEST.md: load-test rows;
+                       ARCHITECTURE_REVIEW.md: review for many games at once
 ```
 
 ## Development
