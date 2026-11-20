@@ -24,6 +24,9 @@ pip install -r requirements.txt                       # streamlit 1.67.0 (pinned
 ABAKA_TEST_DATABASE_URL=postgresql://... python -m unittest tests.test_postgres   # database tests (else skipped)
 streamlit run abaka_ui.py                             # the app (port 8501, all interfaces)
 streamlit run abaka_server.py                         # the app and the API for apps (Streamlit 1.67+; docs/API.md)
+pip install -r requirements-dev.txt && python -m playwright install chromium-headless-shell   # for the website check
+python tools/website_check.py                         # the live website in a real browser (after every merge)
+python tools/website_check.py --serve abaka_ui.py     # the same check on a local server (Streamlit 1.67)
 python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
 python -m unittest tests.test_rooms -v                # one test module
@@ -56,6 +59,14 @@ python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR
   - `abaka_server.py` (the app with the API) needs Streamlit 1.67, so it runs
     from that scratch Python: `ABAKA_DATABASE_URL= $S/venv313/bin/python -m
     streamlit run abaka_server.py`. Its network tests are skipped on 1.48.
+  - The website check (`tools/website_check.py`) runs from it too.
+    - Install Playwright with `uv pip install -p $S/venv313/bin/python -r
+      requirements-dev.txt`.
+    - Playwright 1.65.2 uses Chromium build 1255, already in
+      `~/Library/Caches/ms-playwright`.
+    - For `--cleanup` on the live app, pass the database URL with
+      `$S/neonenv.py`, or any wrapper that reads `.env.local` without
+      printing it.
 - Neon: the repository is linked to the owner's Neon project "Abaka"
   (`restless-haze-52228918`, branch `production`, us-east-1) with the Neon
   CLI (`neon init`, `neon deploy`). `neon.ts` declares Postgres only;
@@ -547,6 +558,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - Engine code must keep working on Python 3.8 (no `X | None` at runtime).
 - Every new text shown to players goes through `t("...")` and gets a Russian
   version in `abaka/i18n.py`; `tests/test_i18n.py` fails otherwise.
+- The website must keep working while the apps are built (owner,
+  2026-11-20; AGENTS.md, "The website must keep working"):
+  - `tests/test_website.py` checks it in a real browser in CI;
+  - `python tools/website_check.py` checks the live app after every merge;
+  - a broken live app is reverted at once.
 - Code that is not about drawing the web page goes in `abaka/`, not in
   `ui_components/`, so the apps' API can use it too (Backlog item 25).
 - A new thing players can do in the web app also gets an operation in
@@ -997,6 +1013,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     > "Let's start preparing the code base to expand on android/ios"
     >
     > "Go ahead" (step A2)
+    >
+    > "Make sure that the websites version won't brake while developing the
+    > app transform"
+    - The website keeps working at every step (AGENTS.md, "The website must
+      keep working"):
+      - CI checks it in a real browser (`tests/test_website.py`);
+      - every merge is checked on the live app (`tools/website_check.py`);
+      - a broken live app is reverted at once;
+      - app work goes in its own files;
+      - the website stays on Streamlit Cloud until the owner moves it.
     - The plan, one PR per step. Tick a step here when its PR is merged.
     - The app is a thin client: the server keeps the game and the rules, and
       the app shows what it is told and sends the player's moves. So the rules
@@ -1037,6 +1063,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       (for example Fly.io, Render or Railway; check current prices), with
       Neon as it is, and a domain. The web app moves with it, so web and app
       players keep sharing games.
+      - The move keeps the website working. The new host first runs next to
+        Streamlit Cloud, with its own Neon branch, and passes
+        `tools/website_check.py --url <new host>`. Then the owner decides when
+        players switch: the new address, and the production database.
+      - Streamlit Cloud stays up until then, as the way back.
 
     **Stage C: the app**
 
@@ -1085,6 +1116,28 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - How seats are protected (also in item 11).
 
 ## Status (2026-11-20)
+
+- **The website keeps working while the apps are built (owner, Backlog
+  item 25):** PR #59.
+  - `tools/website_check.py` plays the website in headless Chromium:
+    - the home page in English and Russian, and where games are saved;
+    - a game on one device: starting throw, roll, a die rolled again, the best
+      option written, a row crossed out;
+    - an online game between a desktop and a phone: join, the starting
+      throws, a roll seen on the other screen, the turn passing, a chat
+      message and a reaction;
+    - no error box, no page error, no sideways scrolling on the phone.
+  - CI runs it on every pull request (`tests/test_website.py`), on
+    `abaka_ui.py` as Cloud runs it and on `abaka_server.py`. The app job
+    installs Chromium and fails if the browser is missing.
+  - Proven to catch breakage, on a scratch copy of the code:
+    - with the most-points mark removed, both one-device games failed;
+    - with the chat raising an error, the online game failed and the report
+      named the error.
+  - Locally on Streamlit 1.67 the whole check takes about 30 s per server.
+  - AGENTS.md now has the rules: browser checks in CI, the live check after
+    every merge, an immediate revert if the live app breaks, app work in its
+    own files, and Cloud kept until the owner moves the website.
 
 - **The API over the network (owner: "Go ahead", Backlog item 25):** PR #59,
   step A2. `streamlit run abaka_server.py` serves the web app and the API
@@ -1300,13 +1353,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, all 279 pass but these are
+- **Tests:** on Python 3.9 with Streamlit 1.48, 279 run and these are
   skipped: one step (a typed-in club name, which AppTest 1.48 cannot send), the
-  9 database tests, which need a test database (CI has one), and the 7 network
-  tests, which need Streamlit 1.67's packages (CI has them). On 3.8, 227 pass
-  and 52 are skipped (9 need a database or psycopg; the others need
-  Streamlit). On 3.13 with Streamlit 1.67, all pass but the 9 database
-  tests. 9 server tests (`test_server.py`: HTTP statuses for every refusal,
+  9 database tests, which need a test database (CI has one), the 7 network
+  tests, which need Streamlit 1.67's packages, and the website checks, which
+  need Streamlit 1.67 and Chromium (CI has them all). On 3.8, 279 run and 53
+  are skipped (9 need a database or psycopg; the others need Streamlit). On
+  3.13 with Streamlit 1.67 and Chromium, all 281 pass but the 9 database
+  tests. 2 website tests (`test_website.py`: `tools/website_check.py` in
+  headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
+  9 server tests (`test_server.py`: HTTP statuses for every refusal,
   the limit on new games per client and behind a proxy, a server fault
   answered with `retry` without the token in the log, the live connection's
   pushes (only new chat, no echo of the app's own move), a closed game
@@ -1475,6 +1531,43 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-20: the website kept working while the apps are built (Claude Code, PR #59)**
+
+- The owner asked to make sure the website will not break while the apps are
+  built.
+- What could break it:
+  - a change to code the website shares with the apps (`abaka/`,
+    `server/stores.py`, `abaka_ui.py`);
+  - Streamlit 1.67 behaving differently from the local 1.48;
+  - later, moving the website to another host.
+- What protects it:
+  - **A check in a real browser, required for every merge.** AppTest runs the
+    script but not the page. A broken style or a missing element passes it
+    (the gold option in PR #56 did). So `tests/test_website.py` drives the
+    website's main flows in headless Chromium, in the CI job branch
+    protection already requires, without renaming it.
+    `ABAKA_REQUIRE_BROWSER` turns a missing browser into a failure: a skipped
+    check would protect nothing while looking green.
+  - **One check for CI and for the live app.** `tools/website_check.py` runs
+    in both, so after a merge the same steps run where players are, at a
+    desktop and a phone width.
+  - **Proven by breaking things on purpose** (a scratch copy, not the repo).
+    A check that cannot fail protects nothing.
+  - **A revert first, then the fix,** if the live app breaks: a revert goes
+    through CI like any change, and players get the working version back
+    within minutes.
+  - **For the move to a new host (stage B),** the new host runs next to
+    Cloud on its own Neon branch until the owner switches. Two servers
+    writing the same games would lose moves.
+- The check plays with its own games ("Test Ann", "Test Bob"). `--cleanup`
+  marks only those deleted, and only in the database given in
+  `ABAKA_DATABASE_URL`.
+- Playwright is pinned in `requirements-dev.txt`, apart from
+  `requirements.txt`. Streamlit Cloud installs only the latter, and a change
+  there restarts the live app.
+- The guard is in the same pull request as step A2, so the first app change
+  that touches the website's code passes it before it merges.
 
 **2026-11-20: the API over the network (Claude Code, PR #59)**
 

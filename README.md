@@ -76,13 +76,17 @@ docs/                  API.md: the API for apps; LOADTEST.md: load-test rows;
 python -m unittest discover -s tests -p "test_*.py"   # all tests
 python tools/simulate.py 200 40                        # random complete games (2-3 min)
 python tools/loadtest.py --clients 100 --interval 1    # 100 open pages polling every second
+pip install -r requirements-dev.txt && python -m playwright install chromium-headless-shell
+python tools/website_check.py                          # the live website in a real browser
+python tools/website_check.py --serve abaka_ui.py      # the same check on a local server
 ```
 
 - The engine (`abaka/`) also runs on Python 3.8. There, the tests that need
   Streamlit are skipped.
 - GitHub Actions runs the tests on every pull request and on `main`
   (`.github/workflows/tests.yml`):
-  - on Python 3.13 with the pinned Streamlit, as on Streamlit Cloud;
+  - on Python 3.13 with the pinned Streamlit, as on Streamlit Cloud, including
+    the website's main flows in headless Chromium (`tests/test_website.py`);
   - on Python 3.8 without Streamlit.
 - `ProjectLibrary.md` is the project's working log: open requests, status, decisions
   and the conventions for changes.

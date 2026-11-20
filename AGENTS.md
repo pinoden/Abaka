@@ -55,7 +55,38 @@ Do not rename or move these three: each tool finds its file by name.
    run the tests again, and push. In `ProjectLibrary.md` keep both sides'
    entries.
 6. A merge updates the live app (https://mipt-abaka.streamlit.app/) within a
-   few minutes. Check a visible change there.
+   few minutes. Check a visible change there, and run the website check
+   (below).
+
+## The website must keep working
+
+The owner: "Make sure that the websites version won't brake while developing
+the app transform". People keep playing on the live app while the apps for
+phones are built (Backlog item 25). So:
+
+- **CI checks the website in a real browser** on every pull request
+  (`tests/test_website.py`, running `tools/website_check.py`):
+  - the home page in English and Russian;
+  - a game on one device;
+  - an online game between a desktop and a phone.
+  A change that breaks them cannot be merged. Never skip, loosen or delete
+  these checks to get a change in: fix the change. Extend them when the
+  website gains something people rely on.
+- **After every merge**, once the live app shows the change, run
+  `python tools/website_check.py` against the live app. Add `--cleanup`, with
+  `ABAKA_DATABASE_URL` from `.env.local`, to remove its test games.
+- **If the live app is broken, revert at once.** Open a pull request with
+  `git revert -m 1 <merge commit>`, merge it as soon as CI passes, tell the
+  owner, then fix the change on a new branch.
+- **App work goes in its own places:** `abaka/api.py`, `server/`,
+  `abaka_server.py`, and later the app's own folder. Code the website runs
+  (the rest of `abaka/`, `ui_components/`, `abaka_ui.py`, `server/stores.py`,
+  `code_version.py`, `.streamlit/`, `requirements.txt`) changes only as far
+  as the apps need it.
+- **The website stays on Streamlit Cloud** until the owner decides to move it.
+  A new host first runs next to it with a database of its own (a Neon
+  branch), never the production one. Two servers writing the same games would
+  lose moves.
 
 ## Things both agents must know
 
