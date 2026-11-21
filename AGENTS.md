@@ -79,8 +79,10 @@ phones are built (Backlog item 25). So:
   `git revert -m 1 <merge commit>`, merge it as soon as CI passes, tell the
   owner, then fix the change on a new branch.
 - **App work goes in its own places:** `abaka/api.py`, `server/`,
-  `abaka_server.py`, and later `mobile/`, the phone app's folder in this
-  repository (Backlog item 25). Code the website runs
+  `abaka_server.py`, and `mobile/`, the phone app (React Native with Expo,
+  Backlog item 25). Work in `mobile/` also follows `mobile/AGENTS.md`. CI's
+  "Phone app (Expo)" job plays the app against a real server, so a server
+  change that breaks the app cannot be merged either. Code the website runs
   (the rest of `abaka/`, `ui_components/`, `abaka_ui.py`, `server/stores.py`,
   `code_version.py`, `.streamlit/`, `requirements.txt`) changes only as far
   as the apps need it.

@@ -353,7 +353,10 @@ The server sends:
 - The server looks for changes four times a second, so a push follows a change
   within about a quarter of a second.
 - A move the app makes over the connection comes back as its reply and is not
-  pushed again.
+  pushed again. The same holds for any reply on the connection that carries the
+  watched game's state for the watching seat (a `state` request with the same token,
+  for example): the server counts it as sent and pushes only later changes. So an app
+  hands such replies to whatever shows the game, as `mobile/src/lib/api.ts` does.
 - If the watched game is closed, the server sends one `not_found` error and stops
   watching.
 - When the server's code is updated while it runs, it closes the connection with
