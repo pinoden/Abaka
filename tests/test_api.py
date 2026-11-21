@@ -379,6 +379,9 @@ class TestClubs(unittest.TestCase):
         self.assertEqual((club["name"], club["members"], club["games"]), ("Friday dice", [], []))
         self.assertEqual(server.refused(op="create_club", name="  ", lang="ru")[1], "Дайте клубу название.")
         self.assertEqual(server.refused(op="create_local", names=["Ann", "ann "], club=club["code"])[0], "refused")
+        online = server(op="create", name="Ann", players=2, club=club["code"])
+        self.assertEqual(server.refused(op="join", code=online["code"], name=" ANN", lang="ru"),
+                         ("refused", "У каждого игрока должно быть своё имя."))  # one member, once a game
         made = server(op="create_local", names=["Ann", "Bob"], club=club["code"].lower())
         self.assertEqual(made["state"]["club"], club["code"])
         state = play(server, made["code"], [made["token"]], random.Random(7), local=True)

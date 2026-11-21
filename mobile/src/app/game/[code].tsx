@@ -11,13 +11,15 @@ import { AccessibilityInfo, Pressable, Share, StyleSheet, Text, View } from 'rea
 
 import { Board, lastMoveText } from '@/components/Board';
 import { Chat } from '@/components/Chat';
+import { ClubRatings, PlayerChips } from '@/components/Club';
 import { DieFace } from '@/components/Dice';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { ReactionBar } from '@/components/Reactions';
 import { Shows } from '@/components/Shows';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
-import { type ApiError, type Game, type Move, type Seat, type State } from '@/lib/api';
+import { type ApiError, type Club, type Game, type Move, type Seat, type State } from '@/lib/api';
 import { useApp } from '@/lib/app';
+import { memberKey, offered } from '@/lib/clubs';
 import { errorText } from '@/lib/errors';
 import { nothingShown, type Show, showsFor } from '@/lib/shows';
 import { forgetGame, saveGame, tokenFor, updateGame } from '@/lib/storage';
@@ -210,10 +212,22 @@ function Invite({ state, busy, takeSeat, lost }: {
   takeSeat: (op: string, fields: Record<string, unknown>) => void;
   lost: boolean;
 }) {
-  const { t, info } = useApp();
+  const { t, info, connection } = useApp();
   const [name, setName] = useState('');
+  const [members, setMembers] = useState<string[]>([]); // a club game: the club's players
   const join = state.can.includes('join');
   const rejoin = state.can.includes('rejoin');
+  const club = state.club;
+
+  useEffect(() => {
+    if (!club || !join) return;
+    let asked = true;
+    connection.request<{ club: Club }>('club', { club, games: 0 }).then(
+      (answer) => { if (asked) setMembers(answer.club.names); },
+      () => { /* no list to pick from: the name can still be typed */ },
+    );
+    return () => { asked = false; };
+  }, [club, join, connection]);
   return (
     <Card testID="invite">
       {lost ? <Notice text={t('This game was opened in another tab or device, so this tab no longer controls it.')} /> : null}
@@ -227,6 +241,9 @@ function Invite({ state, busy, takeSeat, lost }: {
                 n: state.capacity, k: state.names.length, names: state.names.join(', '),
               })}
           </Muted>
+          {/* A club game: the club's players not at the table yet. */}
+          <PlayerChips names={offered(members, state.names)} hint={t('Pick a player or type a new name')}
+                       on={(player) => memberKey(player) === memberKey(name)} onPick={setName} />
           <Field testID="join-name" label={t('Your name')} value={name} onChange={setName}
                  maxLength={info?.limits.name ?? 20} placeholder={t('Name')} />
           <Button testID="join" label={t('Join game')} disabled={busy} onPress={() => takeSeat('join', { name })} />
@@ -563,6 +580,7 @@ function StarterSummary({ state, game }: { state: State; game: Game }) {
 
 function Results({ state, game, act, busy }: { state: State; game: Game; act: Act; busy: boolean }) {
   const { t } = useApp();
+  const club = state.club;
   const winners = game.winners;
   const title = winners.length > 1
     ? t('It’s a draw!')
@@ -581,8 +599,13 @@ function Results({ state, game, act, busy }: { state: State; game: Game; act: Ac
           <Text style={styles.resultScore}>{t('{score} pts', { score: p.total })}</Text>
         </View>
       ))}
+      {state.club_result ? <ClubRatings result={state.club_result} /> : null}
       {state.can.includes('rematch') ? (
         <Button testID="rematch" label={t('Play again')} disabled={busy} onPress={() => act('rematch', {}, false)} />
+      ) : null}
+      {club ? (
+        <Button kind="secondary" testID="club-table-button" label={t('Club table')}
+                onPress={() => router.dismissTo({ pathname: '/club/[code]', params: { code: club } })} />
       ) : null}
       <Button kind="secondary" label={t('Home')} onPress={() => router.dismissTo('/')} />
     </Card>
@@ -599,7 +622,12 @@ function TableScore({ state }: { state: State }) {
   const leader = order[0] && order[0].wins > 0 && (order.length === 1 || order[0].wins > order[1].wins) ? order[0].seat : null;
   const people = order.map((p) => `${p.seat === leader ? '👑 ' : ''}${p.name} ${p.wins}`).join(' · ');
   const tail = draws ? ` · ${t('draws: {n}', { n: draws })}` : '';
-  return <Muted>{`${t('Games at this table: {n}', { n: games })} · ${people}${tail}`}</Muted>;
+  const club = state.club ? ` · 🏆 ${t('club game')}` : '';
+  return (
+    <Text testID="table-score" style={styles.tableScore}>
+      {`${t('Games at this table: {n}', { n: games })} · ${people}${tail}${club}`}
+    </Text>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -643,5 +671,6 @@ const styles = StyleSheet.create({
   winner: { fontWeight: '800' },
   resultScore: { fontSize: 16, color: colors.muted },
   lastMove: { fontSize: 13, color: '#9A4D00' },
+  tableScore: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   boardCard: { paddingHorizontal: 10 },
 });

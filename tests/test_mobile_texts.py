@@ -22,6 +22,8 @@ finally:
 SOURCES = ROOT / "mobile" / "src"
 # t('...') or t("..."): the first argument, when it is a string literal.
 T_CALL = re.compile(r"""\bt\(\s*(?:'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)")""")
+# An escaped quote or backslash in a literal ('the club\'s'): the text holds the character itself.
+ESCAPED = re.compile(r"""\\(['"\\])""")
 # Comments, which may show t() in examples: /* ... */ blocks and whole // lines.
 COMMENTS = re.compile(r"/\*.*?\*/|^\s*//[^\n]*", re.DOTALL | re.MULTILINE)
 
@@ -32,7 +34,7 @@ def texts_passed_to_t():
         # Blank out comments, keeping their line breaks so line numbers stay right.
         source = COMMENTS.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), path.read_text(encoding="utf-8"))
         for match in T_CALL.finditer(source):
-            text = match.group(1) if match.group(1) is not None else match.group(2)
+            text = ESCAPED.sub(r"\1", match.group(1) if match.group(1) is not None else match.group(2))
             line = source.count("\n", 0, match.start()) + 1
             found.setdefault(text, f"{path.relative_to(ROOT)}:{line}")
     return found
@@ -51,9 +53,9 @@ class TestMobileTexts(unittest.TestCase):
         self.assertEqual(missing, {}, "add these to abaka/i18n.py, then run python tools/export_texts.py")
 
     def test_the_scan_reads_both_quotes(self):
-        sample = """t('Score') + t("Join a friend's game") + t( 'Roll {n} of 3', { n })"""
-        self.assertEqual([m.group(1) or m.group(2) for m in T_CALL.finditer(sample)],
-                         ["Score", "Join a friend's game", "Roll {n} of 3"])
+        sample = """t('Score') + t("Join a friend's game") + t( 'Roll {n} of 3', { n }) + t('the club\\'s')"""
+        self.assertEqual([ESCAPED.sub(r"\1", m.group(1) or m.group(2)) for m in T_CALL.finditer(sample)],
+                         ["Score", "Join a friend's game", "Roll {n} of 3", "the club's"])
 
 
 if __name__ == "__main__":

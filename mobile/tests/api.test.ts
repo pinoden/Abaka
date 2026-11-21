@@ -13,8 +13,9 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 
 import {
-  ApiError, Connection, gamesToContinue, type GameEvent, type Move, type Seat, type State,
+  ApiError, type Club, Connection, gamesToContinue, type GameEvent, type Move, type Seat, type State,
 } from '../src/lib/api.ts';
+import { offered, tableRows } from '../src/lib/clubs.ts';
 
 const SERVER = process.env.ABAKA_SERVER;
 const skip = SERVER ? false : 'set ABAKA_SERVER to a running server (streamlit run abaka_server.py)';
@@ -239,6 +240,39 @@ describe('the API client against a real server', { skip }, () => {
     const nowhere = new Connection('http://127.0.0.1:9');
     connections.push(nowhere);
     assert.equal(await gamesToContinue(nowhere, [game.code], 4), null);
+  });
+
+  test('a club: a club game counts for its table, and a member plays once a game', async () => {
+    const connection = connect();
+    const { club } = await connection.request<{ club: Club }>('create_club', { name: '  Test   Club ' });
+    assert.deepEqual([club.name, club.members, club.games, club.names], ['Test Club', [], [], []]);
+    const seat = await connection.request<Seat>('create_local', { names: ['Test Ann', 'Test Bob'], club: club.code });
+    assert.equal(seat.state.club, club.code);
+    const end = await play(seat.code, [{ connection, token: seat.token }], 4);
+    // The results come with the club's ratings: the changes add up to zero.
+    const result = end.club_result;
+    assert.ok(result, 'a club game ends with the ratings');
+    assert.equal(result.club, 'Test Club');
+    assert.deepEqual(result.players.map((p) => p.name), ['Test Ann', 'Test Bob']);
+    assert.ok(Math.abs(result.players[0].change + result.players[1].change) < 1e-9);
+    const table = (await connection.request<{ club: Club }>('club', { club: club.code.toLowerCase() })).club;
+    assert.deepEqual([...table.names].sort(), ['Test Ann', 'Test Bob']);
+    assert.deepEqual(tableRows(table.members).map((row) => [row.games, row.rank]), [[1, '🥇'], [1, '🥈']]);
+    assert.equal(table.games.length, 1);
+
+    // Online: a player already at the table cannot join again under another spelling.
+    const host = await connection.request<Seat>('create', { name: 'Test Ann', players: 2, club: club.code });
+    const guest = connect('ru');
+    const twice = await guest.request('join', { code: host.code, name: ' test ANN' }).catch((e) => e);
+    assert.ok(twice instanceof ApiError);
+    assert.equal(twice.code, 'refused');
+    assert.match(twice.message, /своё имя/);
+    assert.deepEqual(offered(table.names, host.state.names), ['Test Bob']); // what the invite offers
+    const joined = await guest.request<Seat>('join', { code: host.code, name: 'Test Bob' });
+    assert.deepEqual([joined.state.names, joined.state.club], [['Test Ann', 'Test Bob'], club.code]);
+
+    const missing = await connection.request('club', { club: 'ZZZZZZ' }).catch((e) => e);
+    assert.ok(missing instanceof ApiError && missing.code === 'not_found');
   });
 
   test('errors carry the code and the message in the request’s language', async () => {

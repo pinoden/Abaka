@@ -118,8 +118,10 @@ jobs:
       - name: Web build
         working-directory: mobile
         run: npx expo export --platform web
+      # With a server of its own (--serve): a client may start 10 games in 10 minutes, and
+      # the client tests above already started 8 on the server they used.
       - name: The app in a real browser (its web build)
-        run: python tools/app_check.py --server http://127.0.0.1:8501
+        run: python tools/app_check.py --serve
       - name: The server's log
         if: failure()
         run: cat "$RUNNER_TEMP/server.log"

@@ -111,6 +111,11 @@ def clean_message(text: str) -> str:
     return " ".join(visible.split())[:MAX_MESSAGE_LENGTH]
 
 
+def member_key(name: str) -> str:
+    """Who a name is in a club: the same name, whatever its capitals and spacing (abaka/clubs.py)."""
+    return " ".join(name.split()).casefold()
+
+
 def normalize_code(code: str) -> str:
     return "".join((code or "").split()).upper()
 
@@ -379,13 +384,20 @@ class RoomStore:
             return room.tokens[0]
 
     def join(self, code: str, name: str) -> str:
-        """Take a free seat in a room. The game starts once every seat is taken."""
+        """
+        Take a free seat in a room. The game starts once every seat is taken. In a club game a
+        name already at the table (ignoring capitals and spaces) is refused: the club counts it
+        as one member, who would then play against themselves.
+        """
         with self._lock:
             room = self._get(code)
             if room.engine is not None or len(room.names) >= room.capacity:
                 raise RoomError("This game is already full.")
             seat_no = len(room.names) + 1
-            name = _distinct(clean_name(name, f"Player {seat_no}"), room.names)
+            name = clean_name(name, f"Player {seat_no}")
+            if room.club is not None and member_key(name) in {member_key(n) for n in room.names}:
+                raise RoomError("Each player needs a different name.")
+            name = _distinct(name, room.names)
             token = self._seat(room, name)
             if len(room.names) == room.capacity:
                 room.engine = _new_engine(room, self.starting_throw)

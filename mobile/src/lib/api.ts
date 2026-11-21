@@ -42,6 +42,39 @@ export type PlayerBoard = {
 
 export type StartingThrow = { round: number; seat: number; dice: Die[]; total: number };
 
+/** A club's member, as `club` lists them: best first. */
+export type ClubMember = {
+  name: string;
+  rating: number;
+  /** How the rating moved in the member's latest game. */
+  change: number;
+  games: number;
+  wins: number;
+  points: number;
+  best: number;
+  last_played: number;
+};
+
+/** A finished club game: when (server time, s), and each player's score and rating change. */
+export type ClubGame = { id: string; at: number; players: { name: string; score: number; change: number }[] };
+
+/** A club, as `club` and `create_club` answer (docs/API.md, Clubs). */
+export type Club = {
+  code: string;
+  name: string;
+  members: ClubMember[];
+  /** Newest first. */
+  games: ClubGame[];
+  /** The members' names, the most recently played first: for name pickers. */
+  names: string[];
+};
+
+/** After a club game: the club's name, and how each player's rating moved. */
+export type ClubResult = {
+  club: string;
+  players: { name: string; score: number; change: number; rating: number }[];
+};
+
 /** A chat message. `text` is a player's: show it as plain text. */
 export type ChatMessage = { id: number; seat: number; text: string; at: number };
 
@@ -114,7 +147,8 @@ export type State = {
   events: GameEvent[];
   chat: ChatMessage[];
   table: { games: number; wins: number[]; draws: number };
-  club_result: unknown;
+  /** After a club game, once the club has it: how the ratings moved. */
+  club_result: ClubResult | null;
 };
 
 export type RowInfo = { row: string; name: string; hint: string; school: boolean };

@@ -22,6 +22,10 @@ The checks:
 - a player on the website and a player in the app at one table: each sees the other's
   dice, move, reaction and chat message (the server must serve the pages too, as
   abaka_server.py does);
+- a club made in the app: a game on one device for it, played to its end, with the
+  ratings on the results and the club's table; the next game's names tapped from the
+  club's players; an online club game, where a player at the table cannot join again and
+  the invite offers the others; and the same club's table on the website;
 - with dice the check chooses (Steered):
   - a tie for the first turn among three players: the player who is out of the next
     round keeps their throw on the screen;
@@ -55,7 +59,7 @@ BUILD = ROOT / "mobile" / "dist"
 PHONE = (390, 844)
 NAMES = ("Test Ann", "Test Bob")
 WAIT_MS = 20000
-FLOWS = ("home", "one device", "online", "website", "a tie", "fireworks")
+FLOWS = ("home", "one device", "online", "website", "clubs", "a tie", "fireworks")
 
 
 class Problem(Exception):
@@ -463,6 +467,85 @@ def check_tie(browser, build_url: str) -> str:
         steered.stop()
 
 
+def check_clubs(browser, url: str, server: str, games: List[str]) -> str:
+    """A club made in the app, its games, its table in the app and on the website (see the module's notes)."""
+    ann = Phone(browser, url, "clubs, Ann's phone")
+    bob = Phone(browser, url, "clubs, Bob's phone", locale="ru-RU")
+    web = None
+    try:
+        ann.see(ann.id("create-club"), "the clubs on the home page")
+        ann.id("club-name").fill("Test Club")
+        ann.id("create-club").click()
+        ann.see(ann.id("club-table").filter(has_text="No games yet"), "the new club's empty table")
+        club = ann.see(ann.id("club-code"), "the club's code").inner_text().strip()
+
+        # A game on one device for the club, played to its end through the API.
+        ann.id("club-name-0").fill(NAMES[0])
+        ann.id("club-name-1").fill(NAMES[1])
+        ann.id("club-start-local").click()
+        ann.see(ann.id("start-throw"), "the club game")
+        game = ann.page.url.rstrip("/").split("/")[-1].split("?")[0]
+        games.append(game)
+        finish_game(server, game, ann.page.evaluate("code => localStorage.getItem('abaka.token.' + code)", game))
+        rated = ann.see(ann.id("club-result"), "the club's ratings on the results").inner_text()
+        if "Test Club" not in rated or NAMES[0] not in rated or NAMES[1] not in rated:
+            raise Problem(f"clubs: the results' ratings do not name the club and both players ({rated!r})")
+        score = ann.see(ann.id("table-score"), "the running score at the table").inner_text()
+        if "club game" not in score:
+            raise Problem(f"clubs: the running score does not say it is a club game ({score!r})")
+        ann.id("club-table-button").click()
+        ann.until(lambda: ann.id("club-row").count() == 2, "both players in the club's table")
+        ann.see(ann.id("club-game"), "the game in the club's latest games")
+
+        # The next game: the club's players tapped instead of typed. (The boxes still hold the
+        # last game's names, and a tap on a name in a box takes it out: empty them first.)
+        ann.until(lambda: ann.id("club-player").count() == 2, "the club's two players offered")
+        for i in range(2):
+            ann.id(f"club-name-{i}").fill("")
+        for name in NAMES:
+            ann.id("club-player").filter(has_text=name).click()
+        boxes = [ann.id(f"club-name-{i}").input_value() for i in range(2)]
+        if boxes != list(NAMES):
+            raise Problem(f"clubs: tapping the club's players filled the boxes with {boxes}")
+
+        # An online club game: the host taps her name; on the invite, only the others are offered.
+        ann.id("club-mode").get_by_role("radio", name="Online").click()
+        ann.id("club-player").filter(has_text=NAMES[0]).click()
+        if ann.id("club-host").input_value() != NAMES[0]:
+            raise Problem("clubs: tapping a player did not fill the host's name")
+        ann.id("club-create-online").click()
+        online = ann.see(ann.id("game-code"), "the club game's waiting room").inner_text().strip()
+        games.append(online)
+        bob.see(bob.id("open-code"), "Bob's home page").fill(online)
+        bob.id("open-game").click()
+        bob.see(bob.id("join-name"), "the invite")
+        bob.until(lambda: bob.id("club-player").count() == 1, "the club's players not at the table")
+        if bob.id("club-player").first.inner_text().strip() != NAMES[1]:
+            raise Problem(f"clubs: the invite offers {bob.id('club-player').first.inner_text()!r}, not {NAMES[1]!r}")
+        bob.id("join-name").fill(" test ANN")  # a player already at the table, spelled otherwise
+        bob.id("join").click()
+        bob.see(bob.page.get_by_role("alert").filter(has_text="своё имя"), "the refusal of a player at the table twice")
+        bob.id("club-player").first.click()
+        bob.id("join").click()
+        ann.see(ann.id("starting-throw"), "the club game starting on Ann's phone")
+
+        # The website shows the same club, with the same table.
+        web = website_check.Screen(browser, f"{server.rstrip('/')}/?club={club}&lang=en", website_check.PHONE,
+                                   "clubs, the website")
+        table = web.see(web.app.locator(".ab-club-table"), "the club's table on the website", website_check.START_MS)
+        web.until(lambda: NAMES[0] in table.inner_text() and NAMES[1] in table.inner_text(),
+                  "both players in the website's table of the club")
+        web.healthy()
+        for phone in (ann, bob):
+            phone.healthy()
+        return f"club {club}: a game on one device, its table, the names tapped, an online club game, the website"
+    finally:
+        ann.close()
+        bob.close()
+        if web is not None:
+            web.close()
+
+
 def check_fireworks(browser, build_url: str) -> str:
     """An Abaka on the first roll, with steered dice: bigger fireworks on both phones as the dice land."""
     try:
@@ -520,6 +603,8 @@ def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[st
                      ("online", "an online game, two phones", lambda: check_online(browser, url, games)),
                      ("website", "a website player and an app player at one table",
                       lambda: check_website_and_app(browser, url, server, games)),
+                     ("clubs", "a club made in the app, two phones and the website",
+                      lambda: check_clubs(browser, url, server, games)),
                      ("a tie", "a tie for the first turn, steered dice", lambda: check_tie(browser, build_url)),
                      ("fireworks", "an Abaka on the first roll, steered dice",
                       lambda: check_fireworks(browser, build_url))]
@@ -555,17 +640,19 @@ def main() -> int:
         print(f"no web build in {build}: cd mobile && npx expo export --platform web")
         return 2
     httpd, build_url = serve_build(build)
-    process = None
+    process = log = None
     try:
         if args.serve:
             folder = tempfile.mkdtemp(prefix="abaka-app-check-")
-            process, server, _ = website_check.serve("abaka_server.py", folder)
+            process, server, log = website_check.serve("abaka_server.py", folder)
         else:
             server = args.server
         print(f"checking the app's web build against {server}")
         problems, games = run(build_url, server, tuple(args.only or FLOWS))
         if games:
             print("test games:", ", ".join(games))
+        if problems and log:
+            print("the server's log, at its end:\n" + Path(log).read_text()[-3000:])
     finally:
         httpd.shutdown()
         if process is not None:
