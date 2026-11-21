@@ -21,26 +21,14 @@ opened the game, or older than STALE_SECONDS when first seen, are not shown.
 
 import time
 from html import escape
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional
 
 import streamlit as st
 
-from abaka.models import Category
+from abaka.effects import REACTION_LOOKS as REACTIONS  # reaction -> (emoji, label); a label goes through t()
+from abaka.effects import effect_words, reaction_words
 from abaka.rooms import FIREWORKS, GRAND_FIREWORKS, SPARKLES, TooFast
 from abaka.i18n import t
-from abaka.moves import row_name
-
-# Reaction key (abaka.rooms.REACTIONS) -> emoji and label. Labels go through t() when shown.
-REACTIONS = {
-    "lucky": ("\U0001F340", "Lucky!"),
-    "nice": ("\U0001F44F", "Nice!"),
-    "wow": ("\U0001F62E", "Wow!"),
-    "ouch": ("\U0001F62C", "Ouch"),
-    "hurry": ("⏳", "Hurry up"),
-    "gg": ("\U0001F91D", "GG"),
-    "haha": ("\U0001F602", "Haha"),
-    "fire": ("\U0001F525", "On fire!"),
-}
 
 SECONDS = {"reaction": 3.5, GRAND_FIREWORKS: 6.0, FIREWORKS: 4.5, SPARKLES: 2.8}  # how long each is on screen
 LEAD_IN_SECONDS = 0.45  # a throw's effect waits for the dice to land (their spin in dice.py takes .45s)
@@ -82,18 +70,10 @@ def _send(react, key: str) -> None:
 
 
 def _reaction_html(event: dict, names: List[str], me: Optional[int]) -> str:
-    emoji, label = REACTIONS.get(event["reaction"], ("", event["reaction"]))
-    seat, to = event["seat"], event.get("to")
-    who = t("You") if seat == me else escape(_name(names, seat))
-    if to is not None:
-        who = t("{name} → you", name=who) if to == me else f"{who} → {escape(_name(names, to))}"
-    mine = " mine" if to is not None and to == me else ""
-    return (f'<div class="ab-bubble{mine}"><span class="ab-bubble-emoji">{emoji}</span>'
-            f'<span class="ab-bubble-text"><b>{who}</b>{escape(t(label))}</span></div>')
-
-
-def _name(names: List[str], seat: int) -> str:
-    return names[seat] if 0 <= seat < len(names) else "?"
+    words = reaction_words(event, names, me)  # plain text: the same words the apps get
+    mine = " mine" if words["to_you"] else ""
+    return (f'<div class="ab-bubble{mine}"><span class="ab-bubble-emoji">{words["emoji"]}</span>'
+            f'<span class="ab-bubble-text"><b>{escape(words["who"])}</b>{escape(words["label"])}</span></div>')
 
 
 # ------------------------------------------------------------------ effects ----
@@ -109,14 +89,12 @@ _LOOKS = {
                                  (50, 38, 2.2)]),
     SPARKLES: ("small", 12, 80, [(35, 26, 0.0), (65, 22, 0.3)]),
 }
-_COLUMNS = ("I", "II", "III")
 _STARS = 28  # the rain of sparkles in the bigger fireworks
 
 
 def _effect_html(event: dict, names: List[str], me: Optional[int]) -> str:
-    who = t("You") if _is_me(event, me) else escape(_name(names, event["seat"]))
     kind, spokes, reach, bursts = _LOOKS.get(event["effect"], _LOOKS[SPARKLES])
-    title, sub = _effect_text(event, who)
+    title, sub = (escape(text) for text in effect_words(event, names, me))  # the banner: the apps' words too
     layers = []
     for b, (x, y, delay) in enumerate(bursts):
         dots = "".join(
@@ -133,38 +111,9 @@ def _effect_html(event: dict, names: List[str], me: Optional[int]) -> str:
             "</div>")
 
 
-def _effect_text(event: dict, who: str) -> Tuple[str, str]:
-    """The banner: title and the line under it. `who` is already escaped."""
-    what = event.get("what") or event.get("category") or ""
-    if what == "BONUS":
-        parts = [t("{row} row +{points}", row=escape(_row(name)), points=int(points))
-                 for name, points in event.get("rows", ())]
-        parts += [t("column {n} +{points}", n=_COLUMNS[col] if 0 <= col < 3 else "?", points=int(points))
-                  for col, points in event.get("columns", ())]
-        return (t("Bonus!") if len(parts) == 1 else t("Bonuses!")), " · ".join([who] + parts)
-    if what == "ABAKA":
-        title = t("Abaka!")
-    elif what == "ROYAL":
-        title = t("Royal full house!")
-    else:
-        title = escape(_row(what)) + "!"
-    return title, who + (f" · {t('first roll')}" if event.get("first") else "")
-
-
-def _row(name: str) -> str:
-    try:
-        return row_name(Category[name])
-    except KeyError:
-        return name
-
-
 def _lead_in(event: dict) -> float:
     """A throw's effect starts as the dice land; a bonus at once (the move clears the dice)."""
     return LEAD_IN_SECONDS if event["kind"] == "effect" and event.get("what") != "BONUS" else 0.0
-
-
-def _is_me(event: dict, me: Optional[int]) -> bool:
-    return me is not None and event.get("seat") == me
 
 
 # ------------------------------------------------------------------ on screen ----

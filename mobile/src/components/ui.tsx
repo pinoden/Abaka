@@ -27,13 +27,18 @@ export const colors = {
   jokerPip: '#FBBF24',
 };
 
-/** A screen: safe area, scrolling, at most 560 wide (tablets and the web build). */
-export function Screen({ children }: { children: ReactNode }) {
+/**
+ * A screen: safe area, scrolling, at most 560 wide (tablets and the web build). `over` is
+ * drawn above everything and never takes a touch (bubbles, fireworks).
+ */
+export function Screen({ children, over }: { children: ReactNode; over?: ReactNode }) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
+                  automaticallyAdjustKeyboardInsets>
         <View style={styles.column}>{children}</View>
       </ScrollView>
+      {over ? <View style={styles.over}>{over}</View> : null}
     </SafeAreaView>
   );
 }
@@ -155,6 +160,7 @@ export function Notice({ text, tone = 'error' }: { text: string; tone?: 'error' 
 
 export const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+  over: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, pointerEvents: 'none', overflow: 'hidden' },
   scroll: { paddingHorizontal: 16, paddingVertical: 16 },
   column: { width: '100%', maxWidth: 560, alignSelf: 'center', gap: 16 },
   card: {

@@ -12,7 +12,9 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 
-import { ApiError, Connection, gamesToContinue, type Move, type Seat, type State } from '../src/lib/api.ts';
+import {
+  ApiError, Connection, gamesToContinue, type GameEvent, type Move, type Seat, type State,
+} from '../src/lib/api.ts';
 
 const SERVER = process.env.ABAKA_SERVER;
 const skip = SERVER ? false : 'set ABAKA_SERVER to a running server (streamlit run abaka_server.py)';
@@ -115,8 +117,13 @@ describe('the API client against a real server', { skip }, () => {
     assert.ok(invite.can.includes('join'));
 
     // A watcher gets every state in order: the connection never hands over an older one.
+    // Its events come once each; its chat is the game's whole chat.
     let annSees: State | null = null;
-    ann.startWatching(created.code, created.token, (s) => { annSees = s; }, (e) => assert.fail(e.message));
+    const annEvents: GameEvent[] = [];
+    ann.startWatching(created.code, created.token, (s) => {
+      annSees = s;
+      annEvents.push(...s.events);
+    }, (e) => assert.fail(e.message));
     await until(() => annSees !== null, 'the watch');
 
     const joined = await bob.request<Seat>('join', { code: created.code, name: 'Test Bob' });
@@ -125,7 +132,11 @@ describe('the API client against a real server', { skip }, () => {
     await until(() => annSees!.names.length === 2 && annSees!.phase === 'starting_throw', 'the join pushed');
 
     let bobSees: State | null = null;
-    bob.startWatching(created.code, joined.token, (s) => { bobSees = s; }, (e) => assert.fail(e.message));
+    const bobEvents: GameEvent[] = [];
+    bob.startWatching(created.code, joined.token, (s) => {
+      bobSees = s;
+      bobEvents.push(...s.events);
+    }, (e) => assert.fail(e.message));
     await until(() => bobSees !== null, "Bob's watch");
     // Bob's texts come in Russian, Ann's in English.
     const rows = (await bob.request<{ rows: { name: string }[] }>('info')).rows;
@@ -161,11 +172,34 @@ describe('the API client against a real server', { skip }, () => {
     assert.ok(outdated instanceof ApiError);
     assert.equal(outdated.code, 'outdated');
 
+    // A reaction arrives with its words for each player, in that player's language.
+    const lucky = { code: created.code, token: joined.token, reaction: 'lucky', to: 0 };
+    await bob.request('react', lucky);
+    const reactions = (events: GameEvent[]) => events.filter((e) => e.kind === 'reaction');
+    await until(() => reactions(annEvents).length === 1 && reactions(bobEvents).length === 1, 'the reaction on both screens');
+    const [toAnn] = reactions(annEvents);
+    assert.deepEqual([toAnn.emoji, toAnn.who, toAnn.label, toAnn.to_you], ['🍀', 'Test Bob → you', 'Lucky!', true]);
+    const [fromBob] = reactions(bobEvents);
+    assert.deepEqual([fromBob.who, fromBob.label, fromBob.to_you], ['Вы → Test Ann', 'Повезло!', false]);
+    const tooSoon = await bob.request('react', lucky).catch((e) => e);
+    assert.ok(tooSoon instanceof ApiError);
+    assert.equal(tooSoon.code, 'too_fast');
+    assert.match(tooSoon.message, /реакци/); // the server's own words, to show as they are
+
+    // The chat: each message is sent once, and each screen has all of them.
+    await ann.request('say', { code: created.code, token: created.token, text: '  hello   Bob ' });
+    await bob.request('say', { code: created.code, token: joined.token, text: '<b>hi</b>' });
+    await until(() => annSees!.chat.length === 2 && bobSees!.chat.length === 2, 'the chat on both screens');
+    assert.deepEqual(annSees!.chat.map((m) => [m.seat, m.text]), [[0, 'hello Bob'], [1, '<b>hi</b>']]);
+    assert.deepEqual(bobSees!.chat, annSees!.chat);
+    assert.equal(reactions(annEvents).length, 1); // and the reaction was not handed over again
+
     const end = await play(created.code, players, 2);
     assert.equal(end.phase, 'over');
     // Each screen saw the end, whoever made the last move (a state its own connection
     // asked for counts as seen, so it is not pushed again: the client hands it on).
     await until(() => annSees!.phase === 'over' && bobSees!.phase === 'over', 'the end on both screens');
+    assert.deepEqual([annSees!.chat, bobSees!.chat], [[], []]); // the chat ends with the game
     ann.stopWatching();
     bob.stopWatching();
   });
