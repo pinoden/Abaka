@@ -13,10 +13,10 @@ import { Board, lastMoveText } from '@/components/Board';
 import { DieFace } from '@/components/Dice';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
-import { type ApiError, type Game, isNewer, type Move, type Seat, type State } from '@/lib/api';
+import { type ApiError, type Game, type Move, type Seat, type State } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { errorText } from '@/lib/errors';
-import { forgetGame, saveGame, tokenFor } from '@/lib/storage';
+import { forgetGame, saveGame, tokenFor, updateGame } from '@/lib/storage';
 
 type Act = (op: string, fields?: Record<string, unknown>, move?: boolean) => Promise<void>;
 type Pick = (dice: number[]) => void;
@@ -32,6 +32,7 @@ export default function GameScreen() {
   const [busy, setBusy] = useState(false);
   const [openedAt, setOpenedAt] = useState<number | null>(null); // the version this screen first drew
   const resuming = useRef(false);
+  const leaving = useRef(false); // giving up the seat: what the server says meanwhile is not for the screen
 
   useEffect(() => {
     let live = true;
@@ -48,13 +49,12 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (token === undefined) return;
-    connection.startWatching(
+    return connection.startWatching(
       code,
       token ?? undefined,
       (next) => {
-        // An older state can arrive after a newer one; one with the same `seen` may be in
-        // another language, so it replaces the one shown.
-        setState((shown) => (shown && isNewer(shown, next) ? shown : next));
+        if (leaving.current) return;
+        setState(next); // the connection never hands over an older state after a newer one
         setOpenedAt((opened) => opened ?? next.version);
         // A game on one device opened from its code: carry on at once (no seat to pick).
         if (!next.seated && next.can.includes('resume') && !resuming.current) {
@@ -65,6 +65,7 @@ export default function GameScreen() {
         }
       },
       (e: ApiError) => {
+        if (leaving.current) return;
         if (e.code === 'not_found') {
           setGone(true);
           forgetGame(code);
@@ -73,7 +74,6 @@ export default function GameScreen() {
         }
       },
     );
-    return () => connection.stopWatching();
     // t changes with the language; the connection watches again by itself then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, token, connection, keepSeat]);
@@ -110,16 +110,31 @@ export default function GameScreen() {
     if (token) connection.request('pick', { code, token, dice }).catch(() => {});
   }, [code, connection, token]);
 
+  // What the home page lists: the game's players as they are now, and whether it is over.
+  const seated = state?.seated ?? false;
+  const over = state?.phase === 'over';
+  const names = state?.names.join('\n') ?? '';
+  useEffect(() => {
+    if (seated) updateGame(code, { names: names.split('\n'), over });
+  }, [code, seated, over, names]);
+
+  /** To the home page. The seat is kept: the game is there under "Continue a game". */
+  const goHome = () => router.dismissTo('/');
+
+  /** Give up the seat in the waiting room (a game nobody is left in is closed). */
   const leave = async () => {
-    if (state?.phase === 'waiting' && token) {
-      try {
-        await connection.request('leave', { code, token });
-        await forgetGame(code);
-      } catch {
-        // Keep the game listed: it can be opened again.
-      }
+    if (!token) return goHome();
+    setBusy(true);
+    leaving.current = true;
+    try {
+      await connection.request('leave', { code, token });
+      await forgetGame(code);
+      goHome();
+    } catch (e) {
+      leaving.current = false;
+      setError(errorText(e, t)); // the seat is still held: say so, and stay
+      setBusy(false);
     }
-    router.dismissTo('/');
   };
 
   let body: ReactNode;
@@ -146,7 +161,7 @@ export default function GameScreen() {
   return (
     <Screen>
       <View style={styles.bar}>
-        <Pressable accessibilityRole="button" testID="home" onPress={leave} hitSlop={8}>
+        <Pressable accessibilityRole="button" testID="home" onPress={goHome} hitSlop={8}>
           <Text style={styles.barHome}>‹ {t('Home')}</Text>
         </Pressable>
         <Text style={styles.barTitle} numberOfLines={1}>
@@ -240,7 +255,7 @@ function WaitingRoom({ state, act, busy, onLeave }: {
                 onPress={() => act('start_now', {}, false)} />
       ) : null}
       <Button kind="quiet" testID="leave" label={state.you === 0 && joined === 1 ? t('Cancel') : t('Leave')}
-              onPress={onLeave} />
+              disabled={busy} onPress={onLeave} />
     </Card>
   );
 }
@@ -458,11 +473,13 @@ function StartingThrow({ state, game, act, busy }: { state: State; game: Game; a
       {state.names.map((name, seat) => {
         const th = latest.get(seat);
         const inRound = st.throwing.includes(seat);
-        const fresh = th && th.round === st.round;
+        // A player out of a tie's next round keeps the throw that put them out (dimmed), so
+        // everyone can see how much they threw (Backlog item 16).
+        const shown = th && (th.round === st.round || !inRound);
         return (
-          <View key={seat} style={[styles.throwRow, !inRound && styles.out]}>
+          <View key={seat} testID={`throw-${seat}`} style={[styles.throwRow, !inRound && styles.out]}>
             <Text style={styles.throwName} numberOfLines={1}>{name}</Text>
-            {fresh && th ? (
+            {shown && th ? (
               <View style={styles.smallDice}>
                 {th.dice.map((die, i) => <DieFace key={i} die={die} size={22} />)}
                 <Text style={styles.throwTotal}>{th.total}</Text>

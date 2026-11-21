@@ -9,10 +9,10 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Screen, Title } from '@/components/ui';
-import type { Seat } from '@/lib/api';
+import { gamesToContinue, type Seat } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { errorText } from '@/lib/errors';
-import { type SavedGame, savedGames, saveGame } from '@/lib/storage';
+import { forgetGame, type SavedGame, savedGames, saveGame, updateGame } from '@/lib/storage';
 
 const GAMES_SHOWN = 4; // as on the web (MY_GAMES_SHOWN)
 const PLAYER_COUNTS = [2, 3, 4, 5];
@@ -29,9 +29,27 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const nameLength = info?.limits.name ?? 20;
 
+  // The games to continue: at once what the device remembers, then what the server says
+  // (a game that ended or was closed elsewhere is not offered any more).
   useFocusEffect(useCallback(() => {
-    savedGames().then(setGames);
-  }, []));
+    let shown = true;
+    (async () => {
+      const saved = await savedGames();
+      if (shown) setGames(saved.filter((game) => !game.over).slice(0, GAMES_SHOWN));
+      const now = await gamesToContinue(connection, saved.map((game) => game.code), GAMES_SHOWN);
+      if (!now) return;
+      for (const code of now.gone) await forgetGame(code);
+      for (const code of now.over) {
+        const game = saved.find((g) => g.code === code);
+        if (game) await updateGame(code, { names: game.names, over: true });
+      }
+      for (const state of now.open) await updateGame(state.code, { names: state.names, over: false });
+      if (shown) {
+        setGames(now.open.map((state) => ({ code: state.code, local: state.local, names: state.names, at: 0 })));
+      }
+    })();
+    return () => { shown = false; };
+  }, [connection]));
 
   const start = async (op: 'create' | 'create_local', fields: Record<string, unknown>) => {
     setBusy(true);
@@ -68,7 +86,7 @@ export default function Home() {
         <Card testID="card-my-games">
           <Title>{t('Continue a game')}</Title>
           <Muted>{t('Your games are saved after every move.')}</Muted>
-          {games.slice(0, GAMES_SHOWN).map((game) => (
+          {games.map((game) => (
             <Button
               key={game.code}
               kind="secondary"

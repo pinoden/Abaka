@@ -344,11 +344,12 @@ item 25, stage B).
 
 Open `ws://<host>/api/v1/live` (`wss://` with TLS) and send requests as text
 messages: any operation above, with an optional `id` that comes back with its
-answer. One more request exists only here:
+answer. Two more requests exist only here:
 
 | Request | What it does |
 |---|---|
 | `{"op": "watch", "code", "token", "lang", "since"}` | Answers like `state`, and from then on pushes the game's state whenever it changes. A connection watches one game; `watch` another to switch. |
+| `{"op": "unwatch"}` | Stops the pushes (the player left the game's screen); the connection stays for other requests. Answers `{"watching": null}`, also when nothing was watched, so it can serve as a check that the server is there. |
 
 The server sends:
 
@@ -367,6 +368,14 @@ The server sends:
   hands such replies to whatever shows the game, as `mobile/src/lib/api.ts` does.
 - If the watched game is closed, the server sends one `not_found` error and stops
   watching.
+- `seen` orders the states that arrive on one connection: an answer and a push can
+  cross, so drop a state older than the one shown. The answer to `watch` is a fresh
+  start, though. After the server restarts, a game's counts of picks and events begin
+  again, and comparing with a state from before would hide the game's news until its
+  next move.
+- A connection can die without closing (a phone that changed networks). If nothing
+  has arrived for a while, ask `seen` (or `unwatch`, when nothing is watched); if no
+  answer comes, open a new connection and `watch` again.
 - When the server's code is updated while it runs, it closes the connection with
   code 1012 (service restart). Reconnect and `watch` again; a deploy that restarts
   the server closes it too.

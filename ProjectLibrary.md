@@ -47,6 +47,7 @@ cd mobile && npm ci                                   # its packages (Node 26)
 npx expo start                                        # development server: Expo Go on a phone, or w for the web
 npx tsc --noEmit && npx expo lint                     # typecheck and lint
 ABAKA_SERVER=http://127.0.0.1:8501 npm test           # its API client against a running abaka_server.py
+npm test                                              # only its connection against a scripted server (no game server)
 npx expo export --platform web                        # its web build, in mobile/dist (not committed)
 python tools/app_check.py --serve                     # (from the repository) the web build in headless Chromium
 ```
@@ -160,7 +161,7 @@ Python + Streamlit.
 | `tests/` | `unittest` tests |
 | `mobile/` | The app for Android and iOS: React Native with Expo, TypeScript. Its own guide: `mobile/AGENTS.md` |
 | `tools/export_texts.py` | The app's texts from `abaka/i18n.py`, into `mobile/src/texts.json` (committed) |
-| `tools/app_check.py` | The app's web build played in headless Chromium against a real server (CI) |
+| `tools/app_check.py` | The app's web build played in headless Chromium against a real server (CI), and against a server with steered dice for what cannot be thrown on purpose |
 
 `abaka/` is the game without its web page: the rules, the rooms, the clubs,
 saving, the move previews, the texts and the API. Everything in it runs on
@@ -509,9 +510,19 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 - The app (`mobile/`) is the first client:
   - It sends every request over the live connection, so its web build needs no
     cross-origin permission from the server.
+  - One connection serves every screen and stays open between them. A screen
+    that stops watching sends `unwatch` (a request of the live connection,
+    like `watch`).
   - It reconnects after a drop and watches its game again.
-  - A request that could not be sent within 15 s fails as `offline` and is
-    never sent later.
+  - A screen gets its game's states in order. The answer to `watch` is a fresh
+    start: after a server restart a game's counts of picks and events begin
+    again (they are not saved).
+  - A connection can die without closing. When nothing has arrived for 20 s
+    the app asks the server whether it is there (`seen`, or `unwatch` when
+    nothing is watched). No answer within 8 s, or a request never answered,
+    and the connection is replaced.
+  - A request that got no answer within 15 s fails as `offline` and is never
+    made later.
 
 ### UI conventions
 
@@ -640,7 +651,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, and the app's technology and first screens in PR #61. Item 26 (2026-11-21, a full test round) is in PR #62. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, and the app's technology and first screens in PR #61. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1224,8 +1235,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Whether games on one device must work without a network.
     - How seats are protected (also in item 11).
 
-26. **A full test round, with a new model.** The server's side is done in
-    PR #62. The app's side follows in its own pull request.
+26. **A full test round, with a new model.** Done: the server's side in
+    PR #62, the app's side in PR #63.
     > "Keep going, also test everything again while of Fable"
     - Everything was run again, and all the code was read again (Status has
       the list).
@@ -1242,8 +1253,69 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         Streamlit version.
     - The website was not at risk: the first two need the API, which the live
       app does not serve yet.
+    - Found and fixed in the app, PR #63:
+      - "‹ Home" in the waiting room gave up the seat, so a host who went to
+        the home page closed the game their friends had the code of;
+      - after a server restart, a phone did not show what happened in its game
+        until the next move;
+      - a connection that died without closing was never replaced;
+      - "Continue a game" offered games that had ended or no longer existed;
+      - in a tie for the first turn, the throw of a player who was out of the
+        next round vanished from the screen.
 
 ## Status (2026-11-21)
+
+- **The test round in the phone app (Backlog item 26):** PR #63.
+  - Found by reading the app's code, then shown in its web build in Chromium
+    before anything was changed:
+    - **"‹ Home" in the waiting room gave up the seat.** A host who tapped it
+      closed the game, and the code friends had led nowhere. It only goes
+      home now; the game stays under "Continue a game". Leave and Cancel give
+      the seat up, as their names say.
+    - **After a server restart, a phone missed what happened until the next
+      move.** A game's counts of picked dice and events are not saved, so they
+      begin again, and the app took the game's news for older than what it
+      showed. Seen with picked dice: one phone showed dice 0 and 2 picked, the
+      other still only die 0. The same would have hidden chat messages after
+      every deploy.
+    - **"Continue a game" offered finished games**, and games closed on
+      another device. It now asks the server, as the website's home page does.
+    - **In a tie for the first turn, the throw of the player who was out
+      vanished** (the website keeps it, dimmed: Backlog item 16).
+  - Found by reading, and shown with a scripted server (below):
+    - **A connection that dies without closing** (a phone that changes
+      networks) was never replaced: no more news, and every tap failed after
+      15 s. The app now asks the server whether it is there when nothing has
+      arrived for 20 s, and replaces a connection that does not answer.
+    - **A screen that closed late stopped the next screen's game.** While one
+      screen slides over another, the old one closes after the new one has
+      opened. Each screen now stops only its own watch.
+  - Changed with them: one connection for every screen. Leaving a game's
+    screen sends `unwatch` instead of closing the connection, so going home
+    and into another game needs no new connection (on a phone network, a
+    handshake each time).
+  - Tests:
+    - `mobile/tests/connection.test.ts`: the connection against a scripted
+      server in the test's own process, 12 cases (a restart, states out of
+      order, a connection that goes silent, a request never answered, a
+      connection that never opens, screens closing late). No game server
+      needed. 11 of them fail on the connection as it was; the twelfth
+      guards a case it already handled. 38 runs in a row passed, 18 of them
+      six at a time with every core kept busy.
+    - `tools/app_check.py` now also goes home and back from the waiting room
+      and from a game, plays a game to its end through the API and looks for
+      it on the home page, and makes a tie for the first turn with **steered
+      dice**: a real game server inside the check's process, whose dice the
+      check chooses. Each new step fails on the app as it was.
+    - The server's `unwatch` has its test (`tests/test_server.py`).
+  - Checked: the app's 18 tests, typecheck, lint, Expo's 20 project checks,
+    its web build in Chromium; every Python test on 3.8, 3.9 and 3.13.
+    Load-test row: no slowdown (24% CPU, 6.3 ms median poll).
+  - Not explained: one run of the two-phone check took 11 s instead of 4. It
+    did not happen again in 34 runs, with step timings switched on.
+  - Still not checked on a real phone.
+  - Next: reactions, effects and the chat in the app.
+
 
 - **A full test round with a new model (owner: "test everything again",
   Backlog item 26):** PR #62.
@@ -1584,13 +1656,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
   291 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 5 tests
-  (`mobile/tests/api.test.ts`, `node --test`: complete games on one device and
-  online through its API client against a real server, pushes, refusals, a
-  seat taken back, an unreachable server), and CI plays its web build
+  scan reads both quotes). The phone app has its own 18 tests (`node --test`).
+  6 against a real server (`mobile/tests/api.test.ts`: complete games on one
+  device and online through its API client, pushes, refusals, a seat taken
+  back, the games to continue, an unreachable server). 12 against a scripted
+  server (`mobile/tests/connection.test.ts`: a server restart, states out of
+  order, connections that die silently or never open, requests never answered,
+  screens closing late). CI also plays its web build
   (`tools/app_check.py`). 2 website tests (`test_website.py`: `tools/website_check.py` in
   headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
-  11 server tests (`test_server.py`: HTTP statuses for every refusal,
+  12 server tests (`test_server.py`: `unwatch`; HTTP statuses for every refusal,
   the limit on new games per client and behind a proxy, a server fault
   answered with `retry` without the token in the log, the live connection's
   pushes (only new chat, no echo of the app's own move), a closed game
@@ -1767,6 +1842,9 @@ From the architecture review (details and file:line in
     a chat message broke that game's page and connections for everyone.)
   - Not limited yet: how many requests one live connection may send, and how
     many connections one client may open.
+- The phone app has not run on a real phone yet. Its connection's handling of
+  a network that changes or goes away is tested against a scripted server, not
+  on a phone's network.
 - (Fixed in PR #32: Streamlit was unpinned and there was no CI. Expired and
   unreadable save files are deleted or quarantined since PR #30.)
 
@@ -1778,6 +1856,60 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-21: the test round in the phone app (Claude Code, PR #63)**
+
+- The second half of the owner's "test everything again". Each finding was
+  first shown to happen, in the app's web build or with a scripted server,
+  and only then fixed.
+- "‹ Home" only goes home. A seat is given up by a button that says so.
+  - The website's waiting room has no way home except Leave, so the app's
+    first version made Home leave too. On a phone the system's back gesture
+    left the screen without giving up the seat, so the two ways home differed.
+  - Leave now waits for the server's answer. If it fails, the app says so and
+    stays, since the seat is still held.
+- The order of a game's states is the connection's job, not each screen's.
+  - `seen` (version, picks, latest event) orders the states of one
+    connection, where an answer and a push can cross.
+  - The answer to `watch` is a fresh start. The counts of picks and events
+    live in the server's memory and begin again after a restart, with the
+    same version. Compared with what the screen showed before, the game's
+    news looked older and was dropped until the next move.
+  - `docs/API.md` now says both, for any other client.
+- A dead connection is found by asking, because a phone's WebSocket cannot
+  see the server's pings.
+  - Only when nothing has arrived for 20 s, so a game being played costs
+    nothing extra. The question is `seen`, which also tells whether the
+    screen fell behind (then the app asks for the game again).
+  - A request that is never answered counts too: it fails as `offline`, and
+    the connection is closed rather than trusted again.
+  - A connection that has not opened after 10 s is given up and tried again.
+- One connection for every screen, and `unwatch`.
+  - Before, leaving a game's screen closed the connection, because protocol 1
+    had no way to stop the pushes. Every trip home and back made a new one.
+  - Closing it also failed the home page's own requests when the two
+    overlapped.
+  - `unwatch` is a request of the live connection, like `watch`. Adding it
+    keeps protocol 1. It answers the same when nothing is watched, so the app
+    uses it as its "are you there?" on the home page.
+- `startWatching` returns what stops that watch only. A shared "stop
+  watching" let a screen that closed late stop the game of the screen opened
+  after it.
+- "Continue a game" asks the server about the games the device remembers, in
+  order, until it has 4 to offer, as the website's home page does (each look
+  can make the server read a game). The device also remembers that a game
+  ended, so the list is right at once and corrected a moment later.
+  - It asks without the seat's token: an invite's view already says whether
+    a game is over.
+- The scripted server for `mobile/tests/connection.test.ts` is the `ws`
+  package, version 7, which React Native's own tools already bring. It is a
+  development dependency, never part of the app.
+- Steered dice (`Steered` in `tools/app_check.py`): the real API over the
+  network on a store inside the check's process, with `roll_dice` answered
+  from a list. The next part of the app (fireworks for an Abaka) needs it too.
+  - First the check failed on the old app only because a test hook was
+    missing there. So the fix's one line was reverted alone, and the check
+    failed for the right reason.
 
 **2026-11-21: a full test round, the server's side (Claude Code, PR #62)**
 

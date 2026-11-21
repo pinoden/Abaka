@@ -201,6 +201,25 @@ class TestOverTheNetwork(unittest.TestCase):
             ws.send(json.dumps({"id": 3, "op": "state", "code": "ZZZZZ"}))
             self.assertEqual((receive(ws)["error"], 3), ("not_found", 3))
 
+    def test_unwatch_stops_the_pushes_and_keeps_the_connection(self):
+        code, ann, bob, state = self.game()
+        with self.live() as ws:
+            ws.send(json.dumps({"id": 1, "op": "watch", "code": code, "token": ann}))
+            receive(ws)
+            ws.send(json.dumps({"id": 2, "op": "unwatch"}))  # the app left the game's screen
+            self.assertEqual(receive(ws), {"type": "reply", "id": 2, "response": {"watching": None}})
+            self.post({"op": "say", "code": code, "token": bob, "text": "anyone?"})
+            with self.assertRaises(TimeoutError):
+                ws.recv(timeout=0.8)  # no push any more
+            ws.send(json.dumps({"id": 3, "op": "info"}))  # the connection goes on answering
+            self.assertEqual((receive(ws)["id"], 3), (3, 3))
+            ws.send(json.dumps({"id": 4, "op": "unwatch"}))  # watching nothing: the same answer
+            self.assertEqual(receive(ws)["response"], {"watching": None})
+            # Watching again starts afresh: the whole chat, not only what is new.
+            ws.send(json.dumps({"id": 5, "op": "watch", "code": code, "token": ann}))
+            self.assertEqual([m["text"] for m in receive(ws)["response"]["state"]["chat"]], ["anyone?"])
+        self.assertEqual(self.post({"op": "unwatch"})[0], 400)  # the live connection's only
+
     def test_a_watched_game_that_ends_is_reported_once(self):
         made = self.post({"op": "create", "name": "Ann", "players": 3})[1]
         with self.live() as ws:
