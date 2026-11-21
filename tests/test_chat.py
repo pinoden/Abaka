@@ -77,6 +77,8 @@ class TestChatInTheStore(unittest.TestCase):
     def test_cleaned_and_cut(self):
         self.assertEqual(clean_message("a‮b\x00c​ d\n\ne"), "abc d e")
         self.assertEqual(len(clean_message("x" * 500)), rooms.MAX_MESSAGE_LENGTH)
+        self.assertEqual(clean_message("hi \ud83d there\udc00"), "hi there")  # half a surrogate pair cannot be sent
+        self.assertEqual(clean_message("hi \U0001F44B"), "hi \U0001F44B")  # a whole emoji is kept
         self.store.say(self.code, self.tokens[0], " ​\n ")  # nothing left: not sent
         self.store.say(self.code, self.tokens[0], "<b>hi</b> [x](http://e.vil)")  # kept as typed; escaped when shown
         self.assertEqual([m["text"] for m in self.store.view(self.code).chat], ["<b>hi</b> [x](http://e.vil)"])

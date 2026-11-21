@@ -43,6 +43,14 @@ Moves also carry `version`: the `version` of the state the player chose the move
 on. If the game has changed since, the move is refused with `outdated` and nothing
 changes. This catches double taps and moves made on an old screen.
 
+The server cleans every name and chat message it is given, so show the text that
+comes back in the state, not what was typed:
+- spaces are collapsed, and the text is cut to its limit (`info.limits`);
+- control characters and invisible ones (such as right-to-left overrides) are
+  removed;
+- so is half of a surrogate pair, which JSON can carry (`"\ud83d"`) and UTF-8
+  cannot. A whole emoji is kept.
+
 ## Operations
 
 ### Starting and finding games
@@ -362,6 +370,9 @@ The server sends:
 - When the server's code is updated while it runs, it closes the connection with
   code 1012 (service restart). Reconnect and `watch` again; a deploy that restarts
   the server closes it too.
+- If the server cannot go on serving a connection (a fault on its side), it closes
+  it with code 1011 (internal error) instead of leaving it open without news.
+  Reconnect and `watch` again, as after any drop.
 
 ## Versions
 

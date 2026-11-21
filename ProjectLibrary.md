@@ -496,6 +496,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     the new code.
   - Streamlit Community Cloud runs `abaka_ui.py` alone, so the live app does
     not serve the API yet (item 25, stage B).
+  - A connection the server cannot go on serving (a push that fails) is
+    closed with 1011, so the app reconnects. It is never left open without
+    news.
+  - Answers are written so that they can always be sent (`as_json`): text
+    UTF-8 cannot carry goes out as `\u` escapes.
   - Any reply on a live connection that carries the watched game's state for
     the watching seat (a move, a `state` request) counts as sent: only later
     changes are pushed. A client hands such replies to its screen
@@ -615,7 +620,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   as Markdown (captions, toasts, button labels) they go through `i18n.md()`:
   backslash escapes, plus a zero-width space after ":", "." and "@" because
   captions and toasts turn bare addresses into links even when escaped.
-  `rooms.clean_name` also removes control and invisible format characters.
+  `rooms.clean_name` also removes control and invisible format characters,
+  and halves of surrogate pairs, which UTF-8 cannot carry.
+- Text a player types (a name, a chat message, a club's name) reaches a store
+  only through `rooms.clean_name` or `rooms.clean_message`. A new kind of
+  typed text goes through them too.
 - A pull request that changes the app's code records a load-test row
   (`python tools/loadtest.py --baseline --record docs/LOADTEST.md`, about a
   minute) and says in its description if the tool flags a slowdown.
@@ -631,7 +640,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, and the app's technology and first screens in PR #61. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, and the app's technology and first screens in PR #61. Item 26 (2026-11-21, a full test round) is in PR #62. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1215,7 +1224,76 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Whether games on one device must work without a network.
     - How seats are protected (also in item 11).
 
-## Status (2026-11-20)
+26. **A full test round, with a new model.** The server's side is done in
+    PR #62. The app's side follows in its own pull request.
+    > "Keep going, also test everything again while of Fable"
+    - Everything was run again, and all the code was read again (Status has
+      the list).
+    - New kinds of test: malformed and hostile requests thrown at the API, and
+      many phones on the live connection at once.
+    - Found and fixed in PR #62:
+      - half of a broken character in a name or a chat message, sent through
+        the API, broke that game for everyone at its table;
+      - a connection the server could not go on serving stayed open without
+        news;
+      - one game the database would not take stopped the import of all the
+        saved games after it;
+      - the test of a club player's name typed in was skipped on every
+        Streamlit version.
+    - The website was not at risk: the first two need the API, which the live
+      app does not serve yet.
+
+## Status (2026-11-21)
+
+- **A full test round with a new model (owner: "test everything again",
+  Backlog item 26):** PR #62.
+  - Run again, all passing:
+    - every test on Python 3.8, on 3.9 with Streamlit 1.48, and on 3.13 with
+      Streamlit 1.67, Chromium and Postgres;
+    - 852 random complete games with rule checks after each of their 134,010
+      moves, on 3.8 and 3.9, the scoreboard drawn 8,656 times;
+    - 5 whole games of the text version, wrong answers included;
+    - the phone app: typecheck, lint, Expo's 20 project checks, its 5 client
+      tests, and its web build played in Chromium;
+    - the website checks on both local servers and on the live app.
+  - New in this round:
+    - Malformed and hostile requests at the API, from a scratch tool: the
+      first 30,000 met the bug below 45 times; 420,000 more after the fix
+      met no server fault. A 4,000-request version is now a test.
+    - 16 kinds of broken message over the network (not JSON, binary, 1 MB,
+      5,000 arrays deep...): after the fix each is refused or answered, and
+      the connection goes on answering.
+    - The live connection under load (Known issues, Capacity).
+  - All the code was read again: the engine, rooms, clubs, saving, the API,
+    the server, the pages and the app.
+  - Found and fixed:
+    - **Half of a surrogate pair** (`"\ud83d"`: JSON can carry it, UTF-8
+      cannot) in a name, a chat message or a club name, sent through the API.
+      Checked on a local server:
+      - the game's web page showed an error box with a traceback;
+      - the other players' live connections brought no more news, and a new
+        connection was closed as soon as it watched the game;
+      - HTTP answers were a plain 500;
+      - the game could not be saved to Postgres.
+      Anyone with a game's code could do it. Names and messages now lose such
+      characters like the invisible ones, and the server's answers can always
+      be sent.
+    - **A connection the server cannot go on serving** is now closed (code
+      1011), so the app reconnects. Before, a failed push left it open and
+      silent.
+    - **The import of saved files into the database** stopped at the first
+      game the database refused. It goes on now, and gives up after 3
+      failures in a row (an unreachable database).
+    - **The club player's name typed in** (Backlog item 21) was tested
+      nowhere: AppTest cannot send a typed-in option on Streamlit 1.67 either,
+      so the step was skipped in CI too. The test now sends what a browser
+      sends. With the name picker broken on purpose, it fails on 1.67.
+  - Each fix has tests that fail without it.
+  - Load-test row: no slowdown (28% CPU, 7.6 ms median poll).
+  - The live app does not serve the API yet, so the website was not at risk.
+  - Next: what the round found in the app (its own pull request), then
+    reactions, effects and the chat in the app.
+
 
 - **The app for phones: React Native with Expo, and its first screens (owner:
   "React native", Backlog item 25, C1 and the first part of C2):** PR #61.
@@ -1498,14 +1576,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 282 run and these are
-  skipped: one step (a typed-in club name, which AppTest 1.48 cannot send), the
-  9 database tests, which need a test database (CI has one), the 7 network
-  tests, which need Streamlit 1.67's packages, and the website checks, which
-  need Streamlit 1.67 and Chromium (CI has them all). On 3.8, 282 run and 53
-  are skipped (9 need a database or psycopg; the others need Streamlit). On
-  3.13 with Streamlit 1.67 and Chromium, all 284 pass but the 9 database
-  tests. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
+- **Tests:** on Python 3.9 with Streamlit 1.48, 289 run and these are
+  skipped: the 9 database tests, which need a test database (CI has one), the
+  9 network tests, which need Streamlit 1.67's packages, and the website
+  checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
+  289 run and 55 are skipped (9 need a database or psycopg; the others need
+  Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
+  291 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
   scan reads both quotes). The phone app has its own 5 tests
   (`mobile/tests/api.test.ts`, `node --test`: complete games on one device and
@@ -1513,13 +1590,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   seat taken back, an unreachable server), and CI plays its web build
   (`tools/app_check.py`). 2 website tests (`test_website.py`: `tools/website_check.py` in
   headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
-  9 server tests (`test_server.py`: HTTP statuses for every refusal,
+  11 server tests (`test_server.py`: HTTP statuses for every refusal,
   the limit on new games per client and behind a proxy, a server fault
   answered with `retry` without the token in the log, the live connection's
   pushes (only new chat, no echo of the app's own move), a closed game
-  reported once, connections closed with 1012 after a code update, one store
+  reported once, text that UTF-8 cannot carry (cleaned, and never the end of
+  a connection), a connection that cannot be served closed with 1011,
+  connections closed with 1012 after a code update, one store
   until the code changes, a page joining a game made through the API, and
-  `streamlit run abaka_server.py` serving the page and the API). 18 API tests (`test_api.py`: complete games for 2 and 5
+  `streamlit run abaka_server.py` serving the page and the API). 20 API tests (`test_api.py`: 4,000 malformed and hostile
+  requests answered or refused, never a server fault; complete games for 2 and 5
   players online and on one device through the API only, every preview
   matched by the move it describes; what a seat and an outsider see, tokens
   never in a state, outdated and out-of-turn moves, a seat taken back, picks,
@@ -1659,6 +1739,18 @@ From the architecture review (details and file:line in
     is 1.5-3 times slower.
   - Since `postScriptGC = false` (PR #27), 100 pages polling every second
     take about 30% of a core.
+  - The apps' live connection (`WS /api/v1/live`), measured on one M1 core
+    with a scratch tool (2026-11-21, Python 3.13, Streamlit 1.67):
+    - A connection watching a game where nothing happens costs about 0.4 ms
+      of CPU a second, 7 times less than a page: 600 of them take 25% of a
+      core.
+    - 600 connections in 300 two-player games, each game making a move about
+      every 0.75 s: 94% of a core. A move was answered in 7 ms (median) and
+      reached the other player in 138 ms (256 ms at the 95th percentile).
+    - 1,200 connections that busy are too many: moves answered in 0.4 s,
+      pushes after 0.6 s. Nothing was lost.
+    - The cost is the server looking at each watched game four times a
+      second. Change notifications from the store would remove it (Stage 3).
 - (Fixed in PR #28 and PR #30: memory only grew. Finished games stayed in
   memory for 7 days, and every code update left the previous store behind.)
 - (Fixed in PR #28: the global lock was held across deep copies and file
@@ -1671,6 +1763,10 @@ From the architecture review (details and file:line in
     stopped yet).
   - (Fixed in PR #29: player names reached Markdown unescaped, so a name
     could be a link or an image.)
+  - (Fixed in PR #62: through the API, half of a surrogate pair in a name or
+    a chat message broke that game's page and connections for everyone.)
+  - Not limited yet: how many requests one live connection may send, and how
+    many connections one client may open.
 - (Fixed in PR #32: Streamlit was unpinned and there was no CI. Expired and
   unreadable save files are deleted or quarantined since PR #30.)
 
@@ -1682,6 +1778,54 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-21: a full test round, the server's side (Claude Code, PR #62)**
+
+- The owner asked to test everything again with the new model. The round ran
+  every check the project has, and added what it lacked: requests nobody
+  well-meaning would send.
+- How the surrogate bug was found: reading `server/http.py`, where a failed
+  send only set a flag. So what can make a send fail? Text that UTF-8 cannot
+  encode. Python's JSON reader turns `"\ud83d"` into half of a surrogate
+  pair, and `clean_name` let it through.
+  - The web page cannot send one. Streamlit refuses the browser's whole
+    message as bad UTF-8, so the click does nothing (checked in Chromium, with
+    half a pair put into the name box by a script). So the bug came with the
+    API, in PR #58 and PR #59.
+- Fixed at the door and at the exit:
+  - `clean_name` and `clean_message` drop the Unicode category Cs with Cc
+    and Cf. A club's name is cleaned by `clean_name` too (it had a copy of
+    the code).
+  - `server/http.py` writes its answers with `as_json`, which falls back to
+    `\u` escapes for text UTF-8 cannot carry. Only a message's `id`, echoed
+    as it came, can still hold such text.
+- A failed send used to set `closed` and leave the socket open. The app then
+  saw an open connection, got no pushes, and did not reconnect. Now the
+  socket is closed with 1011, and a fault in the pushing loop closes it too.
+  - 1011 and not 1012: 1012 says the server restarted, which is not true
+    here. The app reconnects after any close.
+- Not changed, on purpose:
+  - A reroll of no dice (`"dice": []`) still uses up a reroll. Only a
+    client's bug sends one, since the website and the app disable the button.
+    Refusing it would change what an operation of protocol 1 accepts.
+  - The engine's messages for moves no client offers ("Two Pairs needs two
+    different pairs.") are English only and older than Backlog items 19 and
+    20. Players never see them.
+- The fuzz is a test now (`TestHostileRequests`), not only a tool. Each
+  request starts as a well-formed one for a game in some phase, then one
+  field is replaced or others are added. Random fields alone were mostly
+  refused at the first check: a run of 3,000 such requests on the code
+  before the fix did not meet the bug.
+  - The games' dice are not seeded, so runs differ. 25 runs in a row passed;
+    without the fix, 3 of 3 failed.
+- The Decision log of 2026-11-19 (PR #51) said the typed-in club name ran on
+  Streamlit 1.67 in CI. It did not: AppTest 1.67 refuses a typed-in option
+  like 1.48, and the test skipped itself. So "skipped=1" was in every CI log
+  since. On 3.13 with a database nothing is skipped now, which makes a new
+  skip easy to see.
+- The live connection's numbers (Known issues, Capacity) come from a scratch
+  tool, not from `tools/loadtest.py`, which drives pages. If the apps get
+  users, it should become a tool with a recorded baseline, like the pages'.
 
 **2026-11-20: the app in React Native with Expo, first screens (Claude Code, PR #61)**
 

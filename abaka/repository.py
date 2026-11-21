@@ -365,6 +365,7 @@ class MirroredRepository:
     """
 
     IDLE_SECONDS = 30  # the background thread stops after this long with nothing to write
+    IMPORT_GIVES_UP_AFTER = 3  # import_files stops after this many games in a row failed
 
     def __init__(self, primary, mirror: FileRepository, background: bool = False) -> None:
         self.primary = primary
@@ -477,7 +478,7 @@ class MirroredRepository:
         except Exception as e:  # noqa: BLE001
             log.warning("could not import the saved files into the database: %s", _one_line(e))
             return 0
-        copied = 0
+        copied = failed_in_a_row = 0
         if not self.folder.is_dir():
             return 0
         for path in sorted(self.folder.glob("*.json")):
@@ -489,9 +490,14 @@ class MirroredRepository:
             try:
                 if self.primary.save(path.stem, _version_of(data), data):
                     copied += 1
+                failed_in_a_row = 0
             except Exception as e:  # noqa: BLE001
+                # One game the database will not take must not keep the others out of it;
+                # several in a row mean the database itself is the trouble.
                 log.warning("could not import game %s into the database: %s", path.stem, _one_line(e))
-                break
+                failed_in_a_row += 1
+                if failed_in_a_row == self.IMPORT_GIVES_UP_AFTER:
+                    break
         if copied:
             log.info("imported %d saved games from %s into the database", copied, self.folder)
         return copied
