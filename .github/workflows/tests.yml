@@ -4,8 +4,12 @@
 #   checks (tests/test_website.py).
 # - engine-py38: the engine must keep working on Python 3.8 (ProjectLibrary.md, Rules for
 #   changes). Streamlit is not installed there, so the app tests are skipped.
+# - mobile: the phone app (mobile/): typecheck, lint, its API client against a real
+#   abaka_server.py, and its web build played in headless Chromium (tools/app_check.py).
 #
-# Both jobs are required checks for merging into main (branch protection), by their names
+# Every job runs on every pull request, whatever it changes: GitHub blocks a merge while a
+# required job has not reported, and a workflow skipped by a `paths` filter never reports.
+# The jobs are required checks for merging into main (branch protection), by their names
 # below. Renaming a job blocks every merge until the protection names the new job.
 name: tests
 
@@ -66,3 +70,56 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Random complete games
         run: python tools/simulate.py 40 10
+
+  mobile:
+    name: Phone app (Expo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Chromium for the app check
+        run: python -m playwright install --with-deps chromium-headless-shell
+      - name: The app's packages
+        working-directory: mobile
+        run: npm ci
+      - name: Typecheck
+        working-directory: mobile
+        run: npx tsc --noEmit
+      - name: Lint
+        working-directory: mobile
+        run: npx expo lint
+      # The game server the app plays on, for the next steps: the API in the same process
+      # as the web app, saving to a folder and never to a database.
+      - name: The game server (abaka_server.py)
+        run: |
+          ABAKA_DATABASE_URL= ABAKA_SAVE_DIR="$RUNNER_TEMP/games" nohup python -m streamlit run abaka_server.py \
+            --server.port 8501 --server.address 127.0.0.1 --server.headless true > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf -X POST -H 'Content-Type: application/json' -d '{"op":"info"}' http://127.0.0.1:8501/api/v1 > /dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/server.log"
+          exit 1
+      - name: The API client against the server
+        working-directory: mobile
+        env:
+          ABAKA_SERVER: http://127.0.0.1:8501
+        run: npm test
+      - name: Web build
+        working-directory: mobile
+        run: npx expo export --platform web
+      - name: The app in a real browser (its web build)
+        run: python tools/app_check.py --server http://127.0.0.1:8501
+      - name: The server's log
+        if: failure()
+        run: cat "$RUNNER_TEMP/server.log"

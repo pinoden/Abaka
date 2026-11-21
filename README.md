@@ -39,6 +39,18 @@ streamlit run abaka_server.py   # the app and the API for apps (docs/API.md) on 
 python -m abaka             # the same game in the terminal (python main.py does the same)
 ```
 
+### The app for phones
+
+`mobile/` is the app for Android and iOS: React Native with Expo, in TypeScript. It plays
+on the server above (`streamlit run abaka_server.py`), so it needs Node 26 and that server:
+
+```bash
+cd mobile && npm ci
+npx expo start              # scan the QR code with Expo Go on a phone on the same Wi-Fi, or press w
+```
+
+Its guide, with the commands and the rules for changing it, is `mobile/AGENTS.md`.
+
 ## Project layout
 
 ```
@@ -63,9 +75,12 @@ abaka_ui.py            the app: home, invite and waiting screens, online updates
 abaka_server.py        the app and the API for apps in one process (Streamlit 1.67+)
 code_version.py        reloads the game modules when their files change (app updates)
 .streamlit/            server settings and colour theme
+mobile/                the app for Android and iOS (React Native with Expo): mobile/AGENTS.md
 tests/                 unittest tests
 tools/                 simulate.py: random complete games with rule checks;
-                       loadtest.py: simulated browsers, server CPU and latency
+                       loadtest.py: simulated browsers, server CPU and latency;
+                       website_check.py, app_check.py: the website and the app in a real browser;
+                       export_texts.py: the app's texts from abaka/i18n.py
 docs/                  API.md: the API for apps; LOADTEST.md: load-test rows;
                        ARCHITECTURE_REVIEW.md: review for many games at once
 ```
@@ -87,7 +102,9 @@ python tools/website_check.py --serve abaka_ui.py      # the same check on a loc
   (`.github/workflows/tests.yml`):
   - on Python 3.13 with the pinned Streamlit, as on Streamlit Cloud, including
     the website's main flows in headless Chromium (`tests/test_website.py`);
-  - on Python 3.8 without Streamlit.
+  - on Python 3.8 without Streamlit;
+  - the phone app: typecheck, lint, its API client against a real server, and
+    its web build in headless Chromium (`tools/app_check.py`).
 - `ProjectLibrary.md` is the project's working log: open requests, status, decisions
   and the conventions for changes.
 

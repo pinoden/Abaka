@@ -37,6 +37,18 @@ python tools/loadtest.py --baseline --record docs/LOADTEST.md   # the release ba
 python tools/pr.py status                             # open pull requests and their branches
 python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR, wait for CI, merge
                                                       # (if main moved: brings it in, waits for CI again)
+python tools/export_texts.py                          # the phone app's texts from abaka/i18n.py (mobile/src/texts.json)
+```
+
+The phone app (`mobile/`, React Native with Expo; its own guide is `mobile/AGENTS.md`):
+
+```bash
+cd mobile && npm ci                                   # its packages (Node 26)
+npx expo start                                        # development server: Expo Go on a phone, or w for the web
+npx tsc --noEmit && npx expo lint                     # typecheck and lint
+ABAKA_SERVER=http://127.0.0.1:8501 npm test           # its API client against a running abaka_server.py
+npx expo export --platform web                        # its web build, in mobile/dist (not committed)
+python tools/app_check.py --serve                     # (from the repository) the web build in headless Chromium
 ```
 
 ### Notes for this machine
@@ -94,6 +106,16 @@ python tools/pr.py ship --title "..." --body-file notes.md   # push, open the PR
 - Headless Chromium for browser checks is cached in
   `~/Library/Caches/ms-playwright`. Use it through `playwright-core` installed
   in a scratch folder, never in the repo.
+- The phone app: Node 26.13 and npm 11 are here (nvm). Xcode (only its command
+  line tools) and Android Studio are not, so there is no simulator. The app is
+  checked through its web build in headless Chromium (`tools/app_check.py`,
+  from the scratch Python 3.13), which runs all of the app's code; only the
+  drawing underneath differs from a phone's.
+  - The server for the app is `abaka_server.py` on port 8501, from the scratch
+    Python 3.13. It listens on every interface, so Expo Go on a phone on the
+    same Wi-Fi reaches it (`src/lib/server.ts` uses the Expo server's host).
+  - The server allows 10 new games per address in 10 minutes. Repeated local
+    runs of the app's tests hit it (`too_fast`); restart the server.
 - Streamlit Cloud runs Python 3.13 and the pinned Streamlit 1.67.0. The
   first message of a page's session (`NewSession.initialize.environment_info`)
   names both; read it with headless Chromium to see what Cloud runs.
@@ -136,12 +158,15 @@ Python + Streamlit.
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
 | `tests/` | `unittest` tests |
+| `mobile/` | The app for Android and iOS: React Native with Expo, TypeScript. Its own guide: `mobile/AGENTS.md` |
+| `tools/export_texts.py` | The app's texts from `abaka/i18n.py`, into `mobile/src/texts.json` (committed) |
+| `tools/app_check.py` | The app's web build played in headless Chromium against a real server (CI) |
 
 `abaka/` is the game without its web page: the rules, the rooms, the clubs,
 saving, the move previews, the texts and the API. Everything in it runs on
 Python 3.8 without Streamlit. `abaka_ui.py` and `ui_components/` are the web
-app, one client of it; the apps for phones will be another, in `mobile/`
-(Backlog item 25).
+app, one client of it; the app for phones in `mobile/` is another (Backlog
+item 25).
 Code that both need goes in `abaka/`. `server/` is the server around the game:
 where its stores save, and the API over the network.
 
@@ -471,6 +496,17 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     the new code.
   - Streamlit Community Cloud runs `abaka_ui.py` alone, so the live app does
     not serve the API yet (item 25, stage B).
+  - Any reply on a live connection that carries the watched game's state for
+    the watching seat (a move, a `state` request) counts as sent: only later
+    changes are pushed. A client hands such replies to its screen
+    (`mobile/src/lib/api.ts`); the first version of that client did not, and
+    its screen missed the last moves of a game (Decision log, 2026-11-20).
+- The app (`mobile/`) is the first client:
+  - It sends every request over the live connection, so its web build needs no
+    cross-origin permission from the server.
+  - It reconnects after a drop and watches its game again.
+  - A request that could not be sent within 15 s fails as `offline` and is
+    never sent later.
 
 ### UI conventions
 
@@ -566,6 +602,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   - a broken live app is reverted at once.
 - Code that is not about drawing the web page goes in `abaka/`, not in
   `ui_components/`, so the apps' API can use it too (Backlog item 25).
+- The phone app's texts follow the same rule: English in `t("...")`, Russian
+  in `abaka/i18n.py`, then `python tools/export_texts.py`
+  (`tests/test_mobile_texts.py` fails otherwise).
 - A new thing players can do in the web app also gets an operation in
   `abaka/api.py` and a section in `docs/API.md`, so apps can offer it. Never
   change what an existing field or operation means in protocol 1: add a new
@@ -592,7 +631,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, and where the app's code lives in PR #60. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, and the app's technology and first screens in PR #61. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1010,11 +1049,14 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Nothing is highlighted when crossing out.
 
 25. **Apps for Android and iOS.** In progress: stage A is done (PR #58 and
-    PR #59), and the app's code will live in `mobile/` in this repository
-    (PR #60). Stages B to D wait for the owner's decisions below.
+    PR #59), the app's code lives in `mobile/` in this repository (PR #60), it
+    is React Native with Expo (C1), and its first screens are in PR #61 (C2,
+    first part). Stages B and D wait for the owner's decisions below.
     > "Let's start preparing the code base to expand on android/ios"
     >
     > "Go ahead" (step A2)
+    >
+    > "React native" (C1)
     >
     > "Make sure that the websites version won't brake while developing the
     > app transform"
@@ -1065,8 +1107,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - The app's own texts come from `abaka/i18n.py` (C2). A script exports
       them into `mobile/`, the export is committed, and CI fails when it is
       out of date, so building the app needs no Python.
-    - When the folder is made, `mobile/AGENTS.md` gets the app's commands and
-      conventions, and AGENTS.md points to it, so both agents read it.
+    - `mobile/AGENTS.md` holds the app's commands and conventions, and
+      AGENTS.md points to it, so both agents read it (PR #61).
     - One repository, separate releases. The website changes on every merge;
       the app only when the owner publishes it, and old versions stay on some
       phones for months. So the server keeps answering every app version in
@@ -1111,18 +1153,37 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
     **Stage C: the app**
 
-    - [ ] C1. The app's technology (owner decides). Recommended: React
-      Native with Expo, in TypeScript.
+    - [x] C1. The app's technology: React Native with Expo (SDK 58), in
+      TypeScript. Decided by the owner ("React native"), PR #61.
       - One code base for iOS and Android, built in Expo's cloud.
       - Updates to the app's code without a store review.
-      - Alternatives: Flutter (also one code base) or two native apps
-        (twice the work).
-    - [ ] C2. The screens, as on the web:
-      - home (new game, open by code, continue, clubs), invite and waiting
-        room, the game (dice, moves, scoreboard, reactions, chat), results;
-      - English and Russian. The game's texts come from the server (`info`,
-        move labels, errors). The app's own texts reuse `abaka/i18n.py`,
-        exported into `mobile/` (see "Where the app's code lives").
+      - Expo is the way React Native's own documentation starts an app; the
+        owner had it as the recommendation.
+    - [ ] C2. The screens, as on the web. English and Russian: the game's
+      texts come from the server (`info`, move labels, errors); the app's own
+      texts reuse `abaka/i18n.py`, exported into `mobile/` (see "Where the
+      app's code lives"). In parts:
+      - [x] First part, PR #61: the app plays a whole game, on one device or
+        online.
+        - Home: continue a game played on this device, a game on one device,
+          an online game, open a game by its code.
+        - The invite: join, or take a seat back.
+        - The waiting room: the code to share, Start now, Leave.
+        - The game: starting throw, dice to pick and roll again, Score and
+          Cross out with the server's previews and the best option in gold,
+          and the board with the move's preview and the last move.
+        - The results, and Play again.
+        - The language switch.
+        - Checks: its API client plays whole games against a real server,
+          and its web build plays in headless Chromium (CI, "Phone app
+          (Expo)").
+      - [ ] Reactions, fireworks and sparkles, and the chat.
+      - [ ] Clubs: the club page, club games and the player picker.
+      - [ ] The rules screen. The rules text is in a Streamlit module; it
+        needs to move to `abaka/` and into the API first (an addition to
+        protocol 1).
+      - [ ] The app's own look on a phone: its icon and name (D1), the
+        status bar, haptics on a roll, and a check on real phones in Expo Go.
     - [ ] C3. Links: a game's link opens the app when it is installed
       (universal links and app links, served from the domain).
 
@@ -1149,13 +1210,47 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
     **Owner decisions still open**
 
-    - The app's technology (recommended: Expo).
     - The host for the server, its budget, and a domain.
     - The store accounts, the app's name and its identifier.
     - Whether games on one device must work without a network.
     - How seats are protected (also in item 11).
 
 ## Status (2026-11-20)
+
+- **The app for phones: React Native with Expo, and its first screens (owner:
+  "React native", Backlog item 25, C1 and the first part of C2):** PR #61.
+  - `mobile/`: Expo SDK 58 (React Native 0.88), TypeScript, Expo Router.
+  - It plays a whole game through the API, on one device or online:
+    - home, the invite and the waiting room;
+    - the starting throw and the turns;
+    - the results and Play again;
+    - English and Russian.
+  - Its API client against a real `abaka_server.py` (`mobile/tests/`):
+    - a 3-player game on one device and a 2-player online game, played to the
+      end, every offered move written where its preview said;
+    - the other player's screen getting each move pushed;
+    - refusals, a seat taken back, an unreachable server.
+    - 8 runs in a row passed after the fix below.
+  - Its web build in headless Chromium at 390px (`tools/app_check.py`):
+    - home in English and Russian;
+    - a game on one device: two dice rolled again, the best option written, a
+      row crossed out, both players' columns on the screen;
+    - an online game between two phones (one in Russian): join by code, the
+      starting throws, the same dice on both phones, the move on the other
+      phone.
+    - Proven to catch breakage: a misspelled move failed both games, naming
+      the server's refusal; a board too wide for a phone failed the
+      one-device game.
+  - Expo's 20 project checks (`expo-doctor`), the typecheck and the lint
+    (React's rules included) pass.
+  - CI's new job "Phone app (Expo)" runs all of it on every pull request.
+  - Not checked on a real phone: there is no simulator here. The web build
+    runs all of the app's code; the owner can try it in Expo Go (README).
+  - The website is unchanged. `abaka/i18n.py` got the app's three new texts,
+    and `docs/API.md` now spells out a rule the server already had (Decision
+    log). Load-test row: no slowdown (29% CPU, 7.6 ms median poll).
+  - Next: reactions, effects and the chat; clubs; the rules screen; a check on
+    real phones. Stages B and D still need the owner's decisions.
 
 - **Where the phone app's code lives (owner: "Add to the app plan", Backlog
   item 25):** PR #60. In this repository, in `mobile/`, made with the app
@@ -1403,14 +1498,20 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 279 run and these are
+- **Tests:** on Python 3.9 with Streamlit 1.48, 282 run and these are
   skipped: one step (a typed-in club name, which AppTest 1.48 cannot send), the
   9 database tests, which need a test database (CI has one), the 7 network
   tests, which need Streamlit 1.67's packages, and the website checks, which
-  need Streamlit 1.67 and Chromium (CI has them all). On 3.8, 279 run and 53
+  need Streamlit 1.67 and Chromium (CI has them all). On 3.8, 282 run and 53
   are skipped (9 need a database or psycopg; the others need Streamlit). On
-  3.13 with Streamlit 1.67 and Chromium, all 281 pass but the 9 database
-  tests. 2 website tests (`test_website.py`: `tools/website_check.py` in
+  3.13 with Streamlit 1.67 and Chromium, all 284 pass but the 9 database
+  tests. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
+  is current, every `t()` text in `mobile/src` has a Russian version, the
+  scan reads both quotes). The phone app has its own 5 tests
+  (`mobile/tests/api.test.ts`, `node --test`: complete games on one device and
+  online through its API client against a real server, pushes, refusals, a
+  seat taken back, an unreachable server), and CI plays its web build
+  (`tools/app_check.py`). 2 website tests (`test_website.py`: `tools/website_check.py` in
   headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
   9 server tests (`test_server.py`: HTTP statuses for every refusal,
   the limit on new games per client and behind a proxy, a server fault
@@ -1581,6 +1682,56 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-20: the app in React Native with Expo, first screens (Claude Code, PR #61)**
+
+- The owner chose React Native ("React native"). It is built with Expo, the
+  recommendation the owner had:
+  - React Native's own documentation starts apps with a framework, and Expo
+    is the one it names;
+  - Expo builds both stores' apps in its cloud, without Xcode or Android
+    Studio, neither of which is installed here.
+- Made with `create-expo-app` (SDK 58, the blank TypeScript template), plus
+  Expo Router, from Expo's own default template.
+  - Not kept: the template's license file (Expo's copyright; the repository
+    has its own) and its `.claude/` settings, which switched on a plugin.
+  - The template's guide for agents became `mobile/AGENTS.md`, with this
+    project's rules added.
+- Every request goes over the live connection, not over HTTP:
+  - answers and pushes come in one ordered channel;
+  - after a drop the client reconnects and watches the game again;
+  - the web build needs no cross-origin permission from the server.
+- Found while testing, in about 1 run in 6: the screen of the player who had
+  asked for `state` missed the last moves of a game.
+  - The server counts every reply that carries the watched seat's state as
+    sent, and pushes only later changes. The first client handed only move
+    replies to the screen.
+  - It now hands on every such reply, and `docs/API.md` says so. The server
+    did not change.
+- Answers and pushes can cross: a push worked out just before a move's reply
+  can arrive after it. The client keeps the newest state by `seen`. A state
+  with the same `seen` replaces the one shown, because it may be in the other
+  language.
+- Seat tokens are kept in the phone's secure storage (Keychain, Keystore); the
+  web build keeps them in the browser's. A device remembers 10 games and shows
+  4, as the web does.
+- There is no server for apps yet (stage B). The app finds one this way:
+  - `EXPO_PUBLIC_ABAKA_SERVER`, when set;
+  - otherwise the computer running Expo's development server, port 8501, so
+    Expo Go on a phone on the same Wi-Fi works;
+  - the web build also takes `?server=`, but only for this computer, so a
+    link cannot send players' moves to someone else's server.
+- The web build is the check, as no simulator is installed here. It runs all
+  of the app's code through react-native-web; what only a phone has (its
+  fonts, keyboard and gestures) needs a real phone later.
+- The texts are an export, committed (`mobile/src/texts.json`), so an app
+  build needs no Python. Plural forms come from i18n's own functions.
+  `tests/test_mobile_texts.py` scans the app's `t()` calls (not its comments)
+  in every CI job.
+- CI's third job, "Phone app (Expo)", runs on Node 26, the current LTS, as
+  here. It becomes a required check after the merge, like the other two.
+- Two players' columns fit a 390px phone (cells of 26px). With 3 to 5 players
+  the columns scroll sideways under fixed row names, as on the web.
 
 **2026-11-20: the phone app in this repository (Claude Code, PR #60)**
 
