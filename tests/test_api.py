@@ -135,6 +135,28 @@ class TestBasics(unittest.TestCase):
         for answer in (made, said, local, club):
             json.dumps(answer, ensure_ascii=False).encode("utf-8")  # can be sent
 
+    def test_the_rules(self):
+        """The rules as the website shows them, as blocks an app draws itself, in the request's language."""
+        for lang, title, first, heading in (("en", "How to play", "**Players.**", "Combinations"),
+                                            ("ru", "Как играть", "**Игроки.**", "Комбинации")):
+            with self.subTest(lang=lang):
+                rules = self.server(op="rules", lang=lang)["rules"]
+                blocks = rules["blocks"]
+                self.assertEqual(rules["title"], title)
+                self.assertTrue(blocks[0]["text"].startswith(first))
+                self.assertIn({"heading": heading}, blocks)
+                self.assertTrue(all(len(block) == 1 and set(block) <= {"heading", "text", "table"} for block in blocks))
+                # The table names every combination as the board does, in board order, with what it
+                # needs and what it scores.
+                [table] = [block["table"] for block in blocks if "table" in block]
+                combinations = [row["name"] for row in self.server(op="info", lang=lang)["rows"] if not row["school"]]
+                self.assertEqual([row[0] for row in table["rows"]], combinations)
+                self.assertTrue(all(len(row) == len(table["head"]) == 3 for row in table["rows"]))
+                # No markup but **bold**: no table pipes, headings or links left in the text.
+                text = " ".join(block.get("text", "") for block in blocks)
+                self.assertFalse(re.search(r"[|#\[\]`]", text), text)
+                self.assertEqual(text.count("**") % 2, 0)
+
     def test_another_protocol_is_refused_in_the_players_language(self):
         code, message = self.server.refused(op="info", protocol=2, lang="ru")
         self.assertEqual(code, "protocol")

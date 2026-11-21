@@ -38,6 +38,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/app/index.tsx` | Home: continue a game, a game on one device, an online game, open by code |
 | `src/app/game/[code].tsx` | One game: invite, waiting room, starting throw, turns, results |
 | `src/app/club/[code].tsx` | A club: its table, latest games, a new club game, its code to share |
+| `src/app/rules.tsx` | How to play: the rules from the server (`rules`), and the language switch |
 | `src/components/` | The board, the dice, buttons and cards (the web app's colours) |
 | `src/components/Reactions.tsx`, `Chat.tsx` | The reaction buttons and the chat card of an online game |
 | `src/components/Shows.tsx` | What plays over the game: bubbles, fireworks and sparkles with their banner |
@@ -129,6 +130,11 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
   first waits for one that cannot be seen.
 - Numbers the website also shows are rounded with `roundHalfEven` (lib/clubs.ts), as
   Python rounds them.
+- A request that must be in the language the screen shows passes `lang` itself
+  (`connection.request('rules', { lang })`): a screen's effect can run before the app
+  has switched the connection's language.
+- What must always fit (the game's code at the top) is checked in `tools/app_check.py`
+  with the widest text it can hold, on a 360px phone, not with today's text.
 - Seat tokens are secrets: only in `src/lib/storage.ts`, never in a log or on screen.
 - `src/lib/api.ts` stays free of React Native imports and of TypeScript that Node cannot
   run as it is (no enums, no parameter properties; `erasableSyntaxOnly` enforces it).

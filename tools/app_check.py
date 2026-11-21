@@ -11,14 +11,17 @@ Build the app for the web first, then check it:
     python tools/app_check.py --server http://127.0.0.1:8501  # a server already running
 
 The checks:
-- home in English and Russian;
+- home in English and Russian, and the rules (How to play) from it in Russian;
 - a game on one device: the starting throw, a roll, two dice picked and rolled again, the
-  best option written, a row crossed out, and both players' columns on the screen; then
+  best option written, a row crossed out, and both players' columns on the screen; the
+  rules opened in the middle of the game and closed again, back to the same game; then
   home and back to it from "Continue a game", and once it has ended (the check plays it
   to the end through the API) it is not offered there any more;
-- an online game between two phones: one creates it, goes home and comes back to the
-  waiting room (the seat is kept), the other opens its code and joins, the starting
-  throws, a roll and a move seen on the other phone, then a reaction and a chat message;
+- an online game between two phones (the second one 360px wide, in Russian): one creates
+  it, goes home and comes back to the waiting room (the seat is kept), the other opens its
+  code and joins, the game's code in full at the top (the widest there can be), the
+  starting throws, a roll and a move seen on the other phone, then a reaction and a chat
+  message;
 - a player on the website and a player in the app at one table: each sees the other's
   dice, move, reaction and chat message (the server must serve the pages too, as
   abaka_server.py does);
@@ -57,6 +60,7 @@ import website_check  # noqa: E402  (the same tools folder: its server start and
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "mobile" / "dist"
 PHONE = (390, 844)
+NARROW = (360, 780)  # a common Android width
 NAMES = ("Test Ann", "Test Bob")
 WAIT_MS = 20000
 FLOWS = ("home", "one device", "online", "website", "clubs", "a tie", "fireworks")
@@ -86,9 +90,9 @@ def serve_build(folder: Path) -> Tuple[http.server.ThreadingHTTPServer, str]:
 class Phone:
     """One phone (a browser context at a phone's size) with the app open."""
 
-    def __init__(self, browser, url: str, name: str, locale: str = "en-US") -> None:
+    def __init__(self, browser, url: str, name: str, locale: str = "en-US", size: Tuple[int, int] = PHONE) -> None:
         self.name = name
-        self.context = browser.new_context(viewport={"width": PHONE[0], "height": PHONE[1]}, locale=locale)
+        self.context = browser.new_context(viewport={"width": size[0], "height": size[1]}, locale=locale)
         self.page = self.context.new_page()
         self.errors: List[str] = []
         self.page.on("pageerror", lambda e: self.errors.append(str(e)))
@@ -128,6 +132,23 @@ class Phone:
         """The dice on the table: each die's value, and J for the joker (from its label, in any language)."""
         labels = [self.id(f"die-{i}").first.get_attribute("aria-label") or "" for i in range(5)]
         return [label.split(" ")[0] + ("J" if " " in label else "") for label in labels]
+
+    def fits(self, test_id: str, what: str, widest: str = "") -> None:
+        """
+        The element's text is not cut short (an ellipsis) on this phone. With `widest`, the
+        text of its innermost part (a game's code) is replaced by that for the measure, so the
+        worst case is checked, not just the text on the screen now.
+        """
+        cut = self.id(test_id).first.evaluate("""(e, widest) => {
+            const inner = widest ? [...e.querySelectorAll('*')].pop() || e : e;
+            const before = inner.textContent;
+            if (widest) inner.textContent = widest;
+            const cut = e.scrollWidth - e.clientWidth;
+            inner.textContent = before;
+            return cut;
+        }""", widest)
+        if cut > 0:
+            raise Problem(f"{self.name}: {what} is cut short by {cut}px" + (f" (with {widest!r})" if widest else ""))
 
     def healthy(self) -> None:
         if self.errors:
@@ -241,10 +262,19 @@ def check_home(browser, url: str) -> str:
             raise Problem("home: no 'Same device' card in English")
         phone.page.get_by_role("radio", name="RU").click()
         phone.until(lambda: "Одно устройство" in phone.text(), "the switch to Russian")
-        phone.page.get_by_role("radio", name="EN").click()
+        # The rules, from the server, in Russian: the table names the combinations as the board does.
+        phone.id("rules-home").click()
+        rules = phone.see(phone.id("rules"), "the rules")
+        phone.until(lambda: "Комбинации" in rules.inner_text(), "the rules in Russian")
+        table = phone.id("rules-table").first.inner_text()
+        if "Абака" not in table or "Большой стрит" not in table:
+            raise Problem(f"home: the rules' table does not name the combinations ({table[:120]!r})")
+        phone.id("back").click()
+        phone.see(phone.id("start-local"), "the home page again")
+        phone.page.get_by_role("radio", name="EN").first.click()
         phone.until(lambda: "Same device" in phone.text(), "the switch back to English")
         phone.healthy()
-        return "English and Russian"
+        return "English and Russian, and the rules"
     finally:
         phone.close()
 
@@ -301,6 +331,11 @@ def check_one_device(browser, url: str, server: str, games: List[str]) -> None:
         phone.see(phone.page.locator('[data-testid^="option-"]'), "a row to cross out").click()
         phone.id("confirm").first.click()
         phone.until(lambda: "crossed out" in phone.id("last-move").first.inner_text(), "the crossed-out row")
+        # The rules in the middle of the game, and back to the same game.
+        phone.id("rules-button").click()
+        phone.see(phone.id("rules").filter(has_text="Combinations"), "the rules, from the game")
+        phone.id("back").click()
+        phone.see(phone.id("last-move").filter(has_text="crossed out"), "the game again, after the rules")
         if not label:
             raise Problem("one device: the best option had no label")
         # Home and back: the game is kept, and offered under "Continue a game".
@@ -324,7 +359,7 @@ def check_one_device(browser, url: str, server: str, games: List[str]) -> None:
 
 def check_online(browser, url: str, games: List[str]) -> None:
     ann = Phone(browser, url, "online, Ann's phone")
-    bob = Phone(browser, url, "online, Bob's phone", locale="ru-RU")
+    bob = Phone(browser, url, "online, Bob's phone (360px)", locale="ru-RU", size=NARROW)
     try:
         ann.see(ann.id("create-online"), "the home page")
         ann.id("online-name").fill(NAMES[0])
@@ -345,6 +380,8 @@ def check_online(browser, url: str, games: List[str]) -> None:
 
         roller = ann.throw_until_decided(bob)
         watcher = bob if roller is ann else ann
+        for widest in ("WWWWW", "MMMMM"):  # the widest codes there can be
+            bob.fits("bar-code", "the game's code at the top, in Russian", widest)
         roller.id("roll").first.click()
         roller.see(roller.id("die-4"), "the roller's dice")
         dice = roller.dice()

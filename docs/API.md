@@ -172,6 +172,20 @@ default 10, at most 200). Answer `{"club": ...}`:
 #### `create_club`
 `name` → `{"club": ...}`, the new club, as `club` gives it.
 
+### The rules
+
+#### `rules`
+The rules, in the request's language, as the website shows them:
+`{"rules": {"title": "How to play", "blocks": [...]}}`. Each block is one of:
+- `{"heading": "Combinations"}`;
+- `{"text": "..."}`: a paragraph. Bold parts are marked `**like this**`; there is
+  no other markup;
+- `{"table": {"head": ["Row", "Needs", "Scores"], "rows": [[...], ...]}}`: the
+  combinations, one row each.
+
+The owner changes the rules from time to time, and the server's text changes with
+them: ask for the rules again rather than keeping them in the app.
+
 ## The state
 
 ```json

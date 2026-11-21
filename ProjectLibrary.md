@@ -156,8 +156,9 @@ Python + Streamlit.
 | `ui_components/actions.py` | `on_click` callbacks of the game buttons: make the move, keep a refusal to show once |
 | `ui_components/chat.py` | The chat card of an online game: messages (escaped), the box to write one, a toast for new ones |
 | `abaka/effects.py` | What reactions and effects say, for the web page and for apps: a reaction's emoji and label, who sent it to whom, an effect's banner. No Streamlit |
+| `abaka/rules.py` | The rules players read, in English and Russian: Markdown for the web page, blocks for apps (`rules_blocks`). No Streamlit |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
-| `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
+| `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, the rules dialog (its text is `abaka/rules.py`) |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
 | `tests/` | `unittest` tests |
 | `mobile/` | The app for Android and iOS: React Native with Expo, TypeScript. Its own guide: `mobile/AGENTS.md` |
@@ -473,6 +474,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   changed since, it is refused as `outdated`, like the web's buttons.
 - Texts come in the request's `lang` (en/ru). The call sets it for its thread
   and puts the thread's language back afterwards.
+- `rules` gives the rules in the request's language as blocks (`abaka/rules.py`):
+  headings, paragraphs with `**bold**` marks and the table of combinations. The
+  web page shows the same text as Markdown.
 - Reactions and effects come with their words (`abaka/effects.py`), for the
   player the state is drawn for:
   - a reaction's `emoji`, `label` and `who` ("Ann → you");
@@ -658,7 +662,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, and its clubs in PR #65. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1079,8 +1083,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     PR #59), the app's code lives in `mobile/` in this repository (PR #60), it
     is React Native with Expo (C1), its first screens are in PR #61 (C2,
     first part), reactions, effects and the chat in PR #64 (C2, second
-    part), and clubs in PR #65 (C2, third part). Stages B and D wait for the
-    owner's decisions below.
+    part), clubs in PR #65 (C2, third part), and the rules screen in PR #66
+    (C2, fourth part). Stages B and D wait for the owner's decisions below.
     > "Let's start preparing the code base to expand on android/ios"
     >
     > "Go ahead" (step A2)
@@ -1229,9 +1233,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
           game, the players not at the table yet.
         - The results of a club game: each player's rating and how it moved,
           and a "Club table" button. The running score says "club game".
-      - [ ] The rules screen. The rules text is in a Streamlit module; it
-        needs to move to `abaka/` and into the API first (an addition to
-        protocol 1).
+      - [x] The rules screen. PR #66.
+        - The rules text moved from `ui_components/rules.py` to
+          `abaka/rules.py`, and the API's new `rules` operation serves it as
+          blocks (headings, paragraphs with **bold**, the table of
+          combinations). The website's text is unchanged, byte for byte.
+        - The app's "How to play" opens from home, and from a game with the
+          "?" at the top, which also leads to the language switch there.
       - [ ] The app's own look on a phone: its icon and name (D1), the
         status bar, haptics on a roll, and a check on real phones in Expo Go.
     - [ ] C3. Links: a game's link opens the app when it is installed
@@ -1294,6 +1302,34 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         next round vanished from the screen.
 
 ## Status (2026-11-21)
+
+- **The rules screen in the phone app (owner: "Keep going", Backlog item 25,
+  C2, fourth part):** PR #66.
+  - The rules text moved from the website's Streamlit module to the game
+    package (`abaka/rules.py`). The website shows it as before: the same
+    Markdown, byte for byte, in both languages.
+  - The API's new `rules` operation (protocol 1 kept: an operation added)
+    gives the rules as blocks an app draws itself: headings, paragraphs with
+    their bold parts, and the table of combinations. A test checks that the
+    table names every combination as the board does, in both languages.
+  - The app's "How to play" screen opens from home and from a game's "?".
+    Back from it, the game is where it was.
+  - The game's top bar showed "Одно уст…" and lost the game's code in
+    Russian. It now shows the website's icon for the kind of game (👥 or 🌐)
+    and the code. The language switch moved from the game's bar to the rules
+    screen, one tap away, as the website keeps it in the game's menu.
+    - The browser check measures the bar with the widest code there can be
+      ("WWWWW"), on a 360px phone in Russian. Measured this way, the bar
+      before this change cut the code by 20px at 390px.
+  - The app asks for the rules in the language it shows, even when the
+    connection has not switched yet. A screen's request could go out before
+    the app had changed the connection's language (React runs a screen's
+    effects before the app's).
+  - Checked: the app's 38 tests, typecheck, lint, Expo's 20 project checks,
+    all seven browser flows; every Python test on 3.8, 3.9 and 3.13 (296, none
+    skipped). Load-test row: no slowdown (34% CPU, 8.8 ms median poll).
+  - Next: the app's own look on a phone (icon, name, haptics) needs the
+    owner's decisions on the name and icon (D1), and a check on a real phone.
 
 - **Clubs in the phone app (owner: "Keep going", Backlog item 25, C2, third
   part):** PR #65.
@@ -1748,19 +1784,20 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 293 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 294 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  293 run and 56 are skipped (9 need a database or psycopg; the others need
+  294 run and 56 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  295 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
+  296 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 37 tests (`node --test`).
-  7 against a real server (`mobile/tests/api.test.ts`: complete games on one
+  scan reads both quotes). The phone app has its own 38 tests (`node --test`).
+  8 against a real server (`mobile/tests/api.test.ts`: complete games on one
   device and online through its API client, pushes, reactions and chat with
-  their words, a club game and its table, refusals, a seat taken back, the
-  games to continue, an unreachable server). 14 against a scripted server
+  their words, a club game and its table, the rules in a request's own
+  language, refusals, a seat taken back, the games to continue, an
+  unreachable server). 14 against a scripted server
   (`mobile/tests/connection.test.ts`: a server restart, states out of order,
   connections that die silently or never open, requests never answered,
   screens closing late, each event handed over once, the chat gathered). 8 of
@@ -1778,8 +1815,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   a connection), a connection that cannot be served closed with 1011,
   connections closed with 1012 after a code update, one store
   until the code changes, a page joining a game made through the API, and
-  `streamlit run abaka_server.py` serving the page and the API). 22 API tests (`test_api.py`: 4,000 malformed and hostile
-  requests answered or refused, never a server fault; events with their words
+  `streamlit run abaka_server.py` serving the page and the API). 23 API tests (`test_api.py`: 4,000 malformed and hostile
+  requests answered or refused, never a server fault; the rules as blocks, in
+  both languages, naming every combination as the board does; events with their words
   for each player and language; complete games for 2 and 5
   players online and on one device through the API only, every preview
   matched by the move it describes; what a seat and an outsider see, tokens
@@ -1969,6 +2007,31 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-21: the rules screen in the app (Claude Code, PR #66)**
+
+- The rules text belongs to the game, not to the web page, so it moved to
+  `abaka/rules.py`. `ui_components/rules.py` keeps the dialog and imports
+  the text; `abaka_ui.py` did not change.
+- Blocks, not Markdown, for apps. A phone has no Markdown table, and an app
+  that parses Markdown would carry a second copy of the format.
+  `rules_blocks()` turns the website's Markdown into headings, paragraphs and
+  the table, so there is still one text. Bold stays as `**` marks, which the
+  app already draws (`Rich`).
+- A `rules` operation rather than a field of `info`: `info` is asked for once
+  per language and kept, while the owner changes the rules from time to time.
+  The app asks for them each time the screen opens.
+- A request may name its own `lang` now (the client sends the connection's
+  language unless the request has one). The rules screen asks for the
+  language it shows: React runs the screen's effects before the app's, so
+  the connection could still have the old language.
+- The game's bar is where players look for the game's code, so the code must
+  always fit: the kind of game is the website's icon (👥, 🌐), with the words
+  for screen readers. The language switch went to the rules screen, one tap
+  from the game, as the website has it in the game menu.
+  - The first check of the bar passed on a bar that was too narrow: the code
+    was random and its letters happened to fit. It now measures the widest
+    code there can be, on a 360px phone (a common Android width).
 
 **2026-11-21: clubs in the app (Claude Code, PR #65)**
 

@@ -13,7 +13,6 @@ import { Board, lastMoveText } from '@/components/Board';
 import { Chat } from '@/components/Chat';
 import { ClubRatings, PlayerChips } from '@/components/Club';
 import { DieFace } from '@/components/Dice';
-import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { ReactionBar } from '@/components/Reactions';
 import { Shows } from '@/components/Shows';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
@@ -193,10 +192,17 @@ export default function GameScreen() {
         <Pressable accessibilityRole="button" testID="home" onPress={goHome} hitSlop={8}>
           <Text style={styles.barHome}>‹ {t('Home')}</Text>
         </Pressable>
-        <Text style={styles.barTitle} numberOfLines={1}>
-          {!state ? code : state.local ? t('Same device · {code}', { code }) : t('Online · {code}', { code })}
+        {/* The kind of game as the website's icons for it, so the code always fits; the words for screen readers. */}
+        <Text testID="bar-code" style={styles.barTitle} numberOfLines={1}
+              accessibilityLabel={!state ? code : state.local ? t('Same device · {code}', { code })
+                : t('Online · {code}', { code })}>
+          {state ? (state.local ? '👥 ' : '🌐 ') : ''}<Text style={styles.barCode}>{code}</Text>
         </Text>
-        <LanguageSwitch />
+        {/* The rules, and on their screen the language switch: as in the website's game menu. */}
+        <Pressable accessibilityRole="button" accessibilityLabel={t('How to play')} testID="rules-button"
+                   onPress={() => router.push('/rules')} hitSlop={6} style={styles.rulesButton}>
+          <Text style={styles.rulesButtonText}>?</Text>
+        </Pressable>
       </View>
       {!online && state ? <Notice tone="info" text={t('Connecting…')} /> : null}
       {error ? <Notice text={error} /> : null}
@@ -634,6 +640,12 @@ const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   barHome: { fontSize: 16, color: colors.accent, fontWeight: '600' },
   barTitle: { flex: 1, fontSize: 15, color: colors.muted, textAlign: 'center' },
+  barCode: { fontWeight: '700', color: colors.text, letterSpacing: 1 },
+  rulesButton: {
+    width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.line,
+    backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
+  },
+  rulesButtonText: { fontSize: 17, fontWeight: '700', color: colors.accent },
   code: { fontSize: 34, fontWeight: '800', letterSpacing: 6, color: colors.text, textAlign: 'center' },
   waitingName: { fontSize: 16, color: colors.text },
   turn: { fontSize: 20, fontWeight: '700', color: colors.text },
