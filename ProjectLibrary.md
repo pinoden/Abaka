@@ -1899,6 +1899,13 @@ From the architecture review (details and file:line in
 - The phone app has not run on a real phone yet. Its connection's handling of
   a network that changes or goes away is tested against a scripted server, not
   on a phone's network.
+- The text version (`python -m abaka`), found in the test round of
+  2026-11-21 and left as it is:
+  - when players tie for the top score it names only the first of them as
+    the winner;
+  - a row name it does not know is answered with the bare name
+    (`Error: 'SCHOOL 9'`).
+  Whether the text version stays is an open decision (Backlog item 11).
 - (Fixed in PR #32: Streamlit was unpinned and there was no CI. Expired and
   unreadable save files are deleted or quarantined since PR #30.)
 
