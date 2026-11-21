@@ -658,7 +658,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, and its reactions, effects and chat in PR #64. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, and its clubs in PR #65. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1078,8 +1078,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 25. **Apps for Android and iOS.** In progress: stage A is done (PR #58 and
     PR #59), the app's code lives in `mobile/` in this repository (PR #60), it
     is React Native with Expo (C1), its first screens are in PR #61 (C2,
-    first part), and reactions, effects and the chat in PR #64 (C2, second
-    part). Stages B and D wait for the owner's decisions below.
+    first part), reactions, effects and the chat in PR #64 (C2, second
+    part), and clubs in PR #65 (C2, third part). Stages B and D wait for the
+    owner's decisions below.
     > "Let's start preparing the code base to expand on android/ios"
     >
     > "Go ahead" (step A2)
@@ -1216,7 +1217,18 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
           same.
         - Checked in the browser: a website player and an app player at one
           table, and an Abaka on the first roll with steered dice.
-      - [ ] Clubs: the club page, club games and the player picker.
+      - [x] Clubs: the club page, club games and the player picker. PR #65.
+        - Home: the clubs this device opened, create a club, open one by its
+          code.
+        - A club's screen: its table (medals, rating and its last change,
+          games, wins; average and best from 480px), the latest games, a new
+          club game on one device or online, and the club's code to share.
+        - The club's players as names to tap instead of typing: on one
+          device each tap fills the next empty box (or empties the box the
+          player is in); online, the host's name; on the invite of a club
+          game, the players not at the table yet.
+        - The results of a club game: each player's rating and how it moved,
+          and a "Club table" button. The running score says "club game".
       - [ ] The rules screen. The rules text is in a Streamlit module; it
         needs to move to `abaka/` and into the API first (an addition to
         protocol 1).
@@ -1282,6 +1294,44 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         next round vanished from the screen.
 
 ## Status (2026-11-21)
+
+- **Clubs in the phone app (owner: "Keep going", Backlog item 25, C2, third
+  part):** PR #65.
+  - The app now does what the website's clubs do: create a club, open one by
+    its code, its table and latest games, club games on one device or
+    online, the ratings on a club game's results, and the club's players
+    offered as names to tap.
+  - A club made in the app is the website's club too: the browser check
+    opens it on the website and finds the same table.
+  - Found and fixed on the server, for the website too: in an online club
+    game, a player already at the table could join again under another
+    spelling ("ann" next to "Ann"). The club then counted one member twice,
+    playing against herself (shown on a scratch store before the fix: one
+    member, two games, from one game). Joining is now refused with "Each
+    player needs a different name.", as a game on one device already was.
+  - Checked in headless Chromium at 390px (`tools/app_check.py`, seven
+    flows):
+    - a club made in the app; a game on one device for it, played to its end
+      through the API; the ratings on its results and "club game" in the
+      running score; the club's table and latest game;
+    - the next game's names tapped from the club's players;
+    - an online club game: the invite (in Russian) offers only the player not
+      at the table, and a seated player typed again is refused;
+    - the same club's table on the website.
+    - With the invite offering players already at the table, the check
+      failed at that step.
+  - The browser check now starts a server of its own in CI (`--serve`): a
+    client may start 10 games in 10 minutes, and the app's client tests use 8
+    on theirs.
+  - The scan of the app's texts (`tests/test_mobile_texts.py`) read an
+    escaped quote (`'the club\'s'`) as written, not as the app shows it. It
+    reads it as the app does now.
+  - The app's 37 tests, typecheck, lint and Expo's 20 project checks pass;
+    every Python test passes on 3.8, 3.9 and 3.13 (295, none skipped).
+  - The load-test row is flagged (33% CPU and 8.5 ms median poll, against
+    24% and 6.3 ms). Main measured the same as the branch, round after round
+    (Decision log), so the previous row was low.
+  - Next: the rules screen, then the app's own look on a phone.
 
 - **Reactions, effects and the chat in the phone app (owner: "Keep going",
   Backlog item 25, C2, second part):** PR #64.
@@ -1698,25 +1748,27 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 289 run and these are
-  skipped: the 9 database tests, which need a test database (CI has one), the
-  9 network tests, which need Streamlit 1.67's packages, and the website
+- **Tests:** on Python 3.9 with Streamlit 1.48, 293 run and 20 are skipped:
+  the 9 database tests, which need a test database (CI has one), the 10
+  network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  289 run and 55 are skipped (9 need a database or psycopg; the others need
+  293 run and 56 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  291 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
+  295 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 28 tests (`node --test`).
-  6 against a real server (`mobile/tests/api.test.ts`: complete games on one
+  scan reads both quotes). The phone app has its own 37 tests (`node --test`).
+  7 against a real server (`mobile/tests/api.test.ts`: complete games on one
   device and online through its API client, pushes, reactions and chat with
-  their words, refusals, a seat taken back, the games to continue, an
-  unreachable server). 14 against a scripted server
+  their words, a club game and its table, refusals, a seat taken back, the
+  games to continue, an unreachable server). 14 against a scripted server
   (`mobile/tests/connection.test.ts`: a server restart, states out of order,
   connections that die silently or never open, requests never answered,
   screens closing late, each event handed over once, the chat gathered). 8 of
   what plays over the screen (`mobile/tests/shows.test.ts`: bubbles, effects
-  that wait for the dice and for each other, old news skipped). CI also plays
-  its web build (`tools/app_check.py`). 2 website tests (`test_website.py`: `tools/website_check.py` in
+  that wait for the dice and for each other, old news skipped). 8 of clubs on
+  the screen (`mobile/tests/clubs.test.ts`: the table's rows, numbers rounded
+  as Python rounds them, the latest games, the names offered and tapped). CI
+  also plays its web build (`tools/app_check.py`, with a server of its own). 2 website tests (`test_website.py`: `tools/website_check.py` in
   headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
   12 server tests (`test_server.py`: `unwatch`; HTTP statuses for every refusal,
   the limit on new games per client and behind a proxy, a server fault
@@ -1750,9 +1802,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   player whose turn it is picks, a reroll right after a pick, the other
   screen through the app). 4 baseline tests
   (`test_loadtest_baseline.py`: rows read back, a slowdown flagged, only
-  comparable rows compared). 11 club tests
-  (`test_clubs.py`: ratings, the running score, club tables, saving, the
-  club pages through the app). CI runs them on 3.13 with
+  comparable rows compared). 12 club tests
+  (`test_clubs.py`: ratings, the running score, club tables, a member once
+  in an online club game, saving, the club pages through the app). CI runs them on 3.13 with
   Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 21 database
   tests (`test_postgres.py`: the Postgres repository's contract, background database writes, where games are saved, the secret's name, a dropped
   connection, an unreachable database, a store on Postgres, the mirrored
@@ -1917,6 +1969,45 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-21: clubs in the app (Claude Code, PR #65)**
+
+- The owner said "Keep going": the next part of the app's screens (Backlog
+  item 25, C2).
+- No combo box in React Native, so the website's "pick a player or type a new
+  name" became the club's players as chips above the name boxes.
+  - On one device a tap fills the next empty box, and a tap on a name already
+  in a box empties that box. So picking a table of four is four taps.
+  - The boxes keep the last game's names when the player comes back to the
+    club, ready for the same players again.
+  - Online and on an invite, a tap fills the one name box.
+  - The invite of an online club game asks the server for the club's names
+    (`club` with `games: 0`) and offers those not at the table. The server
+    decides who may join.
+- The table's numbers are rounded as Python rounds them (a half to the even
+  neighbour), so the app and the website show the same rating for a club.
+  JavaScript's `Math.round` rounds halves up.
+- Who a name is (capitals and spaces aside) is now `member_key` in
+  `abaka/rooms.py`, for the rooms and the clubs alike. The app's copy uses
+  lower case where Python uses casefold; they differ for a few letters (ß),
+  which can only change what the app offers.
+- Joining an online club game under a name already at the table is refused
+  ("Each player needs a different name."). The owner's rule for a game on one
+  device (Backlog item 21) is that two names that are one member cannot play
+  together; joining had no such check. Outside clubs nothing changed: an
+  exact twin becomes "Ann (2)", another spelling is kept.
+- A club's link is a code in the app, as a game's is: links that open the app
+  wait for C3. The code is shared with the phone's share sheet.
+- "Club table" on the results goes back to the club's screen if it is under
+  the game (the game was started there), or opens it.
+- The browser check got a server of its own in CI (`--serve`) instead of a
+  second limit for test servers. The limit on new games stays as it is
+  everywhere.
+- The load-test row was flagged against the previous one (24% → 33% CPU,
+  6.3 → 8.5 ms median poll) on a quiet machine. Main and the branch, measured
+  in turn from two equal copies, gave the same in three rounds each (33-34%,
+  8.7-8.9 ms), and nothing on the poll path changed. So the previous row was
+  low, as happened in PR #56. The row is kept: it is what main measures now.
 
 **2026-11-21: reactions, effects and the chat in the app (Claude Code, PR #64)**
 

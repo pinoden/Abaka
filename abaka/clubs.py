@@ -27,7 +27,7 @@ import threading
 import time
 from typing import Dict, List, Optional
 
-from .rooms import CODE_ALPHABET, MAX_NAME_LENGTH, clean_name, normalize_code
+from .rooms import CODE_ALPHABET, MAX_NAME_LENGTH, clean_name, member_key, normalize_code
 
 log = logging.getLogger("abaka")
 
@@ -42,11 +42,6 @@ CLUBS_IN_MEMORY = 500
 
 class ClubError(ValueError):
     """A request about clubs that cannot be met; the text is shown to the player."""
-
-
-def member_key(name: str) -> str:
-    """Who a name is in a club: the same name, whatever its capitals and spacing."""
-    return " ".join(name.split()).casefold()
 
 
 def rating_changes(ratings: List[float], scores: List[int], k: float = K_FACTOR) -> List[float]:

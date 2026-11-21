@@ -138,6 +138,7 @@ _ERRORS_RU = {
     "Unknown reaction.": "Такой реакции нет.",
     "One reaction every two seconds, please.": "Не больше одной реакции в две секунды.",
     "Slow down a little: about one message a second.": "Чуть помедленнее: примерно одно сообщение в секунду.",
+    "Each player needs a different name.": "У каждого игрока должно быть своё имя.",
 }
 _ERROR_PATTERNS_RU = [
     (re.compile(r"Not enough school balance to write this row \(need (\d+), have (-?\d+)\)"),
@@ -422,4 +423,7 @@ RU = {
     "Connecting…": "Подключение…",
     'Give your friends the game code. They open it under "Open game".':
         "Сообщите друзьям код игры. Они открывают его в «Открыть игру».",
+    'Give your friends the club code. They open it under "Open club".':
+        "Сообщите друзьям код клуба. Они открывают его в «Открыть клуб».",
+    "Games started here count for the table.": "Игры, начатые здесь, идут в зачёт таблицы.",
 }

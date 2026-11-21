@@ -1,6 +1,6 @@
 /**
  * What the app keeps on the device: the games it played (code, kind, names) and each
- * game's seat token, plus the language. Tokens are secrets, so on phones everything goes
+ * game's seat token, the clubs it opened, plus the language. Tokens are secrets, so on phones everything goes
  * in the system's secure storage (Keychain, Keystore). The web build, used for checks,
  * keeps it in the browser's storage.
  */
@@ -11,6 +11,9 @@ import { Platform } from 'react-native';
 import type { Lang } from './api';
 
 export const GAMES_KEPT = 10; // the newest games the device remembers, as on the web
+export const CLUBS_KEPT = 6; // the clubs it remembers, as on the web (MY_CLUBS_KEPT)
+
+export type SavedClub = { code: string; name: string };
 
 /** `over`: the game had ended when the device last saw it (the home page lists the others). */
 export type SavedGame = { code: string; local: boolean; names: string[]; at: number; over?: boolean };
@@ -97,6 +100,29 @@ export function forgetGame(code: string): Promise<void> {
   return inTurn(async () => {
     await write(tokenKey(code), null);
     await write('abaka.games', JSON.stringify((await savedGames()).filter((g) => g.code !== code)));
+  });
+}
+
+export async function savedClubs(): Promise<SavedClub[]> {
+  try {
+    const clubs = JSON.parse((await read('abaka.clubs')) ?? '[]');
+    return Array.isArray(clubs) ? clubs : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Remember a club this device opened (newest first, at most CLUBS_KEPT). */
+export function saveClub(club: SavedClub): Promise<void> {
+  return inTurn(async () => {
+    const clubs = (await savedClubs()).filter((c) => c.code !== club.code);
+    await write('abaka.clubs', JSON.stringify([{ code: club.code, name: club.name }, ...clubs].slice(0, CLUBS_KEPT)));
+  });
+}
+
+export function forgetClub(code: string): Promise<void> {
+  return inTurn(async () => {
+    await write('abaka.clubs', JSON.stringify((await savedClubs()).filter((c) => c.code !== code)));
   });
 }
 

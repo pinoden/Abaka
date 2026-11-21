@@ -1,6 +1,6 @@
 /**
  * Home, as on the web (abaka_ui.py): continue a game this device played, start a game on
- * one device or online, or open a game by its code.
+ * one device or online, open a game by its code, and the clubs.
  */
 
 import { router, useFocusEffect } from 'expo-router';
@@ -9,10 +9,13 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Screen, Title } from '@/components/ui';
-import { gamesToContinue, type Seat } from '@/lib/api';
+import { type Club, gamesToContinue } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { errorText } from '@/lib/errors';
-import { forgetGame, type SavedGame, savedGames, saveGame, updateGame } from '@/lib/storage';
+import { startGame } from '@/lib/start';
+import {
+  forgetGame, type SavedClub, savedClubs, saveClub, type SavedGame, savedGames, updateGame,
+} from '@/lib/storage';
 
 const GAMES_SHOWN = 4; // as on the web (MY_GAMES_SHOWN)
 const PLAYER_COUNTS = [2, 3, 4, 5];
@@ -27,7 +30,16 @@ export default function Home() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [clubs, setClubs] = useState<SavedClub[]>([]);
+  const [clubName, setClubName] = useState('');
+  const [clubCode, setClubCode] = useState('');
   const nameLength = info?.limits.name ?? 20;
+
+  useFocusEffect(useCallback(() => {
+    let shown = true;
+    savedClubs().then((saved) => { if (shown) setClubs(saved); });
+    return () => { shown = false; };
+  }, []));
 
   // The games to continue: at once what the device remembers, then what the server says
   // (a game that ended or was closed elsewhere is not offered any more).
@@ -55,11 +67,29 @@ export default function Home() {
     setBusy(true);
     setError(null);
     try {
-      const seat = await connection.request<Seat>(op, fields);
-      await saveGame({ code: seat.code, local: seat.state.local, names: seat.state.names }, seat.token);
-      router.push({ pathname: '/game/[code]', params: { code: seat.code } });
+      await startGame(connection, op, fields);
     } catch (e) {
       setError(errorText(e, t));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openClub = (wanted: string) => {
+    const code = wanted.replace(/\s+/g, '').toUpperCase();
+    if (code) router.push({ pathname: '/club/[code]', params: { code } });
+  };
+
+  const createClub = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { club } = await connection.request<{ club: Club }>('create_club', { name: clubName });
+      await saveClub({ code: club.code, name: club.name });
+      setClubName('');
+      openClub(club.code);
+    } catch (e) {
+      setError(errorText(e, t)); // for example "Give the club a name."
     } finally {
       setBusy(false);
     }
@@ -156,6 +186,22 @@ export default function Home() {
         <Field testID="open-code" label={t('Game code')} value={code} onChange={setCode}
                placeholder={t('e.g. Q47CH')} maxLength={8} autoCapitalize="characters" />
         <Button testID="open-game" kind="secondary" label={t('Open game')} disabled={!code.trim()} onPress={open} />
+      </Card>
+
+      <Card testID="card-clubs">
+        <Title>{t('Clubs')}</Title>
+        <Muted>{t('A leaderboard for your group of friends. Games started from a club count for its table.')}</Muted>
+        {clubs.map((club) => (
+          <Button key={club.code} kind="secondary" testID={`my-club-${club.code}`} label={`🏆 ${club.name}`}
+                  onPress={() => openClub(club.code)} />
+        ))}
+        <Field testID="club-name" label={t('Club name')} value={clubName} onChange={setClubName}
+               placeholder={t('e.g. Friday dice')} maxLength={info?.limits.club_name ?? 30} />
+        <Button testID="create-club" kind="secondary" label={t('Create club')} disabled={busy} onPress={createClub} />
+        <Field testID="find-club-code" label={t('Club code')} value={clubCode} onChange={setClubCode}
+               placeholder={t('e.g. K7PX2M')} maxLength={8} autoCapitalize="characters" />
+        <Button testID="open-club" kind="secondary" label={t('Open club')} disabled={!clubCode.trim()}
+                onPress={() => openClub(clubCode)} />
       </Card>
 
       {!online && busy ? <Muted>{t('Connecting…')}</Muted> : null}

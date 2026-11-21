@@ -37,9 +37,13 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/app/` | Screens (Expo Router: every file is a route; `_layout.tsx` is the navigator) |
 | `src/app/index.tsx` | Home: continue a game, a game on one device, an online game, open by code |
 | `src/app/game/[code].tsx` | One game: invite, waiting room, starting throw, turns, results |
+| `src/app/club/[code].tsx` | A club: its table, latest games, a new club game, its code to share |
 | `src/components/` | The board, the dice, buttons and cards (the web app's colours) |
 | `src/components/Reactions.tsx`, `Chat.tsx` | The reaction buttons and the chat card of an online game |
 | `src/components/Shows.tsx` | What plays over the game: bubbles, fireworks and sparkles with their banner |
+| `src/components/Club.tsx` | A club's table, its latest games, the ratings after a club game, its players to tap as names |
+| `src/lib/clubs.ts` | The club's rows and numbers (rounded as Python rounds them), the names offered and tapped. Tested in Node |
+| `src/lib/start.ts` | Start a game from a screen (home, a club): the seat kept, the game opened |
 | `src/lib/shows.ts` | Which of them play, and when (the website's rules). No React Native imports: tested in Node |
 | `src/lib/api.ts` | The API client and its types. No React Native imports: the tests run it in Node |
 | `src/lib/app.tsx` | Shared state: language, the connection, the board's row names |
@@ -48,6 +52,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `tests/api.test.ts` | The API client against a real server (`node --test`; skipped without `ABAKA_SERVER`) |
 | `tests/connection.test.ts` | The connection against a scripted server in the test's own process: restarts, states out of order, connections that die silently. Needs no game server |
 | `tests/shows.test.ts` | What plays over the game, and when. Needs no server |
+| `tests/clubs.test.ts` | Clubs on the screen: rows, numbers, names offered and tapped. Needs no server |
 
 ## Texts
 
@@ -119,6 +124,11 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
   app already installed.
 - A watcher's state has the game's whole chat and only the events not handed over
   before (`Connection` gathers them). A screen never merges messages itself.
+- A test id is unique among the screens in the stack, not only on one screen: a screen
+  under another stays in the page (the web build) and a check that finds its element
+  first waits for one that cannot be seen.
+- Numbers the website also shows are rounded with `roundHalfEven` (lib/clubs.ts), as
+  Python rounds them.
 - Seat tokens are secrets: only in `src/lib/storage.ts`, never in a log or on screen.
 - `src/lib/api.ts` stays free of React Native imports and of TypeScript that Node cannot
   run as it is (no enums, no parameter properties; `erasableSyntaxOnly` enforces it).

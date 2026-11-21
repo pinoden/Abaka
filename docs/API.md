@@ -82,6 +82,8 @@ otherwise the request is `refused`.
 #### `join`
 Take the next free seat of an online game: `code`, `name`. Names are made distinct
 ("Ann (2)"). Answer: `{"code", "token", "state"}`.
+In a club game a name already at the table, ignoring capitals and spaces, is
+`refused`: the club would count both as one member.
 
 #### `rejoin`
 Take a seat back: `code`, `seat`. The seat gets a new token, and the device that

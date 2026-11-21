@@ -155,6 +155,21 @@ class TestClubs(unittest.TestCase):
         self.assertNotIn("dee", self.clubs.get(self.club)["members"])
         self.assertFalse(self.clubs.record(dict(result, club="NOSUCH")))
 
+    def test_a_member_plays_once_in_an_online_club_game(self):
+        """'ann' joining 'Ann' was seated, and the club then counted one member twice, against herself."""
+        code, ann = self.store.create("Ann", 3, club=self.club)
+        for name in (" ann ", "ANN", "Ann"):
+            with self.subTest(name=name), self.assertRaises(rooms.RoomError) as refused:
+                self.store.join(code, name)
+            self.assertEqual(str(refused.exception), "Each player needs a different name.")
+        self.store.join(code, "Bob")
+        self.assertEqual(self.store.view(code).names, ["Ann", "Bob"])
+        # Outside a club, nothing changed: an exact twin is told apart, another spelling is kept.
+        plain, _ = self.store.create("Ann", 3)
+        self.store.join(plain, "Ann")
+        self.store.join(plain, "ann")
+        self.assertEqual(self.store.view(plain).names, ["Ann", "Ann (2)", "ann"])
+
     def test_codes_and_names(self):
         self.assertTrue(is_club_code(self.club))
         self.assertFalse(is_club_code("ABCDE"))  # a room code
