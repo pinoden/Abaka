@@ -204,6 +204,8 @@ export default function Home() {
                 onPress={() => openClub(clubCode)} />
       </Card>
 
+      <Button kind="quiet" testID="rules-home" label={t('How to play')} onPress={() => router.push('/rules')} />
+
       {!online && busy ? <Muted>{t('Connecting…')}</Muted> : null}
     </Screen>
   );

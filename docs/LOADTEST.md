@@ -35,3 +35,4 @@ records a row, and says if the new one is more than 25% worse.
 | 2026-11-21 | 8a58a5c+changes | Apple M1, 8 cores, Darwin | 3.9.20 / 1.48.1 | 100 every 1 s | 200 | 28 | 100 / 97 | 7.6 / 20.7 | 2.9 | 80.6 | 45 | - |
 | 2026-11-21 | accb957 | Apple M1, 8 cores, Darwin | 3.9.20 / 1.48.1 | 100 every 1 s | 200 | 24 | 100 / 96 | 6.3 / 15.8 | 2.5 | 78.6 | 43 | - |
 | 2026-11-21 | c7af67c | Apple M1, 8 cores, Darwin | 3.9.20 / 1.48.1 | 100 every 1 s | 200 | 33 | 100 / 97 | 8.5 / 18.8 | 3.4 | 77.2 | 52 | - |
+| 2026-11-21 | f87843a+changes | Apple M1, 8 cores, Darwin | 3.9.20 / 1.48.1 | 100 every 1 s | 200 | 34 | 100 / 98 | 8.8 / 18.0 | 3.5 | 75.7 | 67 | - |

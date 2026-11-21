@@ -164,6 +164,15 @@ export type Info = {
   rows: RowInfo[];
 };
 
+/** A block of the rules (`rules`): a heading, a paragraph (bold parts marked **so**), or the table. */
+export type RulesBlock = {
+  heading?: string;
+  text?: string;
+  table?: { head: string[]; rows: string[][] };
+};
+
+export type Rules = { title: string; blocks: RulesBlock[] };
+
 /** A seat in a game: what create, create_local, join, rejoin and resume answer. */
 export type Seat = { code: string; token: string; state: State };
 
@@ -416,7 +425,9 @@ export class Connection {
         && fields.since === undefined) {
       fields = { ...fields, since: watched.since };
     }
-    const text = JSON.stringify({ ...fields, op, protocol: PROTOCOL, lang: this.lang, id });
+    // A request may name its own language: a screen's request can go out before the app has
+    // switched the connection to a new one (React runs a screen's effects before the app's).
+    const text = JSON.stringify({ lang: this.lang, ...fields, op, protocol: PROTOCOL, id });
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         // Never sent late: a move the player was told had failed must not happen later.

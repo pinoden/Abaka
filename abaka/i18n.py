@@ -426,4 +426,5 @@ RU = {
     'Give your friends the club code. They open it under "Open club".':
         "Сообщите друзьям код клуба. Они открывают его в «Открыть клуб».",
     "Games started here count for the table.": "Игры, начатые здесь, идут в зачёт таблицы.",
+    "Back": "Назад",
 }

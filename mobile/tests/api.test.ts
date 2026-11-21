@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 
 import {
-  ApiError, type Club, Connection, gamesToContinue, type GameEvent, type Move, type Seat, type State,
+  ApiError, type Club, Connection, gamesToContinue, type GameEvent, type Move, type Rules, type Seat, type State,
 } from '../src/lib/api.ts';
 import { offered, tableRows } from '../src/lib/clubs.ts';
 
@@ -273,6 +273,21 @@ describe('the API client against a real server', { skip }, () => {
 
     const missing = await connection.request('club', { club: 'ZZZZZZ' }).catch((e) => e);
     assert.ok(missing instanceof ApiError && missing.code === 'not_found');
+  });
+
+  test('the rules, in the language the request names', async () => {
+    const connection = connect('en');
+    const english = (await connection.request<{ rules: Rules }>('rules')).rules;
+    assert.equal(english.title, 'How to play');
+    // A screen may name the language itself: its request can go out before the app has
+    // switched the connection to a new one.
+    const russian = (await connection.request<{ rules: Rules }>('rules', { lang: 'ru' })).rules;
+    assert.equal(russian.title, 'Как играть');
+    assert.ok(russian.blocks.some((block) => block.heading === 'Комбинации'));
+    const table = russian.blocks.find((block) => block.table)?.table;
+    assert.ok(table);
+    assert.deepEqual(table.rows.map((row) => row[0]).slice(0, 2), ['Пара', 'Две пары']);
+    assert.equal(connection.language(), 'en'); // the connection's own language is unchanged
   });
 
   test('errors carry the code and the message in the request’s language', async () => {

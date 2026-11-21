@@ -35,6 +35,7 @@ from .models import Category
 from .moves import ROW_ORDER, cross_options, free_slot, is_school, most_points, row_hint, row_name, score_options
 from .rooms import (MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, REACTIONS, OutdatedPage,
                     RoomError, RoomStore, RoomView, TooFast, normalize_code)
+from .rules import rules_blocks
 
 # The version of the messages below. Adding an operation or a field keeps it; anything an
 # app already relies on (a field's meaning, an operation's arguments) changing makes it 2,
@@ -194,6 +195,11 @@ def _info(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
     }
 
 
+def _rules(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
+    """The rules, in the request's language, as blocks an app draws itself (abaka/rules.py)."""
+    return {"rules": {"title": t("How to play"), "blocks": rules_blocks()}}
+
+
 def _create(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
     """An online game; the creator takes seat 0 and shares the code."""
     name = req.text("name", "").strip() or t("Player {i}", i=1)
@@ -318,6 +324,7 @@ def _create_club(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) ->
 
 _OPS: Dict[str, Callable[[_Request, RoomStore, Optional[ClubStore]], dict]] = {
     "info": _info,
+    "rules": _rules,
     "create": _create,
     "create_local": _create_local,
     "join": _join,
