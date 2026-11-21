@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 
-import { ApiError, Connection, isNewer, type Move, type Seat, type State } from '../src/lib/api.ts';
+import { ApiError, Connection, gamesToContinue, type Move, type Seat, type State } from '../src/lib/api.ts';
 
 const SERVER = process.env.ABAKA_SERVER;
 const skip = SERVER ? false : 'set ABAKA_SERVER to a running server (streamlit run abaka_server.py)';
@@ -114,9 +114,9 @@ describe('the API client against a real server', { skip }, () => {
     assert.equal(invite.seated, false);
     assert.ok(invite.can.includes('join'));
 
+    // A watcher gets every state in order: the connection never hands over an older one.
     let annSees: State | null = null;
-    ann.startWatching(created.code, created.token,
-      (s) => { if (isNewer(s, annSees)) annSees = s; }, (e) => assert.fail(e.message));
+    ann.startWatching(created.code, created.token, (s) => { annSees = s; }, (e) => assert.fail(e.message));
     await until(() => annSees !== null, 'the watch');
 
     const joined = await bob.request<Seat>('join', { code: created.code, name: 'Test Bob' });
@@ -125,8 +125,7 @@ describe('the API client against a real server', { skip }, () => {
     await until(() => annSees!.names.length === 2 && annSees!.phase === 'starting_throw', 'the join pushed');
 
     let bobSees: State | null = null;
-    bob.startWatching(created.code, joined.token,
-      (s) => { if (isNewer(s, bobSees)) bobSees = s; }, (e) => assert.fail(e.message));
+    bob.startWatching(created.code, joined.token, (s) => { bobSees = s; }, (e) => assert.fail(e.message));
     await until(() => bobSees !== null, "Bob's watch");
     // Bob's texts come in Russian, Ann's in English.
     const rows = (await bob.request<{ rows: { name: string }[] }>('info')).rows;
@@ -182,6 +181,30 @@ describe('the API client against a real server', { skip }, () => {
     const old = (await ann.request<{ state: State }>('state', { code: created.code, token: created.token })).state;
     assert.equal(old.seated, false);
     assert.ok(old.can.includes('rejoin'));
+  });
+
+  test('the games to continue: not the finished ones, nor the ones that are gone', async () => {
+    const connection = connect();
+    const game = await connection.request<Seat>('create_local', { names: ['Test Ann', 'Test Bob'] });
+    const closed = await connection.request<Seat>('create', { name: 'Test Ann', players: 2 });
+    await connection.request('leave', { code: closed.code, token: closed.token }); // alone: the game is closed
+
+    const before = await gamesToContinue(connection, [closed.code, game.code], 4);
+    assert.ok(before);
+    assert.deepEqual(before.open.map((s) => [s.code, s.names]), [[game.code, ['Test Ann', 'Test Bob']]]);
+    assert.deepEqual([before.over, before.gone], [[], [closed.code]]);
+    // It looks no further than it must: each look can make the server read a game.
+    const one = await gamesToContinue(connection, [game.code, closed.code], 1);
+    assert.deepEqual([one!.open.length, one!.gone], [1, []]);
+
+    await play(game.code, [{ connection, token: game.token }], 3);
+    const after = await gamesToContinue(connection, [closed.code, game.code], 4);
+    assert.deepEqual([after!.open, after!.over, after!.gone], [[], [game.code], [closed.code]]);
+
+    // A server that cannot be asked: nothing is known, and nothing is forgotten.
+    const nowhere = new Connection('http://127.0.0.1:9');
+    connections.push(nowhere);
+    assert.equal(await gamesToContinue(nowhere, [game.code], 4), null);
   });
 
   test('errors carry the code and the message in the request’s language', async () => {

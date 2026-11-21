@@ -15,6 +15,15 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
   which also pushes the watched game's state. An answer that carries the watched game's
   state for the watching seat counts as sent: the server will not push it again, so the
   client hands it to the watcher too.
+- **One connection serves every screen, and looks after itself** (`Connection`):
+  - It stays open between screens. A screen that stops watching sends `unwatch`.
+  - A screen gets the game's states in order, never an older one after a newer one. The
+    answer to `watch` is a fresh start: after a server restart a game's counters begin
+    again.
+  - A connection can die without closing (a phone that changed networks). When nothing
+    has arrived for 20 s it asks the server whether it is there; no answer, or a request
+    that is never answered, and the connection is replaced.
+  - A request that failed as `offline` is never made later.
 - **Installed apps update slowly**, so the server answers every protocol in use. An app
   change never needs the server to change what an existing field means.
 - **The server for apps** is not live yet (item 25, stage B). The app plays on a server
@@ -33,7 +42,8 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/lib/app.tsx` | Shared state: language, the connection, the board's row names |
 | `src/lib/texts.ts`, `src/texts.json` | Texts (below). `texts.json` is generated: never edit it |
 | `src/lib/storage.ts` | Games and seat tokens on the device (secure storage; the browser's on the web) |
-| `tests/` | The API client against a real server (`node --test`) |
+| `tests/api.test.ts` | The API client against a real server (`node --test`; skipped without `ABAKA_SERVER`) |
+| `tests/connection.test.ts` | The connection against a scripted server in the test's own process: restarts, states out of order, connections that die silently. Needs no game server |
 
 ## Texts
 
@@ -59,6 +69,7 @@ npx expo start                           # the development server (Expo Go on a 
 npx tsc --noEmit                         # typecheck
 npx expo lint                            # lint (React's rules included)
 ABAKA_SERVER=http://127.0.0.1:8501 npm test   # the API client against a running abaka_server.py
+npm test                                 # only the connection against its scripted server
 npx expo export --platform web           # the web build, in dist/ (not committed)
 python tools/app_check.py --serve        # from the repository: the web build in a real browser
 npx expo install <package>               # add a package: picks the version that fits SDK 58
@@ -91,6 +102,13 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
 - Expo Go has only its bundled native modules. A library with native code of its own
   needs a development build (`eas build --profile development`); prefer Expo's modules.
 - Player names and chat are text: show them in `<Text>`, never as HTML or Markdown.
+- A screen stops its own watch with what `startWatching` returns, never with
+  `stopWatching()`: while one screen slides over another, the old one closes after the
+  new one has opened.
+- Leaving a screen never gives up a seat. "‹ Home" only goes home, and the game stays
+  under "Continue a game"; a seat is given up by its own button (Leave, Cancel).
+- What cannot be thrown on purpose (a tie, an Abaka) is checked with steered dice:
+  `Steered` in `tools/app_check.py` is a real game server in the check's process.
 - Seat tokens are secrets: only in `src/lib/storage.ts`, never in a log or on screen.
 - `src/lib/api.ts` stays free of React Native imports and of TypeScript that Node cannot
   run as it is (no enums, no parameter properties; `erasableSyntaxOnly` enforces it).

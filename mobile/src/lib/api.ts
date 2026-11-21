@@ -110,9 +110,68 @@ export class ApiError extends Error {
   }
 }
 
-const REQUEST_TIMEOUT_MS = 15000;
-const RETRY_FIRST_MS = 500;
-const RETRY_MOST_MS = 5000;
+/**
+ * Of the games a device remembers (`codes`, newest first), which can be continued: `open`
+ * holds at most `limit` that still exist and are not over, as the server shows them now;
+ * `over` and `gone` list the finished ones and the ones that no longer exist, among the
+ * games looked at. Like the web's home page, it looks no further than it must: each look
+ * can make the server read a game from its storage. Null when the server cannot be asked
+ * (offline): show what the device remembers.
+ */
+export async function gamesToContinue(connection: Connection, codes: string[], limit: number):
+    Promise<{ open: State[]; over: string[]; gone: string[] } | null> {
+  const open: State[] = [];
+  const over: string[] = [];
+  const gone: string[] = [];
+  for (const code of codes) {
+    if (open.length === limit) break;
+    try {
+      const { state } = await connection.request<{ state: State }>('state', { code });
+      if (state.phase === 'over') over.push(code);
+      else open.push(state);
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.code !== 'not_found') return null;
+      gone.push(code);
+    }
+  }
+  return { open, over, gone };
+}
+
+/**
+ * How long the connection waits. Every value can be changed for a test (the second
+ * argument of `new Connection`).
+ */
+export type Timings = {
+  /** A request that got no answer for this long fails as `offline`. */
+  requestMs: number;
+  /** A connection that has not opened after this long is given up, and tried again. */
+  connectMs: number;
+  /** While a game is watched and nothing has arrived for this long, ask the server if it is there. */
+  heartbeatMs: number;
+  /** ...and how long its answer may take before the connection counts as dead. */
+  heartbeatAnswerMs: number;
+  /** The wait before reconnecting: first this, then doubling up to `retryMostMs`. */
+  retryFirstMs: number;
+  retryMostMs: number;
+};
+
+export const TIMINGS: Timings = {
+  requestMs: 15000,
+  connectMs: 10000,
+  heartbeatMs: 20000,
+  heartbeatAnswerMs: 8000,
+  retryFirstMs: 500,
+  retryMostMs: 5000,
+};
+
+type Watch = {
+  code: string;
+  token?: string;
+  onState: (state: State) => void;
+  onError: (error: ApiError) => void;
+  /** The latest state handed to `onState`. */
+  shown: State | null;
+};
 
 type Pending = {
   resolve: (response: any) => void;
@@ -121,13 +180,8 @@ type Pending = {
   /** The seat the request was made for: its answer is the watched game's news if it matches. */
   code?: unknown;
   token?: unknown;
-};
-
-type Watch = {
-  code: string;
-  token?: string;
-  onState: (state: State) => void;
-  onError: (error: ApiError) => void;
+  /** For a `watch` request: the watch it was sent for. */
+  watch?: Watch;
 };
 
 /** `http://host:8501` -> `ws://host:8501/api/v1/live` (https -> wss). */
@@ -136,9 +190,9 @@ export function liveUrl(server: string): string {
 }
 
 /**
- * Whether state `a` is newer than state `b` of the same game. Answers and pushes travel
- * separately, so an older state can arrive after a newer one; `seen` orders them (the room
- * version, then the dice picks, then the latest event).
+ * Whether state `a` is newer than state `b` of the same game, on one connection. Answers
+ * and pushes travel separately, so an older state can arrive after a newer one; `seen`
+ * orders them (the room version, then the dice picks, then the latest event).
  */
 export function isNewer(a: State, b: State | null): boolean {
   if (b === null || a.code !== b.code) return true;
@@ -151,26 +205,41 @@ export function isNewer(a: State, b: State | null): boolean {
 }
 
 /**
- * One connection to the server. It connects when it has something to send, reconnects
- * after a drop (watching the same game again), and fails a request with `offline` when
- * the server cannot be reached.
+ * One connection to the server, for every screen. It connects when it has something to
+ * send, stays open from then on, and fails a request with `offline` when the server cannot
+ * be reached.
+ *
+ * It looks after itself:
+ * - while a game is watched, it reconnects after a drop and watches the game again;
+ * - a connection can die without closing (a phone that changed networks, a server that
+ *   went away mid-sentence). So when nothing has arrived for a while it asks the server
+ *   whether it is there, and a request that is never answered counts as a dead
+ *   connection too: it is closed, and replaced if a game is watched;
+ * - if the server's answer shows that the screen fell behind, it asks for the game again.
  */
 export class Connection {
   private lang: Lang = 'en';
   private listeners = new Set<(connected: boolean) => void>();
   private url: string;
+  private timings: Timings;
   private socket: WebSocket | null = null;
   private isOpen = false;
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private queue: { id: number; op: string; text: string }[] = [];
   private watch: Watch | null = null;
-  private retryMs = RETRY_FIRST_MS;
+  private retryMs: number;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private openTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeat: ReturnType<typeof setInterval> | null = null;
+  private heardAt = 0;
+  private asking = false;
   private closed = false;
 
-  constructor(server: string) {
+  constructor(server: string, timings: Partial<Timings> = {}) {
     this.url = liveUrl(server);
+    this.timings = { ...TIMINGS, ...timings };
+    this.retryMs = this.timings.retryFirstMs;
   }
 
   /** The language of the texts in the answers (sent with every request). */
@@ -190,18 +259,7 @@ export class Connection {
 
   /** Send one request; resolves with its answer, rejects with an ApiError. */
   request<T = any>(op: string, fields: Record<string, unknown> = {}): Promise<T> {
-    const id = this.nextId++;
-    const text = JSON.stringify({ ...fields, op, protocol: PROTOCOL, lang: this.lang, id });
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        // Never sent late: a move the player was told had failed must not happen later.
-        this.queue = this.queue.filter((m) => m.id !== id);
-        this.pending.delete(id);
-        reject(new ApiError('offline', ''));
-      }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer, code: fields.code, token: fields.token });
-      this.send({ id, op, text });
-    });
+    return this.ask<T>(op, fields, this.timings.requestMs);
   }
 
   /**
@@ -215,19 +273,37 @@ export class Connection {
   }
 
   /**
-   * Watch a game: `onState` gets its state now and whenever it changes; `onError` gets a
-   * refusal of the watch (the game is gone, the seat was taken back).
+   * Watch a game: `onState` gets its state now and whenever it changes, never an older
+   * one after a newer one; `onError` gets a refusal of the watch (the game is gone).
+   *
+   * Returns what stops this watch, and only this one: a screen that closes after the next
+   * one has opened (while one slides over the other) must not stop the next screen's game.
    */
   startWatching(code: string, token: string | undefined, onState: (state: State) => void,
-                onError: (error: ApiError) => void): void {
-    this.watch = { code, token, onState, onError };
+                onError: (error: ApiError) => void): () => void {
+    const watch: Watch = { code, token, onState, onError, shown: null };
+    this.watch = watch;
     this.sendWatch();
+    return () => {
+      if (this.watch === watch) this.stopWatching();
+    };
   }
 
-  /** Stop watching (the connection closes, and opens again for the next request). */
+  /**
+   * Stop watching, whatever is watched: the player left the game's screen. The connection
+   * stays for the next screen's requests, and the server is told to send this game no more.
+   */
   stopWatching(): void {
+    if (!this.watch) return;
     this.watch = null;
-    this.dropSocket();
+    // A watch that has not gone out yet (the connection is still opening) never needs to.
+    for (const message of this.queue.filter((m) => m.op === 'watch')) this.fail(message.id);
+    this.queue = this.queue.filter((m) => m.op !== 'watch');
+    if (this.isOpen) {
+      this.ask('unwatch', {}, this.timings.requestMs).catch(() => {});
+    } else if (!this.queue.length) {
+      this.dropSocket(); // it was opening, or waiting to try again, for the watch alone
+    }
   }
 
   /** Watch the same game again, in the current language. */
@@ -235,10 +311,15 @@ export class Connection {
     if (this.watch) this.sendWatch();
   }
 
-  /** Reconnect now if the connection is down (the app came back to the foreground). */
+  /**
+   * The app came back to the foreground: reconnect now if the connection is down, and if
+   * it looks open, make sure it is (it may have died while the app slept).
+   */
   wake(): void {
-    if (!this.isOpen && (this.watch || this.queue.length)) {
-      this.retryMs = RETRY_FIRST_MS;
+    if (this.isOpen) {
+      this.askIfThere();
+    } else if (this.watch || this.queue.length) {
+      this.retryMs = this.timings.retryFirstMs;
       this.connect();
     }
   }
@@ -250,16 +331,59 @@ export class Connection {
     this.dropSocket();
   }
 
+  private ask<T>(op: string, fields: Record<string, unknown>, timeoutMs: number, watch?: Watch): Promise<T> {
+    const id = this.nextId++;
+    const text = JSON.stringify({ ...fields, op, protocol: PROTOCOL, lang: this.lang, id });
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        // Never sent late: a move the player was told had failed must not happen later.
+        const unsent = this.queue.some((m) => m.id === id);
+        this.queue = this.queue.filter((m) => m.id !== id);
+        this.pending.delete(id);
+        reject(new ApiError('offline', ''));
+        // Sent and never answered: the connection is dead, even if it looks open.
+        if (!unsent) this.replaceSocket();
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer, code: fields.code, token: fields.token, watch });
+      this.send({ id, op, text });
+    });
+  }
+
   private sendWatch(): void {
     const watch = this.watch;
     if (!watch) return;
     const fields: Record<string, unknown> = { code: watch.code };
     if (watch.token) fields.token = watch.token;
-    this.request<{ state: State }>('watch', fields).then(
-      () => { /* the state goes to the watcher like every answer about the watched game */ },
+    this.ask<{ state: State }>('watch', fields, this.timings.requestMs, watch).then(
+      () => { /* the state went to the watcher (receive) */ },
       (error: ApiError) => {
         // Offline: the watch is sent again when the connection opens.
         if (this.watch === watch && error.code !== 'offline') watch.onError(error);
+      },
+    );
+  }
+
+  /**
+   * Ask the server whether it is there and, if a game is watched, whether the screen shows
+   * it as it is now. With no game to watch, `unwatch` is the question: it changes nothing.
+   */
+  private askIfThere(): void {
+    if (!this.isOpen || this.asking) return;
+    const watch = this.watch;
+    this.asking = true;
+    const question = watch
+      ? this.ask<{ seen?: string }>('seen', { code: watch.code }, this.timings.heartbeatAnswerMs)
+      : this.ask<{ seen?: string }>('unwatch', {}, this.timings.heartbeatAnswerMs);
+    question.then(
+      (answer) => {
+        this.asking = false;
+        // The screen fell behind (a push that never arrived): ask for the game again.
+        if (watch && this.watch === watch && watch.shown && answer.seen !== watch.shown.seen) this.sendWatch();
+      },
+      () => {
+        // A refusal is an answer too. No answer at all: the request's timeout has closed
+        // the connection. A game that is gone is reported by the server itself.
+        this.asking = false;
       },
     );
   }
@@ -287,11 +411,19 @@ export class Connection {
       return;
     }
     this.socket = socket;
+    // A connection that never opens (a network that swallows everything) is given up.
+    this.openTimer = setTimeout(() => {
+      this.openTimer = null;
+      if (this.socket !== socket || this.isOpen) return;
+      this.dropSocket();
+      if (this.watch || this.queue.length) this.scheduleRetry();
+    }, this.timings.connectMs);
     socket.onopen = () => {
       if (this.socket !== socket) return;
-      this.isOpen = true;
-      this.retryMs = RETRY_FIRST_MS;
-      for (const listener of this.listeners) listener(true);
+      this.clearOpenTimer();
+      this.retryMs = this.timings.retryFirstMs;
+      this.heardAt = Date.now();
+      this.setOpen(true);
       const queued = this.queue;
       this.queue = [];
       // A watch queued before the drop is in `queued`; otherwise watch the game again.
@@ -299,13 +431,14 @@ export class Connection {
       for (const message of queued) socket.send(message.text);
       if (this.watch && !watching) this.sendWatch();
     };
-    socket.onmessage = (event) => this.receive(String(event.data));
+    socket.onmessage = (event) => {
+      if (this.socket === socket) this.receive(String(event.data));
+    };
     socket.onclose = () => {
       if (this.socket !== socket) return;
-      const wasOpen = this.isOpen;
+      this.clearOpenTimer();
       this.socket = null;
-      this.isOpen = false;
-      if (wasOpen) for (const listener of this.listeners) listener(false);
+      this.setOpen(false);
       // Requests already sent may or may not have been made: fail them, and let the
       // watch (sent again on reconnect) bring the game's true state.
       this.failPending();
@@ -314,6 +447,21 @@ export class Connection {
     socket.onerror = () => {
       // onclose follows.
     };
+  }
+
+  private setOpen(open: boolean): void {
+    if (this.isOpen === open) return;
+    this.isOpen = open;
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = !open ? null : setInterval(() => {
+      if (Date.now() - this.heardAt >= this.timings.heartbeatMs) this.askIfThere();
+    }, this.timings.heartbeatMs);
+    for (const listener of this.listeners) listener(open);
+  }
+
+  private clearOpenTimer(): void {
+    if (this.openTimer) clearTimeout(this.openTimer);
+    this.openTimer = null;
   }
 
   private scheduleRetry(): void {
@@ -328,29 +476,57 @@ export class Connection {
       this.retryTimer = null;
       this.connect();
     }, this.retryMs);
-    this.retryMs = Math.min(this.retryMs * 2, RETRY_MOST_MS);
+    this.retryMs = Math.min(this.retryMs * 2, this.timings.retryMostMs);
   }
 
+  /** Requests already sent get no answer any more: they fail as `offline`. */
   private failPending(): void {
     const queuedIds = new Set(this.queue.map((m) => m.id));
-    for (const [id, pending] of this.pending) {
-      if (queuedIds.has(id)) continue; // not sent yet: it goes out when the connection opens
-      clearTimeout(pending.timer);
-      this.pending.delete(id);
-      pending.reject(new ApiError('offline', ''));
+    for (const id of [...this.pending.keys()]) {
+      if (!queuedIds.has(id)) this.fail(id); // one not sent yet goes out when the connection opens
     }
   }
 
+  private fail(id: number): void {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pending.delete(id);
+    pending.reject(new ApiError('offline', ''));
+  }
+
+  /** Close the connection, if any. Requests already sent fail as `offline`. */
   private dropSocket(): void {
     const socket = this.socket;
     this.socket = null;
-    this.isOpen = false;
+    this.clearOpenTimer();
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
+    this.setOpen(false);
     this.failPending();
     if (socket) socket.close();
+  }
+
+  /** A connection that stopped answering: close it, and open a new one if there is anything to send or watch. */
+  private replaceSocket(): void {
+    this.dropSocket();
+    if (this.watch || this.queue.length) this.connect();
+  }
+
+  /**
+   * Hand a state of the watched game to the screen, unless it is older than the one shown:
+   * answers and pushes can cross. `fresh` is the answer to the watch itself, which always
+   * counts: after a server restart the game's counters start again, and comparing with
+   * what was shown before would hide the game's news until its next move.
+   */
+  private deliver(state: State, fresh: boolean): void {
+    const watch = this.watch;
+    if (!watch || state.code !== watch.code) return;
+    if (!fresh && watch.shown && isNewer(watch.shown, state)) return;
+    watch.shown = state;
+    watch.onState(state);
   }
 
   private receive(text: string): void {
@@ -360,21 +536,23 @@ export class Connection {
     } catch {
       return;
     }
+    this.heardAt = Date.now();
     if (message.type === 'state') {
-      const watch = this.watch;
-      if (watch && message.state?.code === watch.code) watch.onState(message.state);
+      if (message.state) this.deliver(message.state, false);
       return;
     }
     const pending = message.id != null ? this.pending.get(message.id) : undefined;
     if (message.type === 'reply' && pending) {
       clearTimeout(pending.timer);
       this.pending.delete(message.id);
-      // The server notes every state it sends for the watched seat and pushes only later
-      // changes, so such an answer is the watcher's news too.
       const state = message.response?.state as State | undefined;
       const watch = this.watch;
-      if (watch && state && state.code === watch.code && (pending.token ?? undefined) === watch.token) {
-        watch.onState(state);
+      if (pending.watch) {
+        if (state && pending.watch === watch) this.deliver(state, true);
+      } else if (watch && state && (pending.token ?? undefined) === watch.token) {
+        // The server notes every state it sends for the watched seat and pushes only later
+        // changes, so such an answer is the watcher's news too.
+        this.deliver(state, false);
       }
       pending.resolve(message.response);
     } else if (message.type === 'error') {

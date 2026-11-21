@@ -13,21 +13,31 @@ Build the app for the web first, then check it:
 The checks:
 - home in English and Russian;
 - a game on one device: the starting throw, a roll, two dice picked and rolled again, the
-  best option written, a row crossed out, and both players' columns on the screen;
-- an online game between two phones: one creates it, the other opens its code and joins,
-  the starting throws, and a roll and a move seen on the other phone.
+  best option written, a row crossed out, and both players' columns on the screen; then
+  home and back to it from "Continue a game", and once it has ended (the check plays it
+  to the end through the API) it is not offered there any more;
+- an online game between two phones: one creates it, goes home and comes back to the
+  waiting room (the seat is kept), the other opens its code and joins, the starting
+  throws, and a roll and a move seen on the other phone;
+- a tie for the first turn among three players, with dice the check chooses (Steered): the
+  player who is out of the next round keeps their throw on the screen.
 Any page error and any sideways scrolling is a problem too.
 
-Needs Playwright and its Chromium (requirements-dev.txt), and Streamlit 1.67 for --serve.
+Needs Playwright and its Chromium (requirements-dev.txt), and Streamlit 1.67's packages
+(the steered server, and --serve).
 """
 
 import argparse
 import functools
 import http.server
+import json
+import socket
 import sys
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Callable, List, Tuple
 from urllib.parse import quote
@@ -40,7 +50,7 @@ BUILD = ROOT / "mobile" / "dist"
 PHONE = (390, 844)
 NAMES = ("Test Ann", "Test Bob")
 WAIT_MS = 20000
-FLOWS = ("home", "one device", "online")
+FLOWS = ("home", "one device", "online", "a tie")
 
 
 class Problem(Exception):
@@ -136,6 +146,84 @@ class Phone:
         self.context.close()
 
 
+class Steered:
+    """
+    A game server inside this process, with dice the check chooses: the real API over the
+    network (server/http.py) on a store of its own. What cannot be thrown on purpose (a tie
+    for the first turn) can then be shown to the app.
+
+    `throws` lists the next throws of all five dice, each as five values with the joker
+    last; once it is empty the dice are left to chance again.
+    """
+
+    def __init__(self) -> None:
+        import uvicorn
+        from starlette.applications import Starlette
+        from starlette.routing import Route, WebSocketRoute
+
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        import abaka.engine as engine
+        from abaka import rooms
+        from abaka.clubs import ClubStore
+        from abaka.models import Die
+        from server import http as live
+
+        self.store, clubs = rooms.RoomStore(), ClubStore()  # in memory: nothing is saved anywhere
+        live.stores.get_store = lambda: self.store
+        live.stores.get_clubs = lambda: clubs
+        self.throws: List[List[int]] = []
+        self._engine, self._roll_dice = engine, engine.roll_dice
+        engine.roll_dice = lambda: ([Die(value, is_joker=i == 4) for i, value in enumerate(self.throws.pop(0))]
+                                    if self.throws else self._roll_dice())
+        self._socket = socket.socket()
+        self._socket.bind(("127.0.0.1", 0))
+        self.url = f"http://127.0.0.1:{self._socket.getsockname()[1]}"
+        app = Starlette(routes=[Route("/api/v1", live.post, methods=["POST"]),
+                                WebSocketRoute("/api/v1/live", live.live)])
+        self._server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off"))
+        self._thread = threading.Thread(target=self._server.run, kwargs={"sockets": [self._socket]}, daemon=True)
+        self._thread.start()
+        deadline = time.time() + 15
+        while not self._server.started:
+            if time.time() > deadline:
+                raise Problem("the steered server did not start")
+            time.sleep(0.02)
+
+    def stop(self) -> None:
+        self._engine.roll_dice = self._roll_dice
+        self._server.should_exit = True
+        self._thread.join(10)
+        self._socket.close()
+
+
+def api(server: str, **request) -> dict:
+    """One request to the game server's API: its answer, or its refusal."""
+    asked = urllib.request.Request(server.rstrip("/") + "/api/v1", json.dumps(request).encode(),
+                                   {"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(asked, timeout=20) as answer:
+            return json.loads(answer.read())
+    except urllib.error.HTTPError as e:
+        return json.loads(e.read())
+
+
+def finish_game(server: str, code: str, token: str) -> None:
+    """Play a game on one device to its end through the API, taking the first move each state offers."""
+    for _ in range(2000):
+        state = api(server, op="state", code=code, token=token)["state"]
+        if state["phase"] == "over":
+            return
+        ask = dict(code=code, token=token, version=state["version"])
+        if "throw" in state["can"] or "roll" in state["can"]:
+            api(server, op="throw" if "throw" in state["can"] else "roll", **ask)
+        else:
+            kind = "score" if state["moves"]["score"] else "cross"
+            move = state["moves"][kind][0]
+            api(server, op=kind, row=move["row"], slot=move["slot"], **ask)
+    raise Problem(f"game {code} did not end")
+
+
 def check_home(browser, url: str) -> str:
     phone = Phone(browser, url, "home, phone")
     try:
@@ -176,7 +264,7 @@ def board_fits(phone: Phone) -> None:
         raise Problem(f"{phone.name}: two players' columns are {overflow}px wider than the screen")
 
 
-def check_one_device(browser, url: str, games: List[str]) -> None:
+def check_one_device(browser, url: str, server: str, games: List[str]) -> None:
     phone = Phone(browser, url, "one device, phone")
     try:
         phone.see(phone.id("start-local"), "the home page")
@@ -204,9 +292,23 @@ def check_one_device(browser, url: str, games: List[str]) -> None:
         phone.see(phone.page.locator('[data-testid^="option-"]'), "a row to cross out").click()
         phone.id("confirm").first.click()
         phone.until(lambda: "crossed out" in phone.id("last-move").first.inner_text(), "the crossed-out row")
-        phone.healthy()
         if not label:
             raise Problem("one device: the best option had no label")
+        # Home and back: the game is kept, and offered under "Continue a game".
+        code = games[-1]
+        phone.id("home").click()
+        phone.see(phone.id(f"continue-{code}"), "the game under 'Continue a game'").click()
+        phone.see(phone.id("roll"), "the game again, where it was left")
+        # Once it has ended (played to the end through the API), it is not offered any more.
+        token = phone.page.evaluate("code => localStorage.getItem('abaka.token.' + code)", code)
+        finish_game(server, code, token)
+        phone.see(phone.id("results"), "the results, without a tap")
+        phone.id("home").click()
+        phone.see(phone.id("start-local"), "the home page")
+        phone.page.wait_for_timeout(1000)  # the list is drawn a moment after the page
+        if phone.id(f"continue-{code}").count():
+            raise Problem("one device: the finished game is still offered under 'Continue a game'")
+        phone.healthy()
     finally:
         phone.close()
 
@@ -220,6 +322,10 @@ def check_online(browser, url: str, games: List[str]) -> None:
         ann.id("create-online").click()
         code = ann.see(ann.id("game-code"), "the game code").inner_text().strip()
         games.append(code)
+        # Home and back while waiting: the seat is kept, so the game is still there for friends.
+        ann.id("home").click()
+        ann.see(ann.id(f"continue-{code}"), "the waiting game under 'Continue a game'").click()
+        ann.see(ann.id("game-code"), "the waiting room again")
 
         bob.see(bob.id("open-code"), "Bob's home page")
         bob.id("open-code").fill(code)
@@ -245,6 +351,37 @@ def check_online(browser, url: str, games: List[str]) -> None:
         bob.close()
 
 
+def check_tie(browser, build_url: str) -> str:
+    """Three players on one device tie for the first turn: the one who is out keeps their throw on the screen."""
+    try:
+        steered = Steered()
+    except ImportError as e:
+        raise Problem(f"the steered server needs Streamlit 1.67's packages ({e})") from None
+    phone = Phone(browser, f"{build_url}?server={quote(steered.url, safe='')}", "a tie, phone")
+    try:
+        phone.see(phone.id("start-local"), "the home page")
+        phone.id("local-count").get_by_role("radio", name="3").click()
+        players = ("Test Ann", "Test Bob", "Test Cy")
+        for i, name in enumerate(players):
+            phone.see(phone.id(f"local-name-{i}"), f"the box for player {i + 1}").fill(name)
+        steered.throws = [[1, 1, 1, 1, 5], [6, 6, 4, 2, 2], [2, 2, 2, 2, 1]]  # 9, 20 and 9: Ann and Cy tie
+        phone.id("start-local").click()
+        for name in players:
+            phone.see(phone.page.get_by_text(f"Throw for {name}"), f"{name}'s starting throw").click()
+        phone.until(lambda: "throw again" in phone.text(), "the tie for the lowest total")
+        out = phone.id("throw-1").first.inner_text()
+        if "20" not in out:
+            raise Problem(f"a tie: Test Bob is out, and his throw of 20 is no longer shown ({out!r})")
+        for seat in (0, 2):  # the two who throw again wait for their new throw
+            if "9" in phone.id(f"throw-{seat}").first.inner_text():
+                raise Problem("a tie: a player who throws again still shows the old throw")
+        phone.healthy()
+        return "Test Bob, out with 20, keeps his throw"
+    finally:
+        phone.close()
+        steered.stop()
+
+
 def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[str], List[str]]:
     """Run the checks; returns (problems, codes of the games played)."""
     from playwright.sync_api import sync_playwright
@@ -256,8 +393,10 @@ def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[st
         browser = p.chromium.launch()
         try:
             steps = [("home", "home page, phone", lambda: check_home(browser, url)),
-                     ("one device", "a game on one device, phone", lambda: check_one_device(browser, url, games)),
-                     ("online", "an online game, two phones", lambda: check_online(browser, url, games))]
+                     ("one device", "a game on one device, phone",
+                      lambda: check_one_device(browser, url, server, games)),
+                     ("online", "an online game, two phones", lambda: check_online(browser, url, games)),
+                     ("a tie", "a tie for the first turn, steered dice", lambda: check_tie(browser, build_url))]
             for flow, label, step in steps:
                 if flow not in flows:
                     continue

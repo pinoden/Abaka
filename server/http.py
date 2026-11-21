@@ -4,7 +4,7 @@ web app, so apps and web pages share the games (docs/API.md, Over the network).
 
     POST /api/v1        a request as JSON; its answer as JSON (a refusal with an HTTP status)
     WS   /api/v1/live   the same requests as messages, and the state of a watched game
-                        pushed whenever it changes
+                        pushed whenever it changes (`watch`, until `unwatch`)
 
 Starlette, which Streamlit 1.67 runs on. The store's methods take its lock and may wait for
 the database, so they run in worker threads, never on the event loop, which also serves the
@@ -195,10 +195,16 @@ class _Live:
     async def answer(self, data: Any) -> None:
         """
         A request, answered with its `id`. `watch` is a state request that also makes this
-        connection push the game's state whenever it changes, until the app watches another.
+        connection push the game's state whenever it changes, until the app watches another
+        or sends `unwatch`.
         """
         ref = data.get("id") if isinstance(data, dict) else None
         request = {k: v for k, v in data.items() if k != "id"} if isinstance(data, dict) else data
+        if isinstance(request, dict) and request.get("op") == "unwatch":
+            # The app left the game's screen and keeps the connection for what it asks next.
+            self.watching, self.seen, self.since = None, None, 0
+            await self.send({"type": "reply", "id": ref, "response": {"watching": None}})
+            return
         watch = isinstance(request, dict) and request.get("op") == "watch"
         if watch:
             request["op"] = "state"
