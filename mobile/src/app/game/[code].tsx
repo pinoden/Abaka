@@ -7,19 +7,28 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
 import { Board, lastMoveText } from '@/components/Board';
+import { Chat } from '@/components/Chat';
 import { DieFace } from '@/components/Dice';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
+import { ReactionBar } from '@/components/Reactions';
+import { Shows } from '@/components/Shows';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
 import { type ApiError, type Game, type Move, type Seat, type State } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { errorText } from '@/lib/errors';
+import { nothingShown, type Show, showsFor } from '@/lib/shows';
 import { forgetGame, saveGame, tokenFor, updateGame } from '@/lib/storage';
 
 type Act = (op: string, fields?: Record<string, unknown>, move?: boolean) => Promise<void>;
 type Pick = (dice: number[]) => void;
+/** Reactions and chat: what a seated player of an online game sends to the table. */
+type Talk = {
+  react: (reaction: string, to: number | null) => Promise<unknown>;
+  say: (text: string) => Promise<unknown>;
+};
 
 export default function GameScreen() {
   const params = useLocalSearchParams<{ code: string }>();
@@ -33,6 +42,9 @@ export default function GameScreen() {
   const [openedAt, setOpenedAt] = useState<number | null>(null); // the version this screen first drew
   const resuming = useRef(false);
   const leaving = useRef(false); // giving up the seat: what the server says meanwhile is not for the screen
+  // Bubbles and effects playing over the screen, and what of the game's news it has taken in.
+  const [shows, setShows] = useState<Show[]>([]);
+  const news = useRef({ code, shown: nothingShown() });
 
   useEffect(() => {
     let live = true;
@@ -56,6 +68,14 @@ export default function GameScreen() {
         if (leaving.current) return;
         setState(next); // the connection never hands over an older state after a newer one
         setOpenedAt((opened) => opened ?? next.version);
+        if (news.current.code !== code) news.current = { code, shown: nothingShown() };
+        const fresh = showsFor(next, news.current.shown, Date.now());
+        if (fresh.length) setShows((playing) => [...playing, ...fresh]);
+        // For a screen reader: what the bubble or the banner says (iOS reads no live regions).
+        for (const show of fresh) {
+          const words = show.kind === 'effect' ? [show.title, show.text] : [show.who, show.label];
+          AccessibilityInfo.announceForAccessibility?.(words.filter(Boolean).join('. '));
+        }
         // A game on one device opened from its code: carry on at once (no seat to pick).
         if (!next.seated && next.can.includes('resume') && !resuming.current) {
           resuming.current = true;
@@ -104,6 +124,13 @@ export default function GameScreen() {
       setBusy(false);
     }
   }, [code, connection, state, t, token]);
+
+  const talk: Talk = useMemo(() => ({
+    react: (reaction, to) => connection.request('react', { code, token, reaction, ...(to === null ? {} : { to }) }),
+    say: (text) => connection.request('say', { code, token, text }),
+  }), [code, connection, token]);
+
+  const showDone = useCallback((id: string) => setShows((playing) => playing.filter((show) => show.id !== id)), []);
 
   /** Online, the others see the dice picked to roll again. A pick is not a move. */
   const pick: Pick = useCallback((dice) => {
@@ -154,12 +181,12 @@ export default function GameScreen() {
   } else if (state.phase === 'waiting') {
     body = <WaitingRoom state={state} act={act} busy={busy} onLeave={leave} />;
   } else if (state.game) {
-    body = <Table state={state} game={state.game} act={act} pick={pick} busy={busy}
+    body = <Table state={state} game={state.game} act={act} pick={pick} talk={talk} busy={busy}
                   openedAt={openedAt ?? state.version} />;
   }
 
   return (
-    <Screen>
+    <Screen over={<Shows shows={shows} onDone={showDone} />}>
       <View style={styles.bar}>
         <Pressable accessibilityRole="button" testID="home" onPress={goHome} hitSlop={8}>
           <Text style={styles.barHome}>‹ {t('Home')}</Text>
@@ -261,11 +288,12 @@ function WaitingRoom({ state, act, busy, onLeave }: {
 }
 
 /** The game: whose turn it is, the dice, the moves, the board; the results at the end. */
-function Table({ state, game, act, pick, busy, openedAt }: {
+function Table({ state, game, act, pick, talk, busy, openedAt }: {
   state: State;
   game: Game;
   act: Act;
   pick: Pick;
+  talk: Talk;
   busy: boolean;
   openedAt: number;
 }) {
@@ -300,6 +328,8 @@ function Table({ state, game, act, pick, busy, openedAt }: {
         </Card>
       ) : null}
       {state.phase === 'over' ? <Results state={state} game={game} act={act} busy={busy} /> : null}
+      {state.can.includes('react') ? <Card><ReactionBar state={state} react={talk.react} /></Card> : null}
+      {state.can.includes('say') ? <Chat state={state} chat={state.chat} say={talk.say} /> : null}
       <Card testID="scoreboard" style={styles.boardCard}>
         <Board game={game} you={state.local ? null : state.you} target={target} />
         {last ? <Text testID="last-move" style={styles.lastMove}>{last}</Text> : null}

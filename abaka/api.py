@@ -29,6 +29,7 @@ from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional
 
 from .clubs import MAX_CLUB_NAME_LENGTH, ClubStore, is_club_code, member_key
+from .effects import REACTION_LOOKS, effect_words, reaction_words
 from .i18n import LANGUAGES, error, get_language, set_language, t
 from .models import Category
 from .moves import ROW_ORDER, cross_options, free_slot, is_school, most_points, row_hint, row_name, score_options
@@ -185,6 +186,9 @@ def _info(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
         "players": {"min": MIN_PLAYERS, "max": MAX_PLAYERS},
         "limits": {"name": MAX_NAME_LENGTH, "message": MAX_MESSAGE_LENGTH, "club_name": MAX_CLUB_NAME_LENGTH},
         "reactions": list(REACTIONS),
+        # The reaction buttons, in their order: an app shows these and need not know the reactions.
+        "reaction_list": [{"id": key, "emoji": REACTION_LOOKS[key][0], "label": t(REACTION_LOOKS[key][1])}
+                          for key in REACTIONS if key in REACTION_LOOKS],
         "rows": [{"row": c.name, "name": row_name(c), "hint": row_hint(c), "school": is_school(c)}
                  for c in ROW_ORDER],
     }
@@ -408,7 +412,7 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
         best = set(most_points(score))
         state["moves"] = {"score": [_move(m, i in best) for i, m in enumerate(score)],
                           "cross": [_move(m, False) for m in cross]}
-    state["events"] = [_plain(e) for e in view.events if e["id"] > since]
+    state["events"] = [_event(e, view.names, state["you"]) for e in view.events if e["id"] > since]
     state["chat"] = [dict(m) for m in view.chat if m["id"] > since]
     if phase == "over" and view.club and clubs is not None:
         state["club_result"] = _club_result(clubs.game(view.club, view.code, view.games_played))
@@ -470,6 +474,20 @@ def _move(m, best: bool) -> dict:
         "action": m.action_text,
         "preview": m.preview,
     }
+
+
+def _event(event: dict, names: List[str], me: Optional[int]) -> dict:
+    """
+    A reaction or an effect with its words for the player in seat `me`, in the request's
+    language, so an app shows them as they are (abaka/effects.py; the web page shows the
+    same words).
+    """
+    data = _plain(event)
+    if event["kind"] == "reaction":
+        data.update(reaction_words(event, names, me))
+    elif event["kind"] == "effect":
+        data["title"], data["text"] = effect_words(event, names, me)
+    return data
 
 
 def _table(view: RoomView) -> dict:

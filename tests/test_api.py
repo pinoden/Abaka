@@ -15,7 +15,7 @@ from abaka import api
 from abaka.api import ApiError
 from abaka.clubs import ClubStore
 from abaka.i18n import get_language, set_language
-from abaka.models import Die
+from abaka.models import Category, Die
 from abaka.rooms import RoomStore
 from abaka.saving import engine_to_data
 
@@ -234,6 +234,58 @@ class TestOnline(unittest.TestCase):
         moves = self.state(mover)["moves"]["score"]
         self.assertEqual([m["row"] for m in moves if m["best"]], ["ABAKA"])
         self.assertEqual(next(m for m in moves if m["row"] == "ABAKA")["points"], 160)
+
+    def test_events_come_with_their_words_for_each_player(self):
+        """An app shows a reaction's and an effect's words as they are: who, to whom, in the player's language."""
+        info = self.server(op="info", lang="ru")
+        self.assertEqual([r["id"] for r in info["reaction_list"]], info["reactions"])
+        self.assertEqual(info["reaction_list"][0], {"id": "lucky", "emoji": "\U0001F340", "label": "Повезло!"})
+        while self.state(0)["phase"] == "starting_throw":
+            self.server.store.throw_for_start(self.code, self.tokens[self.state(0)["game"]["current"]])
+        mover = self.state(0)["game"]["current"]
+        other, third = (mover + 1) % 3, (mover + 2) % 3
+        names = self.state(0)["names"]
+        with mock.patch("abaka.engine.roll_dice", lambda: [Die(6), Die(6), Die(6), Die(6), Die(6, is_joker=True)]):
+            self.server(op="roll", code=self.code, token=self.tokens[mover], version=self.state(0)["version"])
+        self.server(op="react", code=self.code, token=self.tokens[other], reaction="lucky", to=mover)
+
+        def words(seat, lang="en"):
+            effect, reaction = self.state(seat, lang=lang)["events"][-2:]
+            return ((effect["title"], effect["text"]),
+                    (reaction["emoji"], reaction["who"], reaction["label"], reaction["to_you"]))
+
+        self.assertEqual(words(mover), (("Abaka!", "You · first roll"),
+                                        ("\U0001F340", f"{names[other]} → you", "Lucky!", True)))
+        self.assertEqual(words(other), (("Abaka!", f"{names[mover]} · first roll"),
+                                        ("\U0001F340", f"You → {names[mover]}", "Lucky!", False)))
+        self.assertEqual(words(third, "ru"), (("Абака!", f"{names[mover]} · с первого броска"),
+                                              ("\U0001F340", f"{names[other]} → {names[mover]}", "Повезло!", False)))
+        # The facts are still there for an app that draws its own.
+        effect = self.state(third)["events"][-2]
+        self.assertEqual((effect["effect"], effect["what"], effect["first"], effect["seat"]),
+                         ("grand_fireworks", "ABAKA", True, mover))
+
+    def test_a_bonus_says_what_it_earned(self):
+        server = Server()
+        made = server(op="create_local", names=["Ann", "Bob"], lang="ru")
+        code, token = made["code"], made["token"]
+        engine = server.store.view(code).engine
+        while engine.choosing_first_player:
+            server.store.throw_for_start(code, token)
+            engine = server.store.view(code).engine
+        # Two Sum cells written, on a copy the store then holds: the third completes the row.
+        room = server.store._rooms[code]
+        ready = engine.clone()
+        ready.players[ready.current].table[Category.SUM][:2] = [20, 22]
+        room.engine = ready
+        with mock.patch("abaka.engine.roll_dice", lambda: [Die(6), Die(5), Die(4), Die(2), Die(1, is_joker=True)]):
+            state = server(op="roll", code=code, token=token, version=room.version)["state"]
+        mover = state["game"]["current"]
+        state = server(op="score", code=code, token=token, version=state["version"], row="SUM", lang="ru")["state"]
+        bonus = state["events"][-1]
+        self.assertEqual((bonus["what"], bonus["title"]), ("BONUS", "Бонус!"))
+        # On one device nobody is "You": the banner names the player.
+        self.assertTrue(bonus["text"].startswith(["Ann", "Bob"][mover] + " · строка «Сумма» +"), bonus["text"])
 
     def test_picks_reactions_and_chat(self):
         while self.state(0)["phase"] == "starting_throw":

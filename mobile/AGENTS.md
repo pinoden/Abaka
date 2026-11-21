@@ -38,12 +38,16 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/app/index.tsx` | Home: continue a game, a game on one device, an online game, open by code |
 | `src/app/game/[code].tsx` | One game: invite, waiting room, starting throw, turns, results |
 | `src/components/` | The board, the dice, buttons and cards (the web app's colours) |
+| `src/components/Reactions.tsx`, `Chat.tsx` | The reaction buttons and the chat card of an online game |
+| `src/components/Shows.tsx` | What plays over the game: bubbles, fireworks and sparkles with their banner |
+| `src/lib/shows.ts` | Which of them play, and when (the website's rules). No React Native imports: tested in Node |
 | `src/lib/api.ts` | The API client and its types. No React Native imports: the tests run it in Node |
 | `src/lib/app.tsx` | Shared state: language, the connection, the board's row names |
 | `src/lib/texts.ts`, `src/texts.json` | Texts (below). `texts.json` is generated: never edit it |
 | `src/lib/storage.ts` | Games and seat tokens on the device (secure storage; the browser's on the web) |
 | `tests/api.test.ts` | The API client against a real server (`node --test`; skipped without `ABAKA_SERVER`) |
 | `tests/connection.test.ts` | The connection against a scripted server in the test's own process: restarts, states out of order, connections that die silently. Needs no game server |
+| `tests/shows.test.ts` | What plays over the game, and when. Needs no server |
 
 ## Texts
 
@@ -109,6 +113,12 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
   under "Continue a game"; a seat is given up by its own button (Leave, Cancel).
 - What cannot be thrown on purpose (a tie, an Abaka) is checked with steered dice:
   `Steered` in `tools/app_check.py` is a real game server in the check's process.
+- The words of reactions and effects come from the server with each event (`who`,
+  `label`, `title`, `text`), and the reaction buttons from `info.reaction_list`. Do not
+  build them in the app: a reaction or an effect the server adds later then works in an
+  app already installed.
+- A watcher's state has the game's whole chat and only the events not handed over
+  before (`Connection` gathers them). A screen never merges messages itself.
 - Seat tokens are secrets: only in `src/lib/storage.ts`, never in a log or on screen.
 - `src/lib/api.ts` stays free of React Native imports and of TypeScript that Node cannot
   run as it is (no enums, no parameter properties; `erasableSyntaxOnly` enforces it).

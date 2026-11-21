@@ -16,7 +16,9 @@ import { after, describe, test } from 'node:test';
 
 import Ws from 'ws';
 
-import { ApiError, Connection, type State, type Timings } from '../src/lib/api.ts';
+import {
+  ApiError, type ChatMessage, Connection, type GameEvent, type State, type Timings,
+} from '../src/lib/api.ts';
 
 type Message = { id?: number; op: string; [field: string]: unknown };
 
@@ -73,6 +75,9 @@ const TOKEN = 'a-seat-token';
 function state(seen: string, more: Partial<State> = {}): State {
   return { code: CODE, seen, version: Number(seen.split('.')[0]), names: ['Ann', 'Bob'], ...more } as State;
 }
+
+const event = (id: number): GameEvent => ({ id, at: 1, kind: 'reaction', seat: 1 });
+const said = (id: number, text: string): ChatMessage => ({ id, seat: 1, text, at: 1 });
 
 function reply(socket: Ws, message: Message, response: unknown): void {
   socket.send(JSON.stringify({ type: 'reply', id: message.id, response }));
@@ -219,6 +224,62 @@ describe('the connection against a scripted server', () => {
     await until(() => shown.length === 2, 'the game on a new connection');
     assert.equal(server.got(0, 'roll').length, 1);
     assert.equal(server.got(1, 'roll').length, 0);
+  });
+
+  test('the screen gets each event once, and the game’s whole chat every time', async () => {
+    const server = await Scripted.start();
+    const playing: Partial<State> = { phase: 'playing' };
+    server.answer = (m, socket) => {
+      if (m.op === 'watch') {
+        reply(socket, m, { state: state('5.0.10', { ...playing, events: [event(9), event(10)], chat: [said(8, 'one')] }) });
+      }
+      // A move's answer holds what is newer than the request's `since`; a server may repeat an event.
+      if (m.op === 'roll') {
+        reply(socket, m, { state: state('6.0.12', { ...playing, events: [event(10), event(11)], chat: [said(12, 'two')] }) });
+      }
+    };
+    const connection = connect(server);
+    const shown: State[] = [];
+    connection.startWatching(CODE, TOKEN, (s) => shown.push(s), (e) => assert.fail(e.message));
+    await until(() => shown.length === 1, 'the game');
+    assert.deepEqual([shown[0].events.map((e) => e.id), shown[0].chat.map((m) => m.text)], [[9, 10], ['one']]);
+    assert.equal(server.got(0, 'watch')[0].since, undefined); // the watch asks for everything
+
+    await connection.act('roll', { code: CODE, token: TOKEN, version: 5 });
+    assert.equal(server.got(0, 'roll')[0].since, 10); // a move asks only for what the screen lacks
+    await until(() => shown.length === 2, 'the roll');
+    assert.deepEqual([shown[1].events.map((e) => e.id), shown[1].chat.map((m) => m.text)], [[11], ['one', 'two']]);
+
+    const socket = server.connections[0].socket;
+    push(socket, state('6.0.13', { ...playing, events: [], chat: [said(13, 'three')] }));
+    await until(() => shown.length === 3, 'a message');
+    assert.deepEqual(shown[2].chat.map((m) => m.text), ['one', 'two', 'three']);
+
+    // The move that ends the game deletes the chat, and the next game starts without one.
+    push(socket, state('7.0.13', { phase: 'over', events: [], chat: [] }));
+    await until(() => shown.length === 4, 'the end of the game');
+    assert.deepEqual(shown[3].chat, []);
+    push(socket, state('8.0.14', { phase: 'starting_throw', events: [], chat: [said(14, 'again?')] }));
+    await until(() => shown.length === 5, 'the next game');
+    assert.deepEqual(shown[4].chat.map((m) => m.text), ['again?']);
+  });
+
+  test('after a reconnect the chat is the server’s, and no event is handed over twice', async () => {
+    const server = await Scripted.start();
+    server.answer = (m, socket, n) => {
+      if (m.op !== 'watch') return;
+      // The first connection, then the server after a restart: its chat begins again.
+      const chat = n === 0 ? [said(8, 'one'), said(9, 'two')] : [said(11, 'after')];
+      const events = n === 0 ? [event(10)] : [event(10), event(12)];
+      reply(socket, m, { state: state(`5.${n}.0`, { phase: 'playing', events, chat }) });
+    };
+    const shown: State[] = [];
+    connect(server).startWatching(CODE, TOKEN, (s) => shown.push(s), (e) => assert.fail(e.message));
+    await until(() => shown.length === 1, 'the game');
+    server.connections[0].socket.terminate();
+    await until(() => shown.length === 2, 'the game again');
+    assert.deepEqual(shown.map((s) => s.events.map((e) => e.id)), [[10], [12]]);
+    assert.deepEqual(shown.map((s) => s.chat.map((m) => m.text)), [['one', 'two'], ['after']]);
   });
 
   test('leaving a game keeps the connection, and tells the server to send it no more', async () => {

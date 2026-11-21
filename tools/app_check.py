@@ -18,9 +18,14 @@ The checks:
   to the end through the API) it is not offered there any more;
 - an online game between two phones: one creates it, goes home and comes back to the
   waiting room (the seat is kept), the other opens its code and joins, the starting
-  throws, and a roll and a move seen on the other phone;
-- a tie for the first turn among three players, with dice the check chooses (Steered): the
-  player who is out of the next round keeps their throw on the screen.
+  throws, a roll and a move seen on the other phone, then a reaction and a chat message;
+- a player on the website and a player in the app at one table: each sees the other's
+  dice, move, reaction and chat message (the server must serve the pages too, as
+  abaka_server.py does);
+- with dice the check chooses (Steered):
+  - a tie for the first turn among three players: the player who is out of the next
+    round keeps their throw on the screen;
+  - an Abaka on the first roll: bigger fireworks on both phones, each in its language.
 Any page error and any sideways scrolling is a problem too.
 
 Needs Playwright and its Chromium (requirements-dev.txt), and Streamlit 1.67's packages
@@ -50,7 +55,7 @@ BUILD = ROOT / "mobile" / "dist"
 PHONE = (390, 844)
 NAMES = ("Test Ann", "Test Bob")
 WAIT_MS = 20000
-FLOWS = ("home", "one device", "online", "a tie")
+FLOWS = ("home", "one device", "online", "website", "a tie", "fireworks")
 
 
 class Problem(Exception):
@@ -344,11 +349,87 @@ def check_online(browser, url: str, games: List[str]) -> None:
         write_best(roller)
         watcher.see(watcher.id("last-move"), "the move, on the other phone")
         watcher.until(lambda: watcher.id("roll").count() > 0, "the turn passing to the other phone")
+        # A reaction and a chat message reach the other phone (Bob's is in Russian).
+        ann.see(ann.id("react-lucky"), "the reaction buttons").click()
+        bob.see(bob.id("bubble").filter(has_text=f"{NAMES[0]}  Повезло!"), "Ann's reaction, on Bob's phone")
+        bob.see(bob.id("chat-text"), "the chat box").fill("Test hello")
+        bob.id("chat-send").click()
+        ann.see(ann.id("chat-message").filter(has_text="Test hello"), "Bob's message, in Ann's chat")
+        ann.see(ann.id("bubble").filter(has_text="Test hello"), "Bob's message, announced on Ann's phone")
         for phone in (ann, bob):
             phone.healthy()
     finally:
         ann.close()
         bob.close()
+
+
+def check_website_and_app(browser, url: str, server: str, games: List[str]) -> None:
+    """One table, a player on the website and one in the app: each sees the other's dice, move, reaction and message."""
+    web = website_check.Screen(browser, server.rstrip("/") + "/?lang=en", website_check.DESKTOP,
+                               "website and app, the website")
+    phone = Phone(browser, url, "website and app, the app")
+
+    def web_dice() -> List[str]:  # as Phone.dice() names them: the value, and J for the joker
+        return [text.strip().split(" ")[0] + ("J" if " " in text.strip() else "") for text in web.dice()]
+
+    try:
+        web.see(web.app.get_by_label("Your name"), "the website's name box", website_check.START_MS).fill(NAMES[0])
+        web.see(web.app.get_by_role("button", name="Create game"), 'the website\'s "Create game" button').click()
+        web.see(web.app.get_by_text("Invite a friend"), "the website's waiting room")
+        code = web.room()
+        games.append(code)
+        phone.see(phone.id("open-code"), "the app's home page").fill(code)
+        phone.id("open-game").click()
+        phone.see(phone.id("join-name"), "the invite, in the app").fill(NAMES[1])
+        phone.id("join").click()
+        web.see(web.app.get_by_text("Who goes first?"), "the game starting on the website")
+        phone.see(phone.id("starting-throw"), "the game starting in the app")
+
+        def may_roll(where) -> bool:
+            button = where.key("roll") if where is web else where.id("roll")
+            return button.count() > 0 and button.first.is_visible()
+
+        deadline = time.time() + 60
+        while not (may_roll(web) or may_roll(phone)):  # each player throws on their own screen
+            if time.time() > deadline:
+                raise Problem("website and app: the starting throws did not end" + web.why() + phone.why())
+            for throw in (web.key("start-throw"), phone.id("start-throw")):
+                if throw.count() and throw.first.is_visible() and throw.first.is_enabled():
+                    throw.first.click()
+            web.page.wait_for_timeout(700)
+        if may_roll(web):  # the website's player goes first
+            web.key("roll").first.click()
+            web.see(web.options(), "the website's options to write the roll")
+            rolled = web_dice()
+            phone.see(phone.id("die-4"), "the website's roll, in the app")
+            phone.until(lambda: phone.dice() == rolled, f"the website's dice in the app ({rolled})")
+            website_check.write_best(web)
+            phone.see(phone.id("last-move"), "the website's move, in the app")
+            phone.see(phone.id("roll"), "the turn passing to the app")
+        else:  # the app's player goes first
+            phone.id("roll").first.click()
+            phone.see(phone.id("die-4"), "the app's dice")
+            rolled = phone.dice()
+            web.until(lambda: web_dice() == rolled, f"the app's dice on the website ({rolled})")
+            write_best(phone)
+            web.see(web.app.get_by_text("Last move:"), "the app's move, on the website")
+            web.see(web.key("roll"), "the turn passing to the website")
+        # Reactions and chat, both ways.
+        web.see(web.key("react-lucky"), 'the website\'s "Lucky!" reaction').click()
+        phone.see(phone.id("bubble").filter(has_text="Lucky!"), "the website's reaction, in the app")
+        phone.see(phone.id("chat-text"), "the app's chat box").fill("Test hello")
+        phone.id("chat-send").click()
+        web.see(web.app.get_by_text("Test hello"), "the app's message, on the website")
+        web.see(web.app.locator(".st-key-chat-text input"), "the website's chat box").fill("Test hi back")
+        web.see(web.app.get_by_role("button", name="Send"), 'the website\'s "Send" button').click()
+        phone.see(phone.id("chat-message").filter(has_text="Test hi back"), "the website's message, in the app")
+        phone.see(phone.id("react-nice"), "the app's reaction buttons").click()
+        web.see(web.app.locator(".ab-bubble", has_text="Nice!"), "the app's reaction, on the website")
+        web.healthy()
+        phone.healthy()
+    finally:
+        web.close()
+        phone.close()
 
 
 def check_tie(browser, build_url: str) -> str:
@@ -382,6 +463,47 @@ def check_tie(browser, build_url: str) -> str:
         steered.stop()
 
 
+def check_fireworks(browser, build_url: str) -> str:
+    """An Abaka on the first roll, with steered dice: bigger fireworks on both phones as the dice land."""
+    try:
+        steered = Steered()
+    except ImportError as e:
+        raise Problem(f"the steered server needs Streamlit 1.67's packages ({e})") from None
+    url = f"{build_url}?server={quote(steered.url, safe='')}"
+    ann = Phone(browser, url, "fireworks, Ann's phone")
+    bob = Phone(browser, url, "fireworks, Bob's phone", locale="ru-RU")
+    try:
+        ann.see(ann.id("create-online"), "the home page")
+        ann.id("online-name").fill(NAMES[0])
+        ann.id("create-online").click()
+        code = ann.see(ann.id("game-code"), "the game code").inner_text().strip()
+        bob.see(bob.id("open-code"), "Bob's home page").fill(code)
+        bob.id("open-game").click()
+        bob.see(bob.id("join-name"), "the invite").fill(NAMES[1])
+        steered.throws = [[1, 1, 1, 1, 1], [6, 6, 6, 6, 5]]  # the starting throws: Ann's 5 goes first
+        bob.id("join").click()
+        if ann.throw_until_decided(bob) is not ann:
+            raise Problem("fireworks: Test Ann threw 5 against 29 and does not go first")
+        steered.throws = [[6, 6, 6, 6, 6]]  # five sixes
+        ann.id("roll").first.click()
+        for phone, title, text in ((ann, "Abaka!", "You · first roll"),
+                                   (bob, "Абака!", f"{NAMES[0]} · с первого броска")):
+            phone.see(phone.id("effect-grand_fireworks"), "the bigger fireworks")
+            banner = " | ".join(phone.id("effect-banner").first.inner_text().split("\n"))
+            if title not in banner or text not in banner:
+                raise Problem(f"{phone.name}: the banner says {banner!r}, not {title!r} and {text!r}")
+        # They play once and end; nothing is left over the screen.
+        for phone in (ann, bob):
+            phone.until(lambda: phone.page.locator('[data-testid^="effect-"]').count() == 0,
+                        "the fireworks ending")
+            phone.healthy()
+        return "Abaka! on both phones, in English and in Russian"
+    finally:
+        ann.close()
+        bob.close()
+        steered.stop()
+
+
 def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[str], List[str]]:
     """Run the checks; returns (problems, codes of the games played)."""
     from playwright.sync_api import sync_playwright
@@ -396,7 +518,11 @@ def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[st
                      ("one device", "a game on one device, phone",
                       lambda: check_one_device(browser, url, server, games)),
                      ("online", "an online game, two phones", lambda: check_online(browser, url, games)),
-                     ("a tie", "a tie for the first turn, steered dice", lambda: check_tie(browser, build_url))]
+                     ("website", "a website player and an app player at one table",
+                      lambda: check_website_and_app(browser, url, server, games)),
+                     ("a tie", "a tie for the first turn, steered dice", lambda: check_tie(browser, build_url)),
+                     ("fireworks", "an Abaka on the first roll, steered dice",
+                      lambda: check_fireworks(browser, build_url))]
             for flow, label, step in steps:
                 if flow not in flows:
                     continue

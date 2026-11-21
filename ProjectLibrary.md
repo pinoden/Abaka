@@ -155,6 +155,7 @@ Python + Streamlit.
 | `ui_components/main_ui.py` | Game screen for both modes: top bar and menu, play panel, scoreboard, results |
 | `ui_components/actions.py` | `on_click` callbacks of the game buttons: make the move, keep a refusal to show once |
 | `ui_components/chat.py` | The chat card of an online game: messages (escaped), the box to write one, a toast for new ones |
+| `abaka/effects.py` | What reactions and effects say, for the web page and for apps: a reaction's emoji and label, who sent it to whom, an effect's banner. No Streamlit |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, rules text |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
@@ -472,6 +473,12 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   changed since, it is refused as `outdated`, like the web's buttons.
 - Texts come in the request's `lang` (en/ru). The call sets it for its thread
   and puts the thread's language back afterwards.
+- Reactions and effects come with their words (`abaka/effects.py`), for the
+  player the state is drawn for:
+  - a reaction's `emoji`, `label` and `who` ("Ann → you");
+  - an effect's `title` and `text` ("Abaka!", "You · first roll").
+  The web page shows the same words. `info.reaction_list` lists the reaction
+  buttons, so an app need not know the reactions.
 - Protocol 1. Adding operations or fields keeps it. Changing what apps already
   rely on makes it 2, because apps on phones update slowly.
 - Over the network (`server/http.py`), from `streamlit run abaka_server.py`:
@@ -651,7 +658,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, and the app's technology and first screens in PR #61. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, and its reactions, effects and chat in PR #64. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1070,8 +1077,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 25. **Apps for Android and iOS.** In progress: stage A is done (PR #58 and
     PR #59), the app's code lives in `mobile/` in this repository (PR #60), it
-    is React Native with Expo (C1), and its first screens are in PR #61 (C2,
-    first part). Stages B and D wait for the owner's decisions below.
+    is React Native with Expo (C1), its first screens are in PR #61 (C2,
+    first part), and reactions, effects and the chat in PR #64 (C2, second
+    part). Stages B and D wait for the owner's decisions below.
     > "Let's start preparing the code base to expand on android/ios"
     >
     > "Go ahead" (step A2)
@@ -1197,7 +1205,17 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         - Checks: its API client plays whole games against a real server,
           and its web build plays in headless Chromium (CI, "Phone app
           (Expo)").
-      - [ ] Reactions, fireworks and sparkles, and the chat.
+      - [x] Reactions, fireworks and sparkles, and the chat. PR #64.
+        - The eight reaction buttons, with "Send to" one player at a table of
+          three or more. A reaction is a bubble at the top of every screen.
+        - Fireworks, bigger fireworks and sparkles with their banner, as the
+          dice land, by the website's rules (Backlog item 23).
+        - The chat card, and a bubble for another player's new message.
+        - The words come from the server with each event, in the player's
+          language (`abaka/effects.py`), so the website and the app say the
+          same.
+        - Checked in the browser: a website player and an app player at one
+          table, and an Abaka on the first roll with steered dice.
       - [ ] Clubs: the club page, club games and the player picker.
       - [ ] The rules screen. The rules text is in a Streamlit module; it
         needs to move to `abaka/` and into the API first (an addition to
@@ -1264,6 +1282,38 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         next round vanished from the screen.
 
 ## Status (2026-11-21)
+
+- **Reactions, effects and the chat in the phone app (owner: "Keep going",
+  Backlog item 25, C2, second part):** PR #64.
+  - The app now has what an online game has on the website:
+    - the eight reaction buttons, with "Send to" one player at a table of
+      three or more; each screen shows a reaction as a bubble for 3.5 s;
+    - fireworks, bigger fireworks and sparkles with a banner, as the dice
+      land, queued so two never overlap, by the rules of Backlog item 23;
+    - the chat card (deleted by the move that ends the game), and a bubble
+      when another player writes.
+  - The words come from the server with each event (`abaka/effects.py`), in
+    each player's language: "Ann → you", "Abaka! You · first roll". The web
+    page takes its words from the same place.
+    - Its HTML is unchanged: 31,920 bubbles and banners were compared before
+      and after, byte for byte (hostile names, both languages, every viewer).
+  - Checked in headless Chromium at 390px (`tools/app_check.py`, six flows):
+    - two phones: a reaction from one is a bubble on the other, in Russian
+      there; a chat message arrives in the other's chat, and as a bubble;
+    - **a website player and an app player at one table**: each sees the
+      other's dice, move, reaction and chat message;
+    - an Abaka on the first roll with steered dice: bigger fireworks on both
+      phones, "Abaka! You · first roll" on one and "Абака! Test Ann · с
+      первого броска" on the other, gone when they end.
+    - With reactions not drawn and the banner's title swapped on purpose,
+      three of the flows failed, each naming what was missing.
+  - The app's 28 tests, typecheck, lint and Expo's 20 project checks pass;
+    every Python test passes on 3.8, 3.9 and 3.13 (294, none skipped).
+  - No load-test row: the machine was busy with another project, and the
+    tool's flag was the machine's (Decision log). Main and the branch
+    measured the same.
+  - Not checked on a real phone: how the fireworks look and run there.
+  - Next: clubs in the app, then the rules screen.
 
 - **The test round in the phone app (Backlog item 26):** PR #63.
   - Found by reading the app's code, then shown in its web build in Chromium
@@ -1656,14 +1706,17 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
   291 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 18 tests (`node --test`).
+  scan reads both quotes). The phone app has its own 28 tests (`node --test`).
   6 against a real server (`mobile/tests/api.test.ts`: complete games on one
-  device and online through its API client, pushes, refusals, a seat taken
-  back, the games to continue, an unreachable server). 12 against a scripted
-  server (`mobile/tests/connection.test.ts`: a server restart, states out of
-  order, connections that die silently or never open, requests never answered,
-  screens closing late). CI also plays its web build
-  (`tools/app_check.py`). 2 website tests (`test_website.py`: `tools/website_check.py` in
+  device and online through its API client, pushes, reactions and chat with
+  their words, refusals, a seat taken back, the games to continue, an
+  unreachable server). 14 against a scripted server
+  (`mobile/tests/connection.test.ts`: a server restart, states out of order,
+  connections that die silently or never open, requests never answered,
+  screens closing late, each event handed over once, the chat gathered). 8 of
+  what plays over the screen (`mobile/tests/shows.test.ts`: bubbles, effects
+  that wait for the dice and for each other, old news skipped). CI also plays
+  its web build (`tools/app_check.py`). 2 website tests (`test_website.py`: `tools/website_check.py` in
   headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
   12 server tests (`test_server.py`: `unwatch`; HTTP statuses for every refusal,
   the limit on new games per client and behind a proxy, a server fault
@@ -1673,8 +1726,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   a connection), a connection that cannot be served closed with 1011,
   connections closed with 1012 after a code update, one store
   until the code changes, a page joining a game made through the API, and
-  `streamlit run abaka_server.py` serving the page and the API). 20 API tests (`test_api.py`: 4,000 malformed and hostile
-  requests answered or refused, never a server fault; complete games for 2 and 5
+  `streamlit run abaka_server.py` serving the page and the API). 22 API tests (`test_api.py`: 4,000 malformed and hostile
+  requests answered or refused, never a server fault; events with their words
+  for each player and language; complete games for 2 and 5
   players online and on one device through the API only, every preview
   matched by the move it describes; what a seat and an outsider see, tokens
   never in a state, outdated and out-of-turn moves, a seat taken back, picks,
@@ -1856,6 +1910,60 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-21: reactions, effects and the chat in the app (Claude Code, PR #64)**
+
+- The owner said "Keep going": the next part of the app's screens (Backlog
+  item 25, C2).
+- The words of a reaction and of an effect come from the server, with each
+  event, for the player the state is drawn for.
+  - The app is a thin client: move labels and errors already come this way.
+    "Who sent it to whom" and a banner's line name rows and players, and the
+    rules for them belong in one place.
+  - An app installed today then shows a reaction or an effect the server
+    adds later: its button from `info.reaction_list`, its words from the
+    event. An effect it does not know plays as sparkles under its own banner.
+  - The words moved from `ui_components/effects.py` to `abaka/effects.py`,
+    as plain text. The web page escapes them for HTML, the app shows them in
+    `<Text>`.
+  - The facts stay in the event too (`reaction`, `to`, `effect`, `what`,
+    `first`), for a client that draws its own. Adding fields keeps
+    protocol 1.
+- The connection gathers the chat. The server sends each message once (a
+  push holds only what is new), so the screen would otherwise have to know
+  which states are whole and which are additions.
+  - The answer to `watch` is whole: it replaces the chat, which matters
+    after a server restart, when the chat is gone.
+  - Requests about the watched seat carry `since`, so their answers hold only
+    what is new. Events are still filtered by id when handed over, since a
+    queued request's `since` can be old.
+  - The chat is emptied when the game is over, as the server does.
+- What plays, and when, is decided in `mobile/src/lib/shows.ts`, without any
+  screen code, by the website's rules: nothing from before the screen opened
+  the game, nothing first seen 15 s late, a throw's effect after the dice's
+  0.45 s, one effect at a time.
+  - Taking a seat counts as opening the game. Otherwise a seat taken back in
+    the middle of a game announced its whole chat as new.
+- The fireworks are drawn with React Native's own `Animated`, one timeline
+  per effect, moved by the native driver on phones. No animation library:
+  Expo Go has only its bundled native modules.
+  - With "reduce motion" on, an effect is its banner alone.
+  - The banner sits in the lower part of the screen and takes no touches, so
+    the dice stay in view and the buttons under it still work.
+- The reaction buttons and the chat sit under the play card, above the
+  score table, as the website stacks them on a phone.
+- The mixed check (a website player and an app player) needs a server that
+  serves the pages too, so it runs against `abaka_server.py`, as CI starts
+  it. The steered checks bring their own server.
+- No load-test row this time. The tool flagged a slowdown (page run 79 →
+  131 ms, median poll 6.3 → 10.4 ms) while another project's browser tests
+  kept this machine busy.
+  - Main and the branch, measured in turn from two equal copies, three
+    rounds each, gave the same: page run 119 and 115 ms on average, median
+    poll 9.6 and 10.8 ms. So the change does not slow the pages.
+  - A row from a busy machine would spoil the next comparison, so none was
+    kept. The next pull request that changes the app's code records one on a
+    quiet machine.
 
 **2026-11-21: the test round in the phone app (Claude Code, PR #63)**
 

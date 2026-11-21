@@ -58,9 +58,14 @@ comes back in the state, not what was typed:
 #### `info`
 What an app needs once per language: `protocol`, `languages`, `players` (`min`,
 `max`), `limits` (name, chat message and club name lengths), `reactions` (their
-ids) and `rows`. `rows` lists the board's 15 rows in board order, each
-`{"row": "SCHOOL_1", "name": "School 1", "hint": "...", "school": true}`, with the
-name and hint in the request's language.
+ids), `reaction_list` and `rows`.
+- `rows` lists the board's 15 rows in board order, each
+  `{"row": "SCHOOL_1", "name": "School 1", "hint": "...", "school": true}`, with the
+  name and hint in the request's language.
+- `reaction_list` lists the reaction buttons in their order, each
+  `{"id": "lucky", "emoji": "🍀", "label": "Lucky!"}`, with the label in the
+  request's language. Show these, and a reaction the server adds later appears by
+  itself.
 
 #### `create`
 An online game. `name` (blank: "Player 1"), `players` (2 to 5, default 2), `club`
@@ -274,9 +279,14 @@ default 10, at most 200). Answer `{"club": ...}`:
 ### `events`
 
 Each event has `id` (it only grows), `at` (server time), `kind` and `seat` (who
-sent it, or whose throw or move it was).
+sent it, or whose throw or move it was). It also carries its words, for the player
+the state is drawn for and in the request's language. Show the words as plain
+text; they hold players' names.
 - **Reaction:** `"kind": "reaction"`, with `reaction` and `to` (a seat, or null for
   everyone). Show it for about 3.5 seconds.
+  - Its words: `emoji` ("🍀"), `label` ("Lucky!") and `who` ("Ann", "You",
+    "Ann → Bob", "Ann → you").
+  - `to_you` is true when it was aimed at this player.
 - **Effect:** `"kind": "effect"`, with `effect` and `what`.
   - `effect` is `grand_fireworks`, `fireworks` or `sparkles`.
   - `what` names what earned it: a row name (`ABAKA`, `KARE`, `FULL`,
@@ -284,6 +294,11 @@ sent it, or whose throw or move it was).
   - `first` (throws only) is true for a first roll.
   - A `BONUS` effect lists the bonuses earned: `rows` (`[row, points]`) and
     `columns` (`[column 0-2, points]`).
+  - Its words, for a banner: `title` ("Abaka!", "Bonus!") and `text`
+    ("Ann · first roll", "You · Sum row +52").
+  - The website shows bigger fireworks for 6 seconds, fireworks for 4.5 and
+    sparkles for 2.8. An effect that arrives while another plays waits for it to
+    end.
 - An effect from a throw should start when the dice land.
 - Skip events from before the game was opened, and events more than 15 seconds
   old (use `now`).

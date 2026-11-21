@@ -42,6 +42,35 @@ export type PlayerBoard = {
 
 export type StartingThrow = { round: number; seat: number; dice: Die[]; total: number };
 
+/** A chat message. `text` is a player's: show it as plain text. */
+export type ChatMessage = { id: number; seat: number; text: string; at: number };
+
+/**
+ * A reaction or an effect (docs/API.md, events), with its words for this player in the
+ * request's language. The words hold players' names: show them as plain text.
+ */
+export type GameEvent = {
+  id: number;
+  /** When it happened, on the server's clock (compare with the state's `now`). */
+  at: number;
+  /** `reaction` or `effect`; a newer server may send kinds this app does not know. */
+  kind: string;
+  seat: number;
+  // A reaction: its emoji and label, who sent it to whom, and whether it was aimed at this player.
+  reaction?: string;
+  to?: number | null;
+  emoji?: string;
+  label?: string;
+  who?: string;
+  to_you?: boolean;
+  // An effect: `grand_fireworks`, `fireworks` or `sparkles`, what earned it, and its banner.
+  effect?: string;
+  what?: string;
+  first?: boolean;
+  title?: string;
+  text?: string;
+};
+
 export type Game = {
   number: number;
   current: number;
@@ -77,8 +106,13 @@ export type State = {
   can: string[];
   game: Game | null;
   moves: { score: Move[]; cross: Move[] } | null;
-  events: unknown[];
-  chat: unknown[];
+  /**
+   * In an answer: the events and messages newer than the request's `since`. In a state
+   * handed to a watcher (`Connection.startWatching`): `events` are the ones not handed
+   * over before, and `chat` is the game's whole chat.
+   */
+  events: GameEvent[];
+  chat: ChatMessage[];
   table: { games: number; wins: number[]; draws: number };
   club_result: unknown;
 };
@@ -91,6 +125,8 @@ export type Info = {
   players: { min: number; max: number };
   limits: { name: number; message: number; club_name: number };
   reactions: string[];
+  /** The reaction buttons in their order, with labels in the request's language. */
+  reaction_list?: { id: string; emoji: string; label: string }[];
   rows: RowInfo[];
 };
 
@@ -171,7 +207,13 @@ type Watch = {
   onError: (error: ApiError) => void;
   /** The latest state handed to `onState`. */
   shown: State | null;
+  /** Events and chat messages up to this id have been handed over. */
+  since: number;
+  /** The game's chat so far (the server sends each message once). */
+  chat: ChatMessage[];
 };
+
+const CHAT_KEPT = 50; // as the server keeps (abaka/rooms.py)
 
 type Pending = {
   resolve: (response: any) => void;
@@ -281,7 +323,7 @@ export class Connection {
    */
   startWatching(code: string, token: string | undefined, onState: (state: State) => void,
                 onError: (error: ApiError) => void): () => void {
-    const watch: Watch = { code, token, onState, onError, shown: null };
+    const watch: Watch = { code, token, onState, onError, shown: null, since: 0, chat: [] };
     this.watch = watch;
     this.sendWatch();
     return () => {
@@ -333,6 +375,13 @@ export class Connection {
 
   private ask<T>(op: string, fields: Record<string, unknown>, timeoutMs: number, watch?: Watch): Promise<T> {
     const id = this.nextId++;
+    // A request for the watched seat asks only for the events and messages the screen has
+    // not been given yet. (The watch itself asks for everything: a fresh start.)
+    const watched = this.watch;
+    if (!watch && watched && fields.code === watched.code && fields.token === watched.token
+        && fields.since === undefined) {
+      fields = { ...fields, since: watched.since };
+    }
     const text = JSON.stringify({ ...fields, op, protocol: PROTOCOL, lang: this.lang, id });
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -520,13 +569,24 @@ export class Connection {
    * answers and pushes can cross. `fresh` is the answer to the watch itself, which always
    * counts: after a server restart the game's counters start again, and comparing with
    * what was shown before would hide the game's news until its next move.
+   *
+   * The screen gets each event once, and the game's whole chat every time: the server
+   * sends a message once, so the messages are gathered here. The chat lasts as long as
+   * the game is played (the server deletes it with the move that ends the game).
    */
   private deliver(state: State, fresh: boolean): void {
     const watch = this.watch;
     if (!watch || state.code !== watch.code) return;
     if (!fresh && watch.shown && isNewer(watch.shown, state)) return;
-    watch.shown = state;
-    watch.onState(state);
+    const events = (state.events ?? []).filter((event) => event.id > watch.since);
+    const said = state.chat ?? [];
+    const played = state.phase === 'playing' || state.phase === 'starting_throw';
+    watch.chat = !played ? []
+      : fresh ? said
+        : [...watch.chat, ...said.filter((message) => message.id > watch.since)].slice(-CHAT_KEPT);
+    watch.since = Math.max(watch.since, ...(state.events ?? []).map((e) => e.id), ...said.map((m) => m.id));
+    watch.shown = { ...state, events, chat: watch.chat };
+    watch.onState(watch.shown);
   }
 
   private receive(text: string): void {
