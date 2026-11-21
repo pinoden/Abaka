@@ -14,6 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import abaka.rooms as rooms
 from abaka.repository import FileRepository, MirroredRepository, PostgresRepository
@@ -202,6 +203,32 @@ class FilesThenMemory(unittest.TestCase):
         self.assertEqual(self.db.rooms["AB2CD"], {"version": 3})
         self.assertEqual(self.db.rooms["XY2ZW"], {"version": 5})
         self.assertEqual(self.repo.import_files(), 0)
+
+    def test_import_goes_on_past_a_game_the_database_will_not_take(self):
+        """One such game used to end the import, leaving every later game in the files only."""
+        for code in ("AA2AA", "BB2BB", "CC2CC"):
+            self.files.save(code, 1, {"version": 1})
+        save = self.db.save
+
+        def not_this_one(code, version, data):
+            if code == "AA2AA":
+                raise ValueError("invalid input syntax for type json")
+            return save(code, version, data)
+
+        self.db.save = not_this_one
+        with self.assertLogs("abaka", level="WARNING") as logged:
+            self.assertEqual(self.repo.import_files(), 2)
+        self.assertEqual(sorted(self.db.rooms), ["BB2BB", "CC2CC"])
+        self.assertEqual(sum("could not import" in line for line in logged.output), 1)
+
+    def test_import_stops_when_the_database_takes_nothing(self):
+        for n in range(8):
+            self.files.save(f"AA2A{n + 2}", 1, {"version": 1})
+        self.db.save = mock.Mock(side_effect=OSError("the database was unreachable a moment ago"))
+        with self.assertLogs("abaka", level="WARNING") as logged:
+            self.assertEqual(self.repo.import_files(), 0)
+        self.assertEqual(self.db.save.call_count, MirroredRepository.IMPORT_GIVES_UP_AFTER)  # not once per game
+        self.assertEqual(len(logged.output), MirroredRepository.IMPORT_GIVES_UP_AFTER)
 
     def test_a_failed_file_copy_does_not_stop_the_database_save(self):
         (self.folder / "blocked").write_text("a file where the folder should be")

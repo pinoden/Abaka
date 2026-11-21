@@ -26,6 +26,26 @@ except ImportError:  # the base Python 3.8
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "abaka_ui.py")
 
 
+def type_new_option(box, text):
+    """
+    Type `text`, which is not one of its options, into a select box that takes new ones.
+    AppTest can only pick a listed option (it looks the value up in the options, on
+    Streamlit 1.48 and 1.67 alike), so this sends what a browser sends for a typed one:
+    the text itself.
+    """
+    from streamlit.proto.WidgetStates_pb2 import WidgetState
+
+    class Typed(type(box)):
+        @property
+        def _widget_state(self):
+            state = WidgetState()
+            state.id = self.id
+            state.string_value = text
+            return state
+
+    box.__class__ = Typed
+
+
 def finish_game(store, code, token):
     """Play a same-device game to its end with the moves the UI offers. Returns the final scores."""
     for _ in range(2000):
@@ -261,11 +281,8 @@ class TestClubPages(unittest.TestCase):
         invite = self.page(room=online)
         self.assertEqual(invite.selectbox(key="join_name-pick").options, ["Ann"])
 
-        page.selectbox(key="club_p2-pick").set_value("Zed")  # a new player, typed in
-        try:
-            next(b for b in page.button if b.label == "Start game").click().run()
-        except ValueError:  # AppTest 1.48 cannot send a typed-in option (1.67 can; checked in a browser)
-            self.skipTest("this AppTest cannot type a new option into a select box")
+        type_new_option(page.selectbox(key="club_p2-pick"), "Zed")  # a new player, typed in
+        next(b for b in page.button if b.label == "Start game").click().run()
         self.assertFalse(page.exception, [e.value for e in page.exception])
         room = store.view(page.session_state["room_code"])
         self.assertEqual((room.names, room.club), (["Ann", "Zed"], club))

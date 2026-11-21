@@ -211,6 +211,61 @@ class TestOverTheNetwork(unittest.TestCase):
             with self.assertRaises(TimeoutError):
                 ws.recv(timeout=0.8)
 
+    def test_text_that_utf8_cannot_carry(self):
+        """
+        Half of a surrogate pair, which JSON can carry: cleaned from names and messages, and
+        never the end of a connection (one in a chat message used to cut the other players off).
+        """
+        code, ann, bob, _ = self.game()
+        with self.live() as ws:
+            ws.send(json.dumps({"id": 1, "op": "watch", "code": code, "token": ann}))
+            receive(ws)
+            say = '{"op": "say", "code": "%s", "token": "%s", "text": "hi \\ud83d there"}' % (code, bob)
+            status, answer = self.post(raw=say.encode())
+            self.assertEqual((status, [m["text"] for m in answer["state"]["chat"]]), (200, ["hi there"]))
+            self.assertEqual([m["text"] for m in receive(ws)["state"]["chat"]], ["hi there"])
+            self.post({"op": "say", "code": code, "token": bob, "text": "still here?"})
+            self.assertEqual([m["text"] for m in receive(ws)["state"]["chat"]], ["still here?"])
+            # A message's id is echoed as it came, in a form that can be sent.
+            ws.send('{"id": "\\ud83d", "op": "info"}')
+            reply = receive(ws)
+            self.assertEqual((reply["type"], reply["id"]), ("reply", "\ud83d"))
+        status, answer = self.post(raw=b'{"op": "create", "name": "Eve\\udc00"}')
+        self.assertEqual((status, answer["state"]["names"]), (200, ["Eve"]))
+        self.assertEqual(self.post(raw=b"[" * 5000 + b"]" * 5000)[0], 400)  # however deep it is nested: not a fault
+
+    def test_a_connection_that_cannot_be_served_is_closed(self):
+        """An app is never left on a connection that looks open and brings no news: it reconnects instead."""
+        code, ann, bob, _ = self.game()
+
+        def watch():
+            ws = self.live()
+            self.addCleanup(ws.close)
+            ws.send(json.dumps({"op": "watch", "code": code, "token": ann}))
+            receive(ws)
+            return ws
+
+        def closed_by_the_server(ws):
+            with self.assertRaises(ConnectionClosed) as caught:
+                ws.recv(timeout=5)
+            return caught.exception.rcvd.code
+
+        ws = watch()  # looking for changes fails
+        with mock.patch.object(http, "_changed_state", side_effect=KeyError("a bug")), \
+                self.assertLogs("abaka", level="ERROR"):
+            self.assertEqual(closed_by_the_server(ws), http.SERVER_FAULT)
+
+        ws, as_json = watch(), http.as_json  # a push that cannot be written
+
+        def no_pushes(message):
+            if message.get("type") == "state":
+                raise TypeError("not JSON data")
+            return as_json(message)
+
+        with mock.patch.object(http, "as_json", no_pushes), self.assertLogs("abaka", level="ERROR"):
+            self.post({"op": "say", "code": code, "token": bob, "text": "hi"})
+            self.assertEqual(closed_by_the_server(ws), http.SERVER_FAULT)
+
     def test_live_connections_close_after_a_code_update(self):
         made = self.post({"op": "create", "name": "Ann"})[1]
         with self.live() as ws:

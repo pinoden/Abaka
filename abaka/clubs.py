@@ -25,10 +25,9 @@ import logging
 import secrets
 import threading
 import time
-import unicodedata
 from typing import Dict, List, Optional
 
-from .rooms import CODE_ALPHABET, MAX_NAME_LENGTH, normalize_code
+from .rooms import CODE_ALPHABET, MAX_NAME_LENGTH, clean_name, normalize_code
 
 log = logging.getLogger("abaka")
 
@@ -85,8 +84,7 @@ class ClubStore:
 
     # ----- the club page -----
     def create(self, name: str) -> str:
-        visible = "".join(ch for ch in (name or "") if unicodedata.category(ch) not in ("Cc", "Cf"))
-        name = " ".join(visible.split())[:MAX_CLUB_NAME_LENGTH]  # as rooms.clean_name, but longer
+        name = clean_name(name, "", MAX_CLUB_NAME_LENGTH)  # cleaned like a player's name, but longer
         if not name:
             raise ClubError("Give the club a name.")
         now = time.time()

@@ -88,19 +88,26 @@ class OutdatedPage(RoomError):
     move by someone else meanwhile). Nothing was changed; the page only needs redrawing."""
 
 
-def clean_name(name: str, fallback: str) -> str:
-    """Spaces collapsed, at most MAX_NAME_LENGTH characters, no control or invisible format
-    characters (such as right-to-left overrides); `fallback` if nothing is left."""
-    visible = "".join(ch for ch in (name or "") if unicodedata.category(ch) not in ("Cc", "Cf"))
-    name = " ".join(visible.split())[:MAX_NAME_LENGTH]
+# Characters never kept in a name or a message: control characters, invisible format
+# characters (such as right-to-left overrides), and halves of surrogate pairs. JSON can carry
+# half a pair ("\ud83d") but UTF-8 cannot, so one in a name or a message would break every
+# page and connection that shows it, and the game's row in the database.
+_NEVER_KEPT = ("Cc", "Cf", "Cs")
+
+
+def clean_name(name: str, fallback: str, limit: int = MAX_NAME_LENGTH) -> str:
+    """Spaces collapsed, at most `limit` characters, no control, invisible or broken
+    characters (_NEVER_KEPT); `fallback` if nothing is left."""
+    visible = "".join(ch for ch in (name or "") if unicodedata.category(ch) not in _NEVER_KEPT)
+    name = " ".join(visible.split())[:limit]
     return name or fallback
 
 
 def clean_message(text: str) -> str:
-    """A chat message: no control or invisible format characters, spaces collapsed, at most
-    MAX_MESSAGE_LENGTH characters. Empty if nothing is left."""
+    """A chat message: no control, invisible or broken characters (_NEVER_KEPT), spaces
+    collapsed, at most MAX_MESSAGE_LENGTH characters. Empty if nothing is left."""
     visible = "".join(" " if ch.isspace() else ch for ch in (text or "")
-                      if ch.isspace() or unicodedata.category(ch) not in ("Cc", "Cf"))
+                      if ch.isspace() or unicodedata.category(ch) not in _NEVER_KEPT)
     return " ".join(visible.split())[:MAX_MESSAGE_LENGTH]
 
 

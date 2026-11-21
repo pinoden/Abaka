@@ -34,6 +34,13 @@ class TestMarkdownEscaping(unittest.TestCase):
             self.assertNotIn(address, md(address).replace("\\", "").replace(z, "|"))
         self.assertEqual(md("Аня Ann 2"), "Аня Ann 2")  # ordinary names are unchanged
 
+    def test_half_a_surrogate_pair_is_removed(self):
+        """JSON can carry half a pair, UTF-8 cannot: a name holding one could be neither shown nor saved."""
+        self.assertEqual(clean_name("Ann\ud83d Lee\udc00", "P"), "Ann Lee")
+        self.assertEqual(clean_name("\ud800", "Player 1"), "Player 1")
+        self.assertEqual(clean_name("Ann \U0001F3B2", "P"), "Ann \U0001F3B2")  # a whole emoji is kept
+        clean_name("Ann\ud83d \U0001F3B2", "P").encode("utf-8")  # can be sent and saved
+
     def test_invisible_and_control_characters_are_removed(self):
         self.assertEqual(clean_name("Ann‮​\x07 Lee", "P"), "Ann Lee")
         self.assertEqual(clean_name("​‮", "Player 1"), "Player 1")

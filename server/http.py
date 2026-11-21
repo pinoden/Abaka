@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import HTTPConnection, Request
-from starlette.responses import JSONResponse
+from starlette.responses import Response
 from starlette.websockets import WebSocket
 
 from abaka import api
@@ -41,6 +41,7 @@ GAMES_PER_CLIENT_WINDOW = 10 * 60  # ...in this many seconds (the web allows the
 ADDRESSES_KEPT = 10000             # client addresses the limit remembers at most
 WATCH_EVERY_SECONDS = 0.25         # how often a live connection looks for changes to its game
 CODE_UPDATED = 1012                # the WebSocket close code "service restart": reconnect
+SERVER_FAULT = 1011                # the close code "internal error": the connection cannot be served
 
 _THIS = sys.modules[__name__]      # this module as loaded (a code update loads a new one)
 _started: Dict[str, List[float]] = {}  # per client address: when it started its latest games
@@ -87,17 +88,39 @@ def answer(request: Any, address: str) -> Tuple[int, dict]:
     return 200, response
 
 
-async def post(request: Request) -> JSONResponse:
+def as_json(data: Any) -> str:
+    """
+    `data` as JSON text that can always be sent. Text that UTF-8 cannot carry is written as
+    \\u escapes instead: half of a surrogate pair, which JSON allows (a message's `id` is
+    echoed as it came). Names and chat messages never hold one (rooms.clean_name).
+    """
+    text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        text = json.dumps(data, separators=(",", ":"))
+    return text
+
+
+def _parsed(text) -> Any:
+    """A message's JSON data. ValueError if it is not JSON (or is nested too deep to read)."""
+    try:
+        return json.loads(text)
+    except RecursionError:
+        raise ValueError("nested too deep") from None
+
+
+async def post(request: Request) -> Response:
     """POST /api/v1: one request in the body, its answer in the response."""
     body = await _body(request)
     if body is None:
         return _refusal(413, f"A request is at most {MAX_REQUEST_BYTES // 1024} KB.")
     try:
-        data = json.loads(body)
+        data = _parsed(body)
     except ValueError:
         return _refusal(400, "The request is not JSON.")
     status, response = await run_in_threadpool(answer, data, client_address(request))
-    return JSONResponse(response, status_code=status)
+    return _json_response(response, status)
 
 
 async def _body(request: Request) -> Optional[bytes]:
@@ -113,8 +136,12 @@ async def _body(request: Request) -> Optional[bytes]:
     return bytes(body)
 
 
-def _refusal(status: int, message: str) -> JSONResponse:
-    return JSONResponse({"error": "bad_request", "message": message}, status_code=status)
+def _json_response(data: dict, status: int) -> Response:
+    return Response(as_json(data), status_code=status, media_type="application/json")
+
+
+def _refusal(status: int, message: str) -> Response:
+    return _json_response({"error": "bad_request", "message": message}, status)
 
 
 # ---------------------------------------------------------------- live connections ----
@@ -158,7 +185,7 @@ class _Live:
                                  "message": f"A message is at most {MAX_REQUEST_BYTES // 1024} KB."})
                 continue
             try:
-                data = json.loads(text)
+                data = _parsed(text)
             except ValueError:
                 await self.send({"type": "error", "id": None, "error": "bad_request",
                                  "message": "The message is not JSON."})
@@ -190,38 +217,64 @@ class _Live:
         await self.send({"type": "reply", "id": ref, "response": response})
 
     async def push_changes(self) -> None:
-        """Send the watched game's state whenever it changes (checking every WATCH_EVERY_SECONDS)."""
-        while not self.closed:
-            await asyncio.sleep(WATCH_EVERY_SECONDS)
-            if sys.modules.get(__name__) is not _THIS:
-                # The code was updated in place: the app reconnects, and the new code serves it.
-                self.closed = True
-                await self.websocket.close(CODE_UPDATED)
-                return
-            watching = self.watching
-            if watching is None:
-                continue
-            changed = await run_in_threadpool(_changed_state, dict(watching, since=self.since), self.seen,
-                                              self.address)
-            if changed is None or self.watching is not watching:
-                continue  # nothing new, or the app watches another game now
-            status, response = changed
-            if status != 200:
-                if response["error"] == "not_found":
-                    self.watching = None  # the game is gone
-                await self.send(dict(response, type="error", id=None))
-                continue
-            self._note(response["state"])
-            await self.send({"type": "state", "state": response["state"]})
+        """
+        Send the watched game's state whenever it changes (checking every WATCH_EVERY_SECONDS).
+        If that fails, the connection is closed: an app must never be left on a connection
+        that looks open and brings no news.
+        """
+        try:
+            while not self.closed:
+                await asyncio.sleep(WATCH_EVERY_SECONDS)
+                if sys.modules.get(__name__) is not _THIS:
+                    # The code was updated in place: the app reconnects, and the new code serves it.
+                    await self.close(CODE_UPDATED)
+                    return
+                watching = self.watching
+                if watching is None:
+                    continue
+                changed = await run_in_threadpool(_changed_state, dict(watching, since=self.since), self.seen,
+                                                  self.address)
+                if changed is None or self.watching is not watching:
+                    continue  # nothing new, or the app watches another game now
+                status, response = changed
+                if status != 200:
+                    if response["error"] == "not_found":
+                        self.watching = None  # the game is gone
+                    await self.send(dict(response, type="error", id=None))
+                    continue
+                self._note(response["state"])
+                await self.send({"type": "state", "state": response["state"]})
+        except asyncio.CancelledError:  # the app went: live() stops the pushing
+            raise
+        except Exception:  # noqa: BLE001 - a fault of the server: the app reconnects
+            log.exception("pushing a watched game's changes failed")
+            await self.close(SERVER_FAULT)
 
     async def send(self, message: dict) -> None:
+        """Send one message. If it cannot be sent, the connection is closed, and the app reconnects."""
         if self.closed:
             return
         try:
+            text = as_json(message)
+        except (TypeError, ValueError):  # not JSON data: a fault of the server
+            log.exception("a message for an app could not be written")
+            await self.close(SERVER_FAULT)
+            return
+        try:
             async with self.sending:
-                await self.websocket.send_text(json.dumps(message, ensure_ascii=False, separators=(",", ":")))
+                await self.websocket.send_text(text)
         except Exception:  # noqa: BLE001 - the app went away meanwhile
-            self.closed = True
+            await self.close(SERVER_FAULT)
+
+    async def close(self, code: int) -> None:
+        """Close the connection for good. serve() then ends, and an app that is still there reconnects."""
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            await self.websocket.close(code)
+        except Exception:  # noqa: BLE001 - closed already
+            pass
 
     def _is_watched(self, state: dict, request: dict) -> bool:
         watching = self.watching
