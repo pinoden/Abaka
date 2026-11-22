@@ -382,6 +382,7 @@ def check_online(browser, url: str, games: List[str]) -> None:
         watcher = bob if roller is ann else ann
         for widest in ("WWWWW", "MMMMM"):  # the widest codes there can be
             bob.fits("bar-code", "the game's code at the top, in Russian", widest)
+        board_fits(bob)  # both players' columns, bonuses included, on a 360px phone
         roller.id("roll").first.click()
         roller.see(roller.id("die-4"), "the roller's dice")
         dice = roller.dice()

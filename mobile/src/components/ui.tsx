@@ -4,8 +4,10 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const colors = {
   accent: '#4F46E5',     // indigo: the current player, picked choices, main buttons
@@ -30,15 +32,32 @@ export const colors = {
 /**
  * A screen: safe area, scrolling, at most 560 wide (tablets and the web build). `over` is
  * drawn above everything and never takes a touch (bubbles, fireworks).
+ *
+ * On a phone the system draws over the edges of the app: the status bar (and a camera
+ * cut-out) at the top, the gesture bar or home indicator at the bottom.
+ * - The page scrolls under the bottom bar, and ends the bar's height higher, so its last
+ *   line can be scrolled clear of it.
+ * - `over` keeps inside the safe area, so a bubble is never drawn under the status bar.
+ * - The keyboard: iOS moves the page itself (`automaticallyAdjustKeyboardInsets`). On
+ *   Android, where apps draw edge to edge (Android 15 and later), the window no longer
+ *   shrinks for the keyboard, so the page does: Android then scrolls the field being
+ *   typed in into view.
  */
 export function Screen({ children, over }: { children: ReactNode; over?: ReactNode }) {
+  const insets = useSafeAreaInsets();
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled"
-                  automaticallyAdjustKeyboardInsets>
-        <View style={styles.column}>{children}</View>
-      </ScrollView>
-      {over ? <View style={styles.over}>{over}</View> : null}
+      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'android' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: 16 + insets.bottom }]}
+                    keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+          <View style={styles.column}>{children}</View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+      {over ? (
+        <View style={[styles.over, { top: insets.top, bottom: insets.bottom, left: insets.left, right: insets.right }]}>
+          {over}
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -121,7 +140,12 @@ export function Choice<T extends string | number>({ options, value, onChange, te
   );
 }
 
-export function Field({ label, value, onChange, placeholder, maxLength, testID, autoCapitalize }: {
+/**
+ * A text box. `onSubmit`, for a form of one box and its button: the keyboard's key says
+ * "Go" and does what the button does, since on a phone the keyboard usually covers the
+ * button.
+ */
+export function Field({ label, value, onChange, placeholder, maxLength, testID, autoCapitalize, onSubmit }: {
   label?: string;
   value: string;
   onChange: (text: string) => void;
@@ -129,6 +153,7 @@ export function Field({ label, value, onChange, placeholder, maxLength, testID, 
   maxLength?: number;
   testID?: string;
   autoCapitalize?: 'none' | 'characters' | 'words';
+  onSubmit?: () => void;
 }) {
   return (
     <View style={styles.field}>
@@ -144,6 +169,8 @@ export function Field({ label, value, onChange, placeholder, maxLength, testID, 
         autoCapitalize={autoCapitalize ?? 'words'}
         autoCorrect={false}
         style={styles.input}
+        returnKeyType={onSubmit ? 'go' : 'done'}
+        onSubmitEditing={onSubmit}
       />
     </View>
   );
@@ -160,7 +187,8 @@ export function Notice({ text, tone = 'error' }: { text: string; tone?: 'error' 
 
 export const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  over: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, pointerEvents: 'none', overflow: 'hidden' },
+  fill: { flex: 1 },
+  over: { position: 'absolute', pointerEvents: 'none', overflow: 'hidden' },
   scroll: { paddingHorizontal: 16, paddingVertical: 16 },
   column: { width: '100%', maxWidth: 560, alignSelf: 'center', gap: 16 },
   card: {
