@@ -682,7 +682,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1352,7 +1352,32 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       one box and a button (a game's code, a club's code, a club's name,
       joining): the keyboard covers the button on a phone.
 
+28. **The app's dice looked ugly.** Done in PR #68.
+    > "Dice look ugly" (a screenshot of the app's dice on the emulator)
+    - The pips sat at 20% and 80% of the die, close to its rounded corners,
+      where the website puts them at 28% and 72%. And they sat off centre,
+      right of and below the middle: a pip placed inside a die is measured
+      from inside its border, which the app did not take off (more on a
+      picked die, whose border is thicker).
+    - The app's dice are now drawn as the website's: the same grid, centred
+      with either border. Checked side by side with the website's own dice in
+      Chromium, on the same roll as in the owner's screenshot.
+
 ## Status (2026-11-21)
+
+- **The app's dice (owner: "Dice look ugly", Backlog item 28):** PR #68.
+  - The pips crowded the dice's rounded corners (20% and 80% of the die; the
+    website uses 28% and 72%), and sat off centre: about 1.5 dp right of and
+    below the middle, 3 dp on a picked die. Both came from `Dice.tsx`.
+  - The pips' places are now worked out in `src/lib/dice.ts` from the
+    website's grid (`ui_components/style.py`), with the die's border taken
+    off. A new test checks every face is centred with either border; it fails
+    without that correction.
+  - Checked on the emulator on the owner's roll (6, 1, 1, 6 and the joker's
+    4), with a die picked, next to the website's dice drawn by Chromium: the
+    same.
+  - The app's 45 tests, typecheck, lint and the seven browser flows pass. The
+    website is unchanged.
 
 - **A phone simulator on this Mac: Android's emulator (owner: "Set up android
   one", Backlog item 27):** PR #67.
@@ -1894,7 +1919,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
   296 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 42 tests (`node --test`).
+  scan reads both quotes). The phone app has its own 45 tests (`node --test`).
   8 against a real server (`mobile/tests/api.test.ts`: complete games on one
   device and online through its API client, pushes, reactions and chat with
   their words, a club game and its table, the rules in a request's own
@@ -1908,7 +1933,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   the screen (`mobile/tests/clubs.test.ts`: the table's rows, numbers rounded
   as Python rounds them, the latest games, the names offered and tapped). 4 of
   the score table's size (`mobile/tests/board.test.ts`: two players' columns
-  fit every common phone width, down to 360). CI
+  fit every common phone width, down to 360). 3 of the dice
+  (`mobile/tests/dice.test.ts`: every face centred whatever the border, the
+  pips where the website puts them). CI
   also plays its web build (`tools/app_check.py`, with a server of its own). 2 website tests (`test_website.py`: `tools/website_check.py` in
   headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
   12 server tests (`test_server.py`: `unwatch`; HTTP statuses for every refusal,
@@ -2116,6 +2143,21 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-21: the app's dice (Claude Code, PR #68)**
+
+- The owner found the app's dice ugly. The website's dice are the reference:
+  the owner has played with them since PR #12, and `Dice.tsx` said it drew
+  them "like the web's". So the app now uses the website's grid exactly,
+  rather than a new design.
+- In React Native a child with `position: 'absolute'` is placed from inside
+  its parent's border. The pips were placed as if from the outer edge, so the
+  whole face sat the border's width right of and below centre. The browser
+  check could not see it: it reads the dice's values, not where their pips
+  are. A test now checks the arithmetic.
+- The pips are still views with rounded corners, not an SVG as on the web:
+  no new package (`react-native-svg` is not in the app), and a round view is
+  drawn the same on every platform.
 
 **2026-11-21: Android's emulator, and what it found (Claude Code, PR #67)**
 
