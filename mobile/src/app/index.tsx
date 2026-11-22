@@ -184,7 +184,8 @@ export default function Home() {
         <Title>{t('or open a game by its code')}</Title>
         <Muted>{t("Join a friend's game, or continue a saved game.")}</Muted>
         <Field testID="open-code" label={t('Game code')} value={code} onChange={setCode}
-               placeholder={t('e.g. Q47CH')} maxLength={8} autoCapitalize="characters" />
+               placeholder={t('e.g. Q47CH')} maxLength={8} autoCapitalize="characters"
+               onSubmit={() => { if (code.trim()) open(); }} />
         <Button testID="open-game" kind="secondary" label={t('Open game')} disabled={!code.trim()} onPress={open} />
       </Card>
 
@@ -196,10 +197,12 @@ export default function Home() {
                   onPress={() => openClub(club.code)} />
         ))}
         <Field testID="club-name" label={t('Club name')} value={clubName} onChange={setClubName}
-               placeholder={t('e.g. Friday dice')} maxLength={info?.limits.club_name ?? 30} />
+               placeholder={t('e.g. Friday dice')} maxLength={info?.limits.club_name ?? 30}
+               onSubmit={() => { if (!busy) createClub(); }} />
         <Button testID="create-club" kind="secondary" label={t('Create club')} disabled={busy} onPress={createClub} />
         <Field testID="find-club-code" label={t('Club code')} value={clubCode} onChange={setClubCode}
-               placeholder={t('e.g. K7PX2M')} maxLength={8} autoCapitalize="characters" />
+               placeholder={t('e.g. K7PX2M')} maxLength={8} autoCapitalize="characters"
+               onSubmit={() => { if (clubCode.trim()) openClub(clubCode); }} />
         <Button testID="open-club" kind="secondary" label={t('Open club')} disabled={!clubCode.trim()}
                 onPress={() => openClub(clubCode)} />
       </Card>

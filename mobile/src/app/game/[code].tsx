@@ -251,7 +251,8 @@ function Invite({ state, busy, takeSeat, lost }: {
           <PlayerChips names={offered(members, state.names)} hint={t('Pick a player or type a new name')}
                        on={(player) => memberKey(player) === memberKey(name)} onPick={setName} />
           <Field testID="join-name" label={t('Your name')} value={name} onChange={setName}
-                 maxLength={info?.limits.name ?? 20} placeholder={t('Name')} />
+                 maxLength={info?.limits.name ?? 20} placeholder={t('Name')}
+                 onSubmit={() => { if (!busy) takeSeat('join', { name }); }} />
           <Button testID="join" label={t('Join game')} disabled={busy} onPress={() => takeSeat('join', { name })} />
         </>
       ) : null}

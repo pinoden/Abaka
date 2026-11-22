@@ -7,17 +7,15 @@
  * School cell (✓) or a crossed-out one (✕), and in a bonus cell a lost bonus (✕).
  */
 
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import type { Cell, Game, Move } from '@/lib/api';
 import { useApp } from '@/lib/app';
+import { BONUS_W, CELL_W, cellWidths, COLUMN_PADDING, GAP, NAME_W } from '@/lib/board';
 
 import { colors } from './ui';
 
 const ROW_H = 30;
-const CELL_W = 26;
-const BONUS_W = 28;
-const NAME_W = 96;
 const HEAD_H = 56;
 const SUB_H = 22;
 const SECTION_H = 24;
@@ -33,6 +31,10 @@ export function Board({ game, you, target }: {
 }) {
   const { t, rowName } = useApp();
   const players = game.players;
+  const { width: screenWidth } = useWindowDimensions();
+  const { cell: cw, bonus: bw } = cellWidths(screenWidth, players.length);
+  const cellW = { width: cw };
+  const bonusW = { width: bw };
   const rows = Object.keys(players[0]?.rows ?? {});
   const school = rows.filter(isSchool);
   const combos = rows.filter((row) => !isSchool(row));
@@ -62,18 +64,18 @@ export function Board({ game, you, target }: {
         {[0, 1, 2].map((slot) => {
           const isLast = last !== null && last.seat === seat && last.row === row && last.slot === slot;
           if (aimed && aimed.row === row && aimed.slot === slot) {
-            return <Text key={slot} style={[styles.cell, styles.target]}>{aimed.preview}</Text>;
+            return <Text key={slot} style={[styles.cell, cellW, styles.target]}>{aimed.preview}</Text>;
           }
-          return <CellText key={slot} value={p.rows[row][slot]} school={isSchool(row)} last={isLast} />;
+          return <CellText key={slot} value={p.rows[row][slot]} school={isSchool(row)} last={isLast} width={cw} />;
         })}
         {aimed && aimed.row === row && aimed.bonus_lost
-          ? <Text style={[styles.bonus, styles.target]}>✕</Text>
-          : <BonusText value={p.rows[row][3]} />}
+          ? <Text style={[styles.bonus, bonusW, styles.target]}>✕</Text>
+          : <BonusText value={p.rows[row][3]} width={bw} />}
       </View>
     );
     return (
       <View key={seat} testID={`board-player-${seat}`} style={[styles.player, on && styles.activePlayer]}>
-        <View style={styles.head}>
+        <View style={[styles.head, { width: 3 * cw + bw }]}>
           <Text numberOfLines={1} style={[styles.playerName, on && styles.activeText]}>
             {on ? '● ' : ''}{p.name}
           </Text>
@@ -84,8 +86,8 @@ export function Board({ game, you, target }: {
           </Text>
         </View>
         <View style={[styles.row, { height: SUB_H }]}>
-          {['I', 'II', 'III'].map((c) => <Text key={c} style={[styles.cell, styles.sub]}>{c}</Text>)}
-          <Text style={[styles.bonus, styles.sub]}>★</Text>
+          {['I', 'II', 'III'].map((c) => <Text key={c} style={[styles.cell, cellW, styles.sub]}>{c}</Text>)}
+          <Text style={[styles.bonus, bonusW, styles.sub]}>★</Text>
         </View>
         <View style={{ height: SECTION_H }} />
         {school.map(cells)}
@@ -95,11 +97,11 @@ export function Board({ game, you, target }: {
         <View style={styles.row}>
           {p.column_bonus.map((value, column) =>
             aimed && aimed.column_bonus_lost && aimed.slot === column
-              ? <Text key={column} style={[styles.cell, styles.target]}>✕</Text>
-              : <BonusText key={column} value={value} narrow />)}
-          <View style={{ width: BONUS_W }} />
+              ? <Text key={column} style={[styles.cell, cellW, styles.target]}>✕</Text>
+              : <BonusText key={column} value={value} width={cw} narrow />)}
+          <View style={bonusW} />
         </View>
-        <Text style={[styles.cell, styles.total, { width: 3 * CELL_W + BONUS_W }]}>{p.total}</Text>
+        <Text style={[styles.cell, styles.total, { width: 3 * cw + bw }]}>{p.total}</Text>
       </View>
     );
   };
@@ -114,7 +116,7 @@ export function Board({ game, you, target }: {
   );
 }
 
-function CellText({ value, school, last }: { value: Cell; school: boolean; last: boolean }) {
+function CellText({ value, school, last, width }: { value: Cell; school: boolean; last: boolean; width: number }) {
   let text = '';
   let style: object | null = null;
   if (value === 'X') {
@@ -124,11 +126,11 @@ function CellText({ value, school, last }: { value: Cell; school: boolean; last:
     text = String(value);
     style = value < 0 ? styles.negative : null;
   }
-  return <Text style={[styles.cell, style, last && styles.last]}>{text}</Text>;
+  return <Text numberOfLines={1} style={[styles.cell, { width }, style, last && styles.last]}>{text}</Text>;
 }
 
-function BonusText({ value, narrow }: { value: Cell; narrow?: boolean }) {
-  const style = narrow ? styles.cell : styles.bonus;
+function BonusText({ value, width, narrow }: { value: Cell; width: number; narrow?: boolean }) {
+  const style = [narrow ? styles.cell : styles.bonus, { width }];
   if (value === null) return <Text style={style} />;
   if (value === 'X') return <Text style={[style, styles.crossed]}>✕</Text>;
   return <Text style={[style, styles.bonusValue]}>{value}</Text>;
@@ -158,8 +160,8 @@ export function lastMoveText(game: Game, you: number | null,
 
 const styles = StyleSheet.create({
   board: { flexDirection: 'row' },
-  players: { flexDirection: 'row', gap: 6 },
-  player: { borderRadius: 10, paddingHorizontal: 2 },
+  players: { flexDirection: 'row', gap: GAP },
+  player: { borderRadius: 10, paddingHorizontal: COLUMN_PADDING },
   activePlayer: { backgroundColor: colors.accentSoft },
   head: { height: HEAD_H, width: 3 * CELL_W + BONUS_W, justifyContent: 'center', paddingHorizontal: 2 },
   playerName: { fontSize: 14, fontWeight: '700', color: colors.text },

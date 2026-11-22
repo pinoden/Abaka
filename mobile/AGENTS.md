@@ -44,6 +44,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/components/Shows.tsx` | What plays over the game: bubbles, fireworks and sparkles with their banner |
 | `src/components/Club.tsx` | A club's table, its latest games, the ratings after a club game, its players to tap as names |
 | `src/lib/clubs.ts` | The club's rows and numbers (rounded as Python rounds them), the names offered and tapped. Tested in Node |
+| `src/lib/board.ts` | The score table's sizes: two players' columns fit the screen down to 360 wide. Tested in Node |
 | `src/lib/start.ts` | Start a game from a screen (home, a club): the seat kept, the game opened |
 | `src/lib/shows.ts` | Which of them play, and when (the website's rules). No React Native imports: tested in Node |
 | `src/lib/api.ts` | The API client and its types. No React Native imports: the tests run it in Node |
@@ -54,6 +55,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `tests/connection.test.ts` | The connection against a scripted server in the test's own process: restarts, states out of order, connections that die silently. Needs no game server |
 | `tests/shows.test.ts` | What plays over the game, and when. Needs no server |
 | `tests/clubs.test.ts` | Clubs on the screen: rows, numbers, names offered and tapped. Needs no server |
+| `tests/board.test.ts` | The score table's sizes on common phone widths. Needs no server |
 
 ## Texts
 
@@ -88,6 +90,40 @@ npx expo-doctor                          # Expo's checks of the project
 
 CI's "Phone app (Expo)" job runs the typecheck, the lint, the client tests against a
 real server, the web build and `tools/app_check.py`. Run them before a pull request.
+
+## On Android: the emulator
+
+Google's Android emulator is on this Mac (ProjectLibrary.md, Notes for this machine). It
+runs the app in Expo Go as a phone does, so it shows what the web build cannot: the
+status bar and the gesture bar, the keyboard, Android's back button, the app sent to the
+background, a network that goes away, the native animations and Android's fonts. Use it
+for any change to how the app sits on the screen.
+
+```bash
+~/Library/Android/sdk/emulator/emulator -avd Pixel_7_API_36 &   # the phone, in a window (about 50 s to boot)
+npx expo start --android                 # installs Expo Go on it and opens the app; it reloads on save
+ADB=~/Library/Android/sdk/platform-tools/adb
+$ADB shell wm density 480                # a phone 360 wide (411 otherwise); wm density reset puts it back
+$ADB exec-out screencap -p > screen.png  # a screenshot
+$ADB exec-out uiautomator dump /dev/tty  # what is on the screen: a test id is the element's resource-id
+$ADB shell input tap X Y; $ADB shell input text 'Test%sAnn'   # a tap; typing (%s is a space)
+$ADB shell svc wifi disable; $ADB shell svc data disable      # no network (enable: back again)
+```
+
+- The game server runs on this Mac (`abaka_server.py`, port 8501). The emulator reaches it
+  at the Mac's address, as a phone on the same Wi-Fi does. A second player can play
+  through the API (`POST /api/v1`) while the emulator plays the first.
+- uiautomator's dump holds only what is on the screen, so scroll to an element first. It
+  waits until nothing animates, so it hangs while a spinner turns. After a swipe the page
+  goes on moving: read positions once two dumps agree.
+- In Expo Go the app is its own entry in the recent apps. Come back to it through the app
+  switcher; Expo Go's launcher icon opens Expo Go's home page instead.
+- `npx expo start --android` opens the app without Expo Go's floating tools button. A
+  project opened by hand (`adb shell am start -d exp://...`) shows it, over the top right
+  of the screen; add `?__expo_disable_fab=1` to the address.
+- Changing the density restarts the app.
+- The phone has the Mac's keyboard, so Android hides its own unless
+  `adb shell settings put secure show_ime_with_hard_keyboard 1` (already set here).
 
 ## Expo has changed: do not trust your training data
 
@@ -134,7 +170,14 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
   (`connection.request('rules', { lang })`): a screen's effect can run before the app
   has switched the connection's language.
 - What must always fit (the game's code at the top) is checked in `tools/app_check.py`
-  with the widest text it can hold, on a 360px phone, not with today's text.
+  with the widest text it can hold, on a 360px phone, not with today's text. So is the
+  board with two players.
+- Every screen is a `Screen` (`src/components/ui.tsx`). It keeps the page clear of the
+  status bar and the gesture bar, keeps bubbles and fireworks inside the safe area, and on
+  Android shrinks the page above the keyboard. Nothing else positions itself against the
+  screen's edges.
+- A form of one box and its button gives the box `onSubmit`, so the keyboard's Go does
+  what the button does: on a phone the keyboard covers the button.
 - Seat tokens are secrets: only in `src/lib/storage.ts`, never in a log or on screen.
 - `src/lib/api.ts` stays free of React Native imports and of TypeScript that Node cannot
   run as it is (no enums, no parameter properties; `erasableSyntaxOnly` enforces it).

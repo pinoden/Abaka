@@ -45,6 +45,7 @@ The phone app (`mobile/`, React Native with Expo; its own guide is `mobile/AGENT
 ```bash
 cd mobile && npm ci                                   # its packages (Node 26)
 npx expo start                                        # development server: Expo Go on a phone, or w for the web
+npx expo start --android                              # the app on Android's emulator (start the emulator first: mobile/AGENTS.md)
 npx tsc --noEmit && npx expo lint                     # typecheck and lint
 ABAKA_SERVER=http://127.0.0.1:8501 npm test           # its API client against a running abaka_server.py
 npm test                                              # only its connection against a scripted server (no game server)
@@ -107,14 +108,33 @@ python tools/app_check.py --serve                     # (from the repository) th
 - Headless Chromium for browser checks is cached in
   `~/Library/Caches/ms-playwright`. Use it through `playwright-core` installed
   in a scratch folder, never in the repo.
-- The phone app: Node 26.13 and npm 11 are here (nvm). Xcode (only its command
-  line tools) and Android Studio are not, so there is no simulator. The app is
-  checked through its web build in headless Chromium (`tools/app_check.py`,
-  from the scratch Python 3.13), which runs all of the app's code; only the
+- The phone app: Node 26.13 and npm 11 are here (nvm). The app is checked
+  through its web build in headless Chromium (`tools/app_check.py`, from the
+  scratch Python 3.13; CI runs it), which runs all of the app's code; only the
   drawing underneath differs from a phone's.
+  - Google's Android emulator is here (2026-11-21, Backlog item 27), without
+    Android Studio. mobile/AGENTS.md ("On Android") has its commands and what
+    it shows that the web build cannot.
+    - Java 21 (Eclipse Temurin) in `~/Library/Java/JavaVirtualMachines`,
+      found by `/usr/libexec/java_home -v 21`. Only the SDK's own tools
+      (`sdkmanager`, `avdmanager`) need it, not Expo.
+    - The Android SDK in `~/Library/Android/sdk`, where Expo looks without
+      `ANDROID_HOME`: the command-line tools, `platform-tools` (adb), the
+      emulator, and the image `system-images;android-36;google_apis;arm64-v8a`
+      (Android 16 with Google's apps and fonts, no Play Store), 5.7 GB in all.
+    - One virtual phone, `Pixel_7_API_36`: 411 x 914 dp, 2 GB of memory, the
+      Mac's keyboard types into it. `adb shell wm density 480` makes it a
+      phone 360 wide; `adb shell wm density reset` puts it back.
+    - To install it again: the command-line tools and Java from their sites
+      (checksums checked), then `sdkmanager --licenses`, `sdkmanager
+      "platform-tools" "emulator" "<the image>"` and `avdmanager create avd -n
+      Pixel_7_API_36 -k "<the image>" -d pixel_7`.
+  - Xcode is not here (only its command line tools), so there is no iPhone
+    simulator. Xcode comes from the Mac App Store with the owner's Apple ID.
   - The server for the app is `abaka_server.py` on port 8501, from the scratch
     Python 3.13. It listens on every interface, so Expo Go on a phone on the
-    same Wi-Fi reaches it (`src/lib/server.ts` uses the Expo server's host).
+    same Wi-Fi reaches it, and so does the emulator (`src/lib/server.ts` uses
+    the Expo server's host).
   - The server allows 10 new games per address in 10 minutes. Repeated local
     runs of the app's tests hit it (`too_fast`); restart the server.
 - Streamlit Cloud runs Python 3.13 and the pinned Streamlit 1.67.0. The
@@ -662,7 +682,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1083,8 +1103,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     PR #59), the app's code lives in `mobile/` in this repository (PR #60), it
     is React Native with Expo (C1), its first screens are in PR #61 (C2,
     first part), reactions, effects and the chat in PR #64 (C2, second
-    part), clubs in PR #65 (C2, third part), and the rules screen in PR #66
-    (C2, fourth part). Stages B and D wait for the owner's decisions below.
+    part), clubs in PR #65 (C2, third part), the rules screen in PR #66
+    (C2, fourth part), and what the Android emulator showed in PR #67 (item
+    27). Stages B and D wait for the owner's decisions below.
     > "Let's start preparing the code base to expand on android/ios"
     >
     > "Go ahead" (step A2)
@@ -1240,8 +1261,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
           combinations). The website's text is unchanged, byte for byte.
         - The app's "How to play" opens from home, and from a game with the
           "?" at the top, which also leads to the language switch there.
+      - [x] The app on Android's emulator (Backlog item 27), PR #67: it
+        plays there, and what only a phone showed is fixed (the gesture bar,
+        the status bar, the keyboard, the board on a phone 360 wide).
       - [ ] The app's own look on a phone: its icon and name (D1), the
-        status bar, haptics on a roll, and a check on real phones in Expo Go.
+        status bar's colours, haptics on a roll, and a check on real phones
+        in Expo Go (an iPhone too: no iPhone simulator here).
     - [ ] C3. Links: a game's link opens the app when it is installed
       (universal links and app links, served from the domain).
 
@@ -1301,7 +1326,84 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       - in a tie for the first turn, the throw of a player who was out of the
         next round vanished from the screen.
 
+27. **A phone simulator on this Mac.** Android's emulator: done in PR #67.
+    The iPhone simulator needs Xcode, which the owner installs with their
+    Apple ID.
+    > "Is there a phone simulator for mac?" … "Set up android one"
+    - Google's Android emulator with an Android 16 phone (a Pixel 7), without
+      Android Studio; Notes for this machine says what is where.
+    - The app plays in Expo Go there against the game server on this Mac,
+      and mobile/AGENTS.md ("On Android") has the commands.
+    - Checked there: a game on one device, an online game with a second
+      player through the API (picked dice, a reaction, the chat), the bigger
+      fireworks with steered dice, Android's back button, the app in the
+      background while the other player moves, the network switched off and
+      on, and Russian on a phone 360 wide.
+    - Found there and fixed (the web build cannot show them):
+      - the end of every page sat under Android's gesture bar (an iPhone's
+        home indicator too), and could not be scrolled clear of it;
+      - a reaction's bubble was drawn over the status bar (an iPhone's notch
+        too);
+      - on Android the keyboard covered the box being typed in: the game's
+        code at the foot of home, the chat, a name on an invite;
+      - on a phone 360 wide (many Android phones) the second player's bonus
+        column was cut off the board, with nothing to say the board scrolls.
+    - The keyboard's key now does what the form's button does where a form is
+      one box and a button (a game's code, a club's code, a club's name,
+      joining): the keyboard covers the button on a phone.
+
 ## Status (2026-11-21)
+
+- **A phone simulator on this Mac: Android's emulator (owner: "Set up android
+  one", Backlog item 27):** PR #67.
+  - Installed without Android Studio: Java 21, Google's command-line tools,
+    the emulator and an Android 16 phone (Notes for this machine). Downloads
+    checked against their published checksums.
+  - The app plays there in Expo Go, against `abaka_server.py` on this Mac.
+    Driven through adb (taps, typing, uiautomator's view of the screen), with
+    a second player through the API:
+    - a game on one device: names typed with the phone's keyboard, the
+      starting throws, a roll, two dice picked and rolled again, the best
+      option in gold, a row crossed out (the button warns of both bonuses),
+      the rules and back, Android's back button home;
+    - an online game: the other player's picked dice lifted on the phone
+      about a second later, a reaction and a chat message as bubbles (the
+      emoji in Android's own colours), an answer written in the chat;
+    - the bigger fireworks for an Abaka on the first roll (steered dice):
+      bursts, sparkles and "Abaka! You · first roll", gone when they end;
+    - the app in the background for 45 s while the other player moved and
+      wrote: back through the app switcher, the move and the message were on
+      the screen within about 3 s;
+    - Wi-Fi and mobile data off for 40 s: "Connecting…" within 3 s, and 10 s
+      after they came back the other player's move and message were there;
+    - Russian on a phone 360 wide: home, the game, the rules.
+  - Found there, and fixed (all in `mobile/`; the website is unchanged):
+    - **The end of every page sat under Android's gesture bar** (an iPhone's
+      home indicator too): the "Last move" line and "How to play" could not
+      be scrolled clear of it. A page now ends the bar's height higher.
+    - **A reaction's bubble was drawn over the status bar** (on an iPhone it
+      would sit behind the notch). Bubbles and fireworks now keep to the safe
+      area.
+    - **On Android the keyboard covered the box being typed in**: the game's
+      code at the foot of home was typed blind, and the chat box hid behind
+      the keyboard. Android 15 and later no longer shrink an app's window
+      for the keyboard, and the setting the app had for it works on iOS
+      only. The page now shrinks to the space above the keyboard, and
+      Android scrolls the box into view.
+    - **On a phone 360 wide the second player's bonus column was cut off**,
+      with nothing to say that the board scrolls (many Android phones are
+      360 wide). Two players' cells now narrow to fit (22 instead of 26);
+      with three to five players the columns still scroll. The browser check
+      now measures the board on its 360px phone too, and failed on the board
+      as it was ("16px wider than the screen").
+    - Where a form is one box and its button (a game's code, a club's code,
+      a club's name, joining), the keyboard's key says Go and does what the
+      button does: the keyboard covers the button.
+  - Checked: the app's 42 tests (4 new), typecheck, lint, all seven browser
+    flows; every Python test on 3.13 (296; the 8 database tests skipped, no
+    Postgres here) and on 3.8 (294). No load-test row: nothing the website
+    runs changed.
+  - Not checked: an iPhone (Xcode is the owner's to install), a real phone.
 
 - **The rules screen in the phone app (owner: "Keep going", Backlog item 25,
   C2, fourth part):** PR #66.
@@ -1792,7 +1894,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
   296 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 38 tests (`node --test`).
+  scan reads both quotes). The phone app has its own 42 tests (`node --test`).
   8 against a real server (`mobile/tests/api.test.ts`: complete games on one
   device and online through its API client, pushes, reactions and chat with
   their words, a club game and its table, the rules in a request's own
@@ -1804,7 +1906,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   what plays over the screen (`mobile/tests/shows.test.ts`: bubbles, effects
   that wait for the dice and for each other, old news skipped). 8 of clubs on
   the screen (`mobile/tests/clubs.test.ts`: the table's rows, numbers rounded
-  as Python rounds them, the latest games, the names offered and tapped). CI
+  as Python rounds them, the latest games, the names offered and tapped). 4 of
+  the score table's size (`mobile/tests/board.test.ts`: two players' columns
+  fit every common phone width, down to 360). CI
   also plays its web build (`tools/app_check.py`, with a server of its own). 2 website tests (`test_website.py`: `tools/website_check.py` in
   headless Chromium on `abaka_ui.py`, as on Cloud, and on `abaka_server.py`).
   12 server tests (`test_server.py`: `unwatch`; HTTP statuses for every refusal,
@@ -1986,9 +2090,14 @@ From the architecture review (details and file:line in
     a chat message broke that game's page and connections for everyone.)
   - Not limited yet: how many requests one live connection may send, and how
     many connections one client may open.
-- The phone app has not run on a real phone yet. Its connection's handling of
-  a network that changes or goes away is tested against a scripted server, not
-  on a phone's network.
+- The phone app has not run on a real phone yet, nor on an iPhone at all.
+  It runs on Android's emulator here (Backlog item 27), where coming back from
+  the background and a network switched off and on worked; a real phone's
+  network that changes (Wi-Fi to mobile data) has not been tried.
+  - In the emulator the bigger fireworks ran at about 30 frames a second
+    (median 32 ms a frame, 18 ms of it drawing), while scrolling ran at 60.
+    They put about 230 animated views on the screen. The emulator draws
+    through the Mac, so whether a phone keeps up is for a real phone to say.
 - The text version (`python -m abaka`), found in the test round of
   2026-11-21 and left as it is:
   - when players tie for the top score it names only the first of them as
@@ -2007,6 +2116,59 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-21: Android's emulator, and what it found (Claude Code, PR #67)**
+
+- The owner asked whether there is a phone simulator for the Mac, and chose
+  Android ("Set up android one"). The iPhone simulator comes with Xcode,
+  which needs the owner's Apple ID.
+- Google's command-line tools instead of Android Studio: the emulator, adb
+  and one system image are all the app needs (Expo Go is installed by
+  `npx expo start --android`), at a third of Android Studio's size. Android
+  Studio can be added later and finds the same SDK in `~/Library/Android/sdk`.
+- Android 16 (API 36) with Google's apps: a version most phones are on or
+  near, with Chrome and Google's fonts as on a phone. No Play Store, which
+  Expo Go does not need. A Pixel 7 (411 wide), and `wm density 480` for a
+  phone 360 wide, the narrowest common one, without a second virtual phone.
+- 2 GB of memory for the phone: this Mac has 8.
+- The fixes are in `Screen` (`src/components/ui.tsx`), which every screen
+  uses, so one change covers home, the game, the clubs and the rules:
+  - The page still scrolls under the gesture bar (Android's and iOS's own
+    look), and ends the bar's height higher, so its last line can be
+    scrolled clear of it. The safe area's bottom edge would have cut the page
+    off above the bar instead.
+  - The layer of bubbles and fireworks keeps to the safe area on every side.
+  - On Android, a `KeyboardAvoidingView` shrinks the page to the space above
+    the keyboard, and Android's scroll view then brings the focused box into
+    view by itself. iOS keeps `automaticallyAdjustKeyboardInsets`, which
+    already worked there, and the web build has no keyboard to avoid. Not
+    `react-native-keyboard-controller`: Expo Go has only its bundled native
+    modules (mobile/AGENTS.md).
+- The board: narrower cells for two players on a small phone, rather than a
+  scroll bar or a smaller font. Two players were meant to fit without
+  scrolling (Decision log, 2026-11-20); the arithmetic assumed 390 wide.
+  - 22 is the narrowest cell: it still holds "160" (Abaka on the first roll)
+    in the board's font, seen on the emulator.
+  - With three to five players the columns scroll at the usual size, as
+    before: they never fitted a phone.
+  - The sizes moved to `src/lib/board.ts`, with tests, as the app's other
+    logic is.
+- The keyboard's Go key does what a form's button does only where the form is
+  one box and one button. Where more choices follow the box (the online
+  card's number of players, the boxes of a game on one device), Go would
+  skip them, so the key only closes the keyboard there.
+- The emulator is not in CI. The browser check already runs all of the app's
+  code in every pull request; the emulator is for what only a phone has, and
+  is used by hand on a change to how the app sits on the screen (the safe
+  areas, the keyboard, gestures).
+- The check of the 3.13 suite here skipped only the 8 database tests (no
+  Postgres running); CI runs them.
+- Found while driving it, for whoever drives it next (mobile/AGENTS.md):
+  uiautomator's view of the screen leaves out what is scrolled out of view,
+  and waits forever while something animates (a spinner); a fling goes on
+  after the swipe, so positions are read once the screen has stopped; and in
+  Expo Go the app comes back through the app switcher, not the launcher icon,
+  which opens Expo Go's own home page.
 
 **2026-11-21: the rules screen in the app (Claude Code, PR #66)**
 
