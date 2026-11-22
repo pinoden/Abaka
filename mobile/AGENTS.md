@@ -45,6 +45,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/components/Club.tsx` | A club's table, its latest games, the ratings after a club game, its players to tap as names |
 | `src/lib/clubs.ts` | The club's rows and numbers (rounded as Python rounds them), the names offered and tapped. Tested in Node |
 | `src/lib/board.ts` | The score table's sizes: two players' columns fit the screen down to 360 wide. Tested in Node |
+| `src/lib/dice.ts` | Where a die's pips go: the website's grid, centred inside the die's border. Tested in Node |
 | `src/lib/start.ts` | Start a game from a screen (home, a club): the seat kept, the game opened |
 | `src/lib/shows.ts` | Which of them play, and when (the website's rules). No React Native imports: tested in Node |
 | `src/lib/api.ts` | The API client and its types. No React Native imports: the tests run it in Node |
@@ -56,6 +57,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `tests/shows.test.ts` | What plays over the game, and when. Needs no server |
 | `tests/clubs.test.ts` | Clubs on the screen: rows, numbers, names offered and tapped. Needs no server |
 | `tests/board.test.ts` | The score table's sizes on common phone widths. Needs no server |
+| `tests/dice.test.ts` | The dice's faces: centred whatever the border, as on the website. Needs no server |
 
 ## Texts
 
