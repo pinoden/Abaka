@@ -3,6 +3,9 @@ The races for the shared bonuses, at the foot of the play card (Backlog item 30)
 in column I and II for every player, and the rows where two or more players are one cell from
 the bonus. What to say comes from abaka/races.py, which the API sends to apps too; here it is
 only drawn. Names are typed by players, so everything is escaped.
+
+A player is a row of the table and a column of the board is a column, so a name has the width
+of the row: with four or five players, names as columns were cut to "T…" in the play card.
 """
 
 from html import escape
@@ -25,17 +28,18 @@ def races_html(engine, me: Optional[int]) -> str:
         return ""
     parts = []
     if races["columns"]:
-        heads = "".join(f'<th class="ab-race-who{" me" if i == me else ""}" title="{escape(name)}">'
-                        f'{escape(name)}</th>' for i, name in enumerate(races["heads"]))
+        heads = "".join(f'<th>{escape(column["label"])}</th>' for column in races["columns"])
+        fewest = [min(column["left"]) for column in races["columns"]]
         body = []
-        for column in races["columns"]:
-            fewest = min(column["left"])
+        for seat, name in enumerate(races["heads"]):
             cells = []
-            for left, can_earn in zip(column["left"], column["open"]):
-                classes = " ".join(c for c in ("lead" if left == fewest else "", "" if can_earn else "off") if c)
+            for column, least in zip(races["columns"], fewest):
+                left, can_earn = column["left"][seat], column["open"][seat]
+                classes = " ".join(c for c in ("lead" if left == least else "", "" if can_earn else "off") if c)
                 cross = "" if can_earn else '<span class="ab-race-x">✕</span>'
                 cells.append(f'<td class="{classes}">{left}{cross}</td>' if classes else f"<td>{left}</td>")
-            body.append(f'<tr><th>{escape(column["label"])}</th>{"".join(cells)}</tr>')
+            who = ' class="ab-race-who me"' if seat == me else ' class="ab-race-who"'
+            body.append(f'<tr><th{who} title="{escape(name)}">{escape(name)}</th>{"".join(cells)}</tr>')
         parts.append(f'<table class="ab-race-table"><thead><tr><th class="ab-race-title">'
                      f'{escape(races["title"])}</th>{heads}</tr></thead><tbody>{"".join(body)}</tbody></table>')
     parts += [f'<div class="ab-race-row">{escape(row["text"])}</div>' for row in races["rows"]]
