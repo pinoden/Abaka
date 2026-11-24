@@ -22,7 +22,7 @@ The checks:
   it, goes home and comes back to the waiting room (the seat is kept), the other opens its
   code and joins, the game's code in full at the top (the widest there can be), the
   starting throws, a roll and a move seen on the other phone, with the mover's cells left
-  in column I, then a reaction and a chat message;
+  in column I and a long name whole in the race box, then a reaction and a chat message;
 - a player on the website and a player in the app at one table: each sees the other's
   dice, move, reaction and chat message (the server must serve the pages too, as
   abaka_server.py does);
@@ -63,6 +63,7 @@ BUILD = ROOT / "mobile" / "dist"
 PHONE = (390, 844)
 NARROW = (360, 780)  # a common Android width
 NAMES = ("Test Ann", "Test Bob")
+LONG_NAME = "Александра"  # a long first name: it fits a player's row of the bonus race at 360px
 WAIT_MS = 20000
 FLOWS = ("home", "one device", "online", "website", "clubs", "a tie", "fireworks")
 
@@ -396,6 +397,9 @@ def check_online(browser, url: str, games: List[str]) -> None:
         watcher.until(lambda: watcher.id(f"race-left-0-{mover}").count() > 0
                       and watcher.id(f"race-left-0-{mover}").first.inner_text().strip() == "14",
                       "14 cells left in column I for the player who moved, on the other phone")
+        # Each player is a row of the race box, so a name has the row's width at any table size.
+        bob.see(bob.id("race-player-0"), "the players' rows in the bonus race, on Bob's phone")
+        bob.fits("race-player-0", "a player's name in the bonus race, on a 360px phone", LONG_NAME)
         watcher.until(lambda: watcher.id("roll").count() > 0, "the turn passing to the other phone")
         # A reaction and a chat message reach the other phone (Bob's is in Russian).
         ann.see(ann.id("react-lucky"), "the reaction buttons").click()

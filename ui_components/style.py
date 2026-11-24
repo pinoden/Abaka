@@ -232,11 +232,10 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-race-table th, .ab-race-table td { padding: .1rem .25rem; border: none; background: none; text-align: center;
   font-size: .85rem; line-height: 1.35; }
 .ab-race-table th:first-child { text-align: left; width: 40%; padding-left: 0; color: #4A4F68; font-weight: 600; }
-.ab-race-table thead th { font-size: .72rem; font-weight: 700; color: #6B7089; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.ab-race-table thead th.ab-race-title { color: #9AA0B5; text-transform: uppercase; letter-spacing: .06em;
-  white-space: normal; }
-.ab-race-table thead th.me { color: #4F46E5; }
+.ab-race-table thead th { font-size: .72rem; font-weight: 700; color: #6B7089; vertical-align: bottom; }
+.ab-race-table thead th.ab-race-title { color: #9AA0B5; text-transform: uppercase; letter-spacing: .06em; }
+.ab-race-table tbody th.ab-race-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ab-race-table tbody th.me { color: #4F46E5; }
 .ab-race-table td { color: #1C2033; font-variant-numeric: tabular-nums; }
 .ab-race-table td.lead { font-weight: 800; }
 .ab-race-table td.off { color: #9AA0B5; }

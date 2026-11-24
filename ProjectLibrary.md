@@ -604,7 +604,9 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   API sends the same words to apps (`state.races`):
   - a small table of the cells each player has left in column I and II, while
     that column's bonus is undecided, someone can still earn it, and someone
-    has written in it. The fewest are bold. A player whose bonus there is
+    has written in it. Each player is a row (the viewer is "You", in indigo)
+    and each column a column, so a name has the width of the row with any
+    number of players (PR #71). The fewest are bold. A player whose bonus there is
     crossed out is grey, with ✕: completing the column first still closes it
     for the others;
   - a gold line for the rows where two or more players are one cell from the
@@ -695,7 +697,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1384,7 +1386,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - The app takes its buttons from the server, so an app already on a phone
       shows it too, without an update.
 
-30. **The races for the shared bonuses, next to the dice.** Done in PR #70.
+30. **The races for the shared bonuses, next to the dice.** Done in PR #70;
+    a row per player since PR #71.
     > (a tester, through the owner) "Чего еще не хватает (но это уже из
     > необязательного) - так это подсказок/ предупреждений в борьбе за премии.
     > Например, при борьбе за столбец - сколько осталось клеток до столбца у
@@ -1401,8 +1404,50 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
         caught up, or have caught up.
     - Column III is no race: each player earns their own.
     - No rule changed: the box counts what the board shows.
+    - Each player is a row of the table (PR #71). With players as columns,
+      four or five names were cut to "Test…" or "T…", on a phone and in the
+      website's play card on a desktop, so nobody could tell whose count was
+      whose.
 
-## Status (2026-11-23)
+## Status (2026-11-24)
+
+- **The race box, a row per player (owner: "Run it", the emulator check of
+  Backlog item 30):** PR #71.
+  - Checked on Android's emulator (Pixel 7, Android 16), in Russian, against
+    `abaka_server.py` on this Mac, with the other player through the API:
+    - an online game in which both players were one cell from the Sum bonus:
+      the counts and the gold line under the dice; the phone wrote Sum, the
+      line went and the bonus banner played; the other player crossed out a
+      cell of column I, and within 3 s the phone showed his count grey with ✕
+      and the note;
+    - "😎 Прушник" among the reactions (PR #69);
+    - a phone 360 wide: the box fits, its title on two lines.
+  - Found there: **with five players the names were cut** to "Test…",
+    "Ale…", "Test…", "Test…", "Test…" (each name had a fifth of 60% of the
+    box). The website's play card cut them too, to "T…" on a desktop, where
+    five players leave the play card a third of the screen.
+  - Now each player is a row, with "Column I" and "Column II" as the columns.
+    A name has 40% of the box whatever the number of players, so "Александра"
+    fits on a 360px phone. The box has a line per player instead of one per
+    column: two players racing for both columns take the three lines they
+    took before, five take three more. The server's data did not change: the
+    website and the app only lay it out the other way.
+  - Checked:
+    - a new page test: five players, each a row with the whole name, the
+      viewer marked, the fewest bold, a crossed-out bonus grey. It fails on
+      the old layout;
+    - the app's browser check measures a long name ("Александра") in the
+      box on its 360px phone, in Russian. With the name cell squeezed to 15%
+      it failed: "cut short by 50px";
+    - on the emulator at 360 wide, with five players and with two, and in
+      headless Chromium (website, 390px and 1300px, English and Russian): no
+      name cut, no sideways scrolling;
+    - every Python test on 3.13 (311; the 8 database tests skipped, no
+      Postgres here), 3.9 (309) and 3.8 (309); the app's 45 tests, typecheck,
+      lint and all seven browser flows.
+  - Load-test row, the first since PR #68 on a quiet machine: no slowdown
+    (29% CPU, 7.4 ms median poll).
+
 
 - **The races for the shared bonuses (a tester, through the owner; Backlog
   item 30):** PR #70.
@@ -1433,7 +1478,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     and 112 ms. The box itself costs about 0.3 ms of a page run with five
     players, and polls never draw it.
   - Not checked on the emulator, which was not running. The web build runs
-    the same code.
+    the same code. (Checked there afterwards, in PR #71, which found the
+    names cut with five players.)
 
 - **A "Mr. Lucky" reaction (owner, Backlog item 29):** PR #69.
   - "😎 Mr. Lucky" / "😎 Прушник", the ninth reaction, after "Lucky!".
@@ -1990,13 +2036,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 308 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 309 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  308 run and 57 are skipped (9 need a database or psycopg; the others need
+  309 run and 58 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  310 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
+  311 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
   scan reads both quotes). The phone app has its own 45 tests (`node --test`).
   8 against a real server (`mobile/tests/api.test.ts`: complete games on one
@@ -2052,12 +2098,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   (`test_loadtest_baseline.py`: rows read back, a slowdown flagged, only
   comparable rows compared). 12 club tests
   (`test_clubs.py`: ratings, the running score, club tables, a member once
-  in an online club game, saving, the club pages through the app). 14 race
+  in an online club game, saving, the club pages through the app). 15 race
   tests (`test_races.py`: cells left in column I and II, a crossed-out
   column, column III left out, decided races gone, rows one cell from the
   bonus and who can still win them, three players, Russian, random whole
   games against the board and the bonus rules, the API, the page with
-  hostile names). CI runs them on 3.13 with
+  hostile names, each player a row of the page's table). CI runs them on 3.13 with
   Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 21 database
   tests (`test_postgres.py`: the Postgres repository's contract, background database writes, where games are saved, the secret's name, a dropped
   connection, an unreachable database, a store on Postgres, the mirrored
@@ -2227,6 +2273,30 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-24: the race box, a row per player (Claude Code, PR #71)**
+
+- The owner said "Run it" to the check on the emulator that PR #70 had not
+  had. It found five players' names cut to "Test…" in the box, and the
+  website's play card cut them too.
+- Players as rows, columns I and II as columns, for every number of players,
+  rather than a second layout for four and five:
+  - a name gets 40% of the box, the same with two players as with five;
+  - a line per player instead of one per column: two players racing for
+    both columns take the same three lines, five take three more. The box is
+    under the move picker, so the dice and buttons keep their place;
+  - one layout is one thing to draw and check, on the website and in the app.
+- Not chosen:
+  - initials or shortened names: "TA" and "TB", or two Анна at one table,
+    tell players apart less well than the board does;
+  - "I" and "II" as the column headings, which would need a new field in the
+    API. "Столбец II" fits its column at the narrowest (five players on a
+    desktop) and may wrap there.
+- A very long name (the limit is longer than a row) still ends in "…"; the
+  board above shows it whole, and the website's cell names it on hover.
+- The app's browser check measures the name cell with "Александра", a long
+  first name, on its 360px phone. Its width no longer depends on the number
+  of players, so the two-player game there covers five.
 
 **2026-11-23: the races for the shared bonuses (Claude Code, PR #70)**
 

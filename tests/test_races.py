@@ -7,6 +7,7 @@ web page draws them under the dice, and the API sends them to apps with their wo
 
 import os
 import random
+import re
 import unittest
 from unittest import mock
 
@@ -218,6 +219,27 @@ class TestApi(unittest.TestCase):
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
 class TestPage(unittest.TestCase):
+    def test_each_player_is_a_row_with_their_whole_name(self):
+        """With names as columns, five players' names were cut to "T…" in the play card. Each
+        player is a row of the table now, and each column of the board a column."""
+        from ui_components.races import races_html
+        g = GameEngine(["Ann", "Александра", "<b>Bob</b>", "Cleo", "Dan"])
+        for seat in range(5):
+            write(g, seat, C.SUM, 0)
+        write(g, 1, C.PAIR, 0)
+        write(g, 2, C.PAIR, 0, "X")  # Bob can no longer earn column I's bonus
+        head, body = races_html(g, 3).split("<tbody>")
+        self.assertIn("<th>Column I</th>", head)
+        self.assertNotIn("Column II", head)  # nobody has written in it yet
+        rows = re.findall(r"<tr>(.*?)</tr>", body)
+        self.assertEqual(len(rows), 5)
+        for row, name in zip(rows, ["Ann", "Александра", "&lt;b&gt;Bob&lt;/b&gt;", "You", "Dan"]):
+            self.assertRegex(row, r'^<th class="ab-race-who( me)?" title="[^"]*">' + re.escape(name) + "</th><td")
+        self.assertIn('class="ab-race-who me"', rows[3])
+        self.assertTrue(rows[0].endswith("<td>14</td>"))
+        self.assertTrue(rows[1].endswith('<td class="lead">13</td>'))
+        self.assertTrue(rows[2].endswith('<td class="lead off">13<span class="ab-race-x">✕</span></td>'))
+
     def test_the_play_card_shows_the_races_with_names_escaped(self):
         env = mock.patch.dict(os.environ, {"ABAKA_SAVE_DIR": ""})
         env.start()
