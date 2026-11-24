@@ -139,6 +139,8 @@ export type State = {
   can: string[];
   game: Game | null;
   moves: { score: Move[]; cross: Move[] } | null;
+  /** The races for the shared bonuses, drawn for this player; null when there is none. Older servers leave it out. */
+  races?: Races | null;
   /**
    * In an answer: the events and messages newer than the request's `since`. In a state
    * handed to a watcher (`Connection.startWatching`): `events` are the ones not handed
@@ -149,6 +151,18 @@ export type State = {
   table: { games: number; wins: number[]; draws: number };
   /** After a club game, once the club has it: how the ratings moved. */
   club_result: ClubResult | null;
+};
+
+/**
+ * The races for the shared bonuses (docs/API.md, `races`): cells left in column I and II per
+ * seat, and the rows where two or more players are one cell from the bonus. Words included.
+ */
+export type Races = {
+  title: string;
+  heads: string[];
+  columns: { column: number; label: string; left: number[]; open: boolean[] }[];
+  rows: { rows: string[]; seats: number[]; text: string }[];
+  note: string | null;
 };
 
 export type RowInfo = { row: string; name: string; hint: string; school: boolean };

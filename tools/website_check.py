@@ -10,10 +10,11 @@ web app keeps working while the apps for phones are built (Backlog item 25).
 It checks, at a desktop and a phone width:
 - the home page in English and in Russian, and its note on where games are saved;
 - a game on one device: the starting throw, a roll, a die picked and rolled again, the
-  option with the most points written, then a row crossed out;
+  option with the most points written, the race for column I's bonus shown, then a row
+  crossed out;
 - an online game between a desktop and a phone: created, joined, the starting throws on
-  each player's screen, a roll seen on the other screen, the turn passing, a chat message
-  and a reaction;
+  each player's screen, a roll seen on the other screen, the turn passing with the bonus
+  race shown, a chat message and a reaction;
 - on every page: no error box, no page error, and on the phone no sideways scrolling.
 
 Test games are played by "Test Ann" and "Test Bob". With --cleanup and $ABAKA_DATABASE_URL,
@@ -196,6 +197,7 @@ def check_one_device(browser, url: str, size: Tuple[int, int], label: str, games
     s.see(s.app.locator('[class*="st-key-reroll-all-1"] button'), '"Reroll all" with one reroll left')
     write_best(s)
     s.see(s.app.get_by_text("Last move:"), 'the "Last move" line')
+    s.see(s.app.locator(".ab-race", has_text="Column I"), "the race for column I's bonus under the dice")
     s.see(roll, "the next player's Roll dice button").click()
     s.see(s.app.get_by_text("Cross out", exact=True), 'the "Cross out" switch').click()
     confirm = s.key("confirm")
@@ -242,6 +244,7 @@ def check_online(browser, url: str, games: List[str]) -> None:
     watcher.until(lambda: watcher.dice() == rolled, f"the roll ({' '.join(rolled)}) on the other screen")
     write_best(mover)
     watcher.see(watcher.key("roll"), "the Roll dice button on the other screen (its turn)")
+    watcher.see(watcher.app.locator(".ab-race", has_text="Column I"), "the bonus race on the other screen")
     guest.see(guest.app.locator(".st-key-chat-text input"), "the chat box").fill("Test hello")
     guest.see(guest.app.get_by_role("button", name="Send"), 'the "Send" button').click()
     host.see(host.app.get_by_text("Test hello"), "the guest's chat message on the host's screen")

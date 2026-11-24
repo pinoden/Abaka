@@ -205,6 +205,7 @@ them: ask for the rules again rather than keeping them in the app.
   "can": ["react", "say"],
   "game": { ... },
   "moves": null,
+  "races": { ... },
   "events": [ ... ],
   "chat": [ ... ],
   "table": {"games": 2, "wins": [1, 1, 0], "draws": 0},
@@ -225,6 +226,7 @@ them: ask for the rules again rather than keeping them in the app.
 | `can` | What this player may do now: the operations to offer. |
 | `game` | The game (below), once it has started and the token holds a seat. |
 | `moves` | The moves to offer, when it is this player's turn and the dice are on the table. |
+| `races` | The races for the shared bonuses (below), while the game is played, or null when there is none. |
 | `events` | Recent reactions and effects (below), newer than `since`. |
 | `chat` | The game's messages, newer than `since`: `id`, `seat`, `text`, `at`. Show `text` as plain text, never as HTML or Markdown. |
 | `table` | The running score at this table: games finished here, wins per seat, draws. |
@@ -291,6 +293,33 @@ them: ask for the rules again rather than keeping them in the app.
 | `balance_change` | School rows: the balance change (negative: paid from the balance). |
 | `bonus_lost`, `column_bonus_lost` | The move gives up the row bonus or the column bonus: show their cells crossed out in the preview. |
 | `label`, `action`, `preview` | Texts in the request's language: the option, its confirm button, and the cell's text on the board. |
+
+### `races`
+
+The first player to complete a row, or column I or II, decides its bonus for
+everyone. These are the races for those bonuses, drawn for this player, so a
+phone can show them next to the dice instead of the player counting cells on
+the board. Column III is each player's own, so it is no race.
+
+```json
+{"title": "Cells to the bonus",
+ "heads": ["Ann", "You"],
+ "columns": [{"column": 0, "label": "Column I", "left": [4, 6], "open": [true, false]}],
+ "rows": [{"rows": ["PAIR", "SUM"], "seats": [0, 1],
+           "text": "One cell to the bonus for you and Ann: Pair, Sum."}],
+ "note": "✕ — the bonus is crossed out, but whoever completes the column first still closes it for the others."}
+```
+
+| Field | Meaning |
+|---|---|
+| `columns` | Column I and II while their bonus is undecided, someone can still earn it, and someone has written in it. Per seat: `left`, its empty cells, and `open`, false once that player's bonus there is crossed out (they can still close it for the others by completing the column first). |
+| `rows` | Rows whose bonus is undecided where two or more players have one cell left, at least one of whom can still earn it, grouped by those players. `text` says it. |
+| `title`, `heads`, `label` | Words for a small table of `columns`: its corner, one heading per seat ("You" for this player), each column's name. |
+| `note` | What a crossed-out column means, when `columns` shows one; otherwise null. |
+
+All of it is plain text in the request's language, holding players' names:
+show it as text. The whole field is null during the starting throw, after the
+game, and when there is no race.
 
 ### `events`
 

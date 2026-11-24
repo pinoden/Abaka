@@ -42,6 +42,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/components/` | The board, the dice, buttons and cards (the web app's colours) |
 | `src/components/Reactions.tsx`, `Chat.tsx` | The reaction buttons and the chat card of an online game |
 | `src/components/Shows.tsx` | What plays over the game: bubbles, fireworks and sparkles with their banner |
+| `src/components/Races.tsx` | The races for the shared bonuses under the dice: cells left in column I and II, rows one cell from the bonus. The server sends the words (`state.races`) |
 | `src/components/Club.tsx` | A club's table, its latest games, the ratings after a club game, its players to tap as names |
 | `src/lib/clubs.ts` | The club's rows and numbers (rounded as Python rounds them), the names offered and tapped. Tested in Node |
 | `src/lib/board.ts` | The score table's sizes: two players' columns fit the screen down to 360 wide. Tested in Node |
@@ -161,6 +162,8 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
   `label`, `title`, `text`), and the reaction buttons from `info.reaction_list`. Do not
   build them in the app: a reaction or an effect the server adds later then works in an
   app already installed.
+- The races for the shared bonuses (`state.races`) come worked out and worded too. The
+  app only lays them out (`Races.tsx`), so the rules for them stay on the server.
 - A watcher's state has the game's whole chat and only the events not handed over
   before (`Connection` gathers them). A screen never merges messages itself.
 - A test id is unique among the screens in the stack, not only on one screen: a screen

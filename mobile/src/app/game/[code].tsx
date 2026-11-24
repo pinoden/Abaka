@@ -13,6 +13,7 @@ import { Board, lastMoveText } from '@/components/Board';
 import { Chat } from '@/components/Chat';
 import { ClubRatings, PlayerChips } from '@/components/Club';
 import { DieFace } from '@/components/Dice';
+import { Races } from '@/components/Races';
 import { ReactionBar } from '@/components/Reactions';
 import { Shows } from '@/components/Shows';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
@@ -349,6 +350,7 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
                    onPick={(move) => setChoice({ turn, mode: current.mode, move })}
                    onConfirm={(move) => act(current.mode, { row: move.row, slot: move.slot })} />
           ) : null}
+          {state.races ? <Races races={state.races} you={state.local ? null : state.you} /> : null}
         </Card>
       ) : null}
       {state.phase === 'over' ? <Results state={state} game={game} act={act} busy={busy} /> : null}

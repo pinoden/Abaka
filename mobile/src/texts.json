@@ -20,6 +20,7 @@
   "Bonuses!": "Бонусы!",
   "Cancel": "Отменить",
   "Cannot reach the server. Check your connection.": "Нет связи с сервером. Проверьте подключение.",
+  "Cells to the bonus": "Клеток до бонуса",
   "Chat": "Чат",
   "Choose a row above": "Выберите строку выше",
   "Choose a row to cross out": "Выберите строку, чтобы зачеркнуть",
@@ -29,6 +30,7 @@
   "Club table": "Таблица клуба",
   "Clubs": "Клубы",
   "Column bonus": "Бонус столбца",
+  "Column {n}": "Столбец {n}",
   "Combinations": "Комбинации",
   "Complete a column with no crossed-out combinations": "Заполните столбец без зачёркнутых комбинаций",
   "Connecting…": "Подключение…",
@@ -102,6 +104,7 @@
   "No rerolls left. Choose where to write this roll.": "Перебросов не осталось. Выберите, куда записать бросок.",
   "Nothing can be scored with these dice. Reroll, or switch to **Cross out**.": "С этими кубиками ничего не записать. Перебросьте или выберите **Зачеркнуть**.",
   "On fire!": "В ударе!",
+  "One cell to the bonus for {names}: {rows}.": "Одна клетка до бонуса — {names}: {rows}.",
   "One reaction every two seconds, please.": "Не больше одной реакции в две секунды.",
   "Online": "Онлайн",
   "Online · {code}": "Онлайн · {code}",
@@ -210,6 +213,7 @@
   "wild joker": "любой",
   "wrote {name} (balance now {value})": "«{name}», баланс теперь {value}",
   "wrote {name} (exactly three)": "«{name}», ровно три",
+  "you": "вы",
   "{code} · {kind} · {names}": "{code} · {kind} · {names}",
   "{host} invited you to play": "{host} приглашает вас в игру",
   "{joined} of {capacity} players are here. Waiting for {missing} more…": "Собралось {joined} из {capacity}. Ждём ещё {missing}…",
@@ -224,7 +228,8 @@
   "{name}’s turn": "Ходит {name}",
   "{row} row +{points}": "строка «{row}» +{points}",
   "{score} pts": "{score} очк.",
-  "{value} (joker)": "{value} (джокер)"
+  "{value} (joker)": "{value} (джокер)",
+  "✕ — the bonus is crossed out, but whoever completes the column first still closes it for the others.": "✕ — бонус зачёркнут, но кто первым заполнит столбец, закрывает его для остальных."
  },
  "plurals": {
   "rerolls_left": {

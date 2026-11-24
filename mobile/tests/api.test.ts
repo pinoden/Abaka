@@ -59,7 +59,10 @@ async function play(code: string, players: Player[], seed: number): Promise<Stat
   let moves = 0;
   for (;;) {
     let state = (await players[0].connection.request<{ state: State }>('state', { code, token: players[0].token })).state;
-    if (state.phase === 'over') return state;
+    if (state.phase === 'over') {
+      assert.equal(state.races, null, 'no bonus race once the game is over');
+      return state;
+    }
     const { connection, token } = players.length === 1 ? players[0] : players[state.game!.current];
     state = (await connection.request<{ state: State }>('state', { code, token })).state;
     const base = { code, token, version: state.version };
@@ -83,6 +86,12 @@ async function play(code: string, players: Player[], seed: number): Promise<Stat
       const written = after.game!.players[seat].rows[move.row][move.slot];
       assert.equal(written, move.value, `${move.row} holds what its preview said`);
       assert.deepEqual(after.game!.last_move, { seat, row: move.row, slot: move.slot });
+      // The bonus races count what the board shows: each seat's empty cells in column I and II.
+      for (const column of after.races?.columns ?? []) {
+        const empty = after.game!.players.map((p) => Object.values(p.rows).filter((cells) => cells[column.column] === null).length);
+        assert.deepEqual(column.left, empty, `${column.label}: the cells left`);
+      }
+      if (moves === 0) assert.ok(after.races?.columns.length, 'the first move starts the race for column I');
       moves++;
     }
     assert.ok(moves < 500, 'the game ends');

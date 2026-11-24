@@ -179,6 +179,13 @@ RU = {
     "first roll": "с первого броска",
     "bonus +{n}": "бонус +{n}",
     "Bonus!": "Бонус!",
+    # ----- the races for shared bonuses (abaka/races.py) -----
+    "Cells to the bonus": "Клеток до бонуса",
+    "Column {n}": "Столбец {n}",
+    "One cell to the bonus for {names}: {rows}.": "Одна клетка до бонуса — {names}: {rows}.",
+    "you": "вы",
+    "✕ — the bonus is crossed out, but whoever completes the column first still closes it for the others.":
+        "✕ — бонус зачёркнут, но кто первым заполнит столбец, закрывает его для остальных.",
     "Bonuses!": "Бонусы!",
     "{row} row +{points}": "строка «{row}» +{points}",
     "column {n} +{points}": "столбец {n} +{points}",
