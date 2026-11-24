@@ -162,6 +162,7 @@ def error(message: str) -> str:
 RU = {
     # ----- reactions and celebrations -----
     "Lucky!": "Повезло!",
+    "Mr. Lucky": "Прушник",
     "Nice!": "Красиво!",
     "Wow!": "Ого!",
     "Ouch": "Ой",

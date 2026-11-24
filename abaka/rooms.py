@@ -56,7 +56,7 @@ RESULTS_KEPT = 100                    # finished games a room remembers for its 
 
 # Reactions players send each other in an online game, and the effects everyone sees
 # after a great throw or a bonus. Both live in the room's memory only (never saved).
-REACTIONS = ("lucky", "nice", "wow", "ouch", "hurry", "gg", "haha", "fire")
+REACTIONS = ("lucky", "mrlucky", "nice", "wow", "ouch", "hurry", "gg", "haha", "fire")
 REACTION_EVERY_SECONDS = 2.0          # one reaction per seat this often
 EVENTS_KEPT = 20                      # recent reactions and effects a room keeps for the pages
 # Effects, shown on every screen as the dice land (owner, 2026-11-19; see _celebration).

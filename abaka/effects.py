@@ -20,6 +20,7 @@ from .moves import row_name
 # goes through t() when it is shown.
 REACTION_LOOKS: Dict[str, Tuple[str, str]] = {
     "lucky": ("\U0001F340", "Lucky!"),
+    "mrlucky": ("\U0001F60E", "Mr. Lucky"),
     "nice": ("\U0001F44F", "Nice!"),
     "wow": ("\U0001F62E", "Wow!"),
     "ouch": ("\U0001F62C", "Ouch"),
