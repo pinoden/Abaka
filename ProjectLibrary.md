@@ -682,7 +682,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1363,7 +1363,24 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       with either border. Checked side by side with the website's own dice in
       Chromium, on the same roll as in the owner's screenshot.
 
-## Status (2026-11-21)
+29. **A "Mr. Lucky" reaction.** Done in PR #69.
+    > "add one more suggested comment "прушник" - "mr lucky" or something like
+    > that in English"
+    - A ninth reaction button, "😎 Mr. Lucky" ("😎 Прушник" in Russian), right
+      after "🍀 Lucky!", on the website and in the app.
+    - The app takes its buttons from the server, so an app already on a phone
+      shows it too, without an update.
+
+## Status (2026-11-23)
+
+- **A "Mr. Lucky" reaction (owner, Backlog item 29):** PR #69.
+  - "😎 Mr. Lucky" / "😎 Прушник", the ninth reaction, after "Lucky!".
+  - Checked on a local server in headless Chromium, in English and Russian:
+    the nine buttons wrap onto three rows on a 390px phone and on a desktop,
+    no page scrolls sideways, and the bubble reached the other screen.
+  - No load-test row: another project's browser tests kept the machine
+    busy. The change adds a name to two lists, which no poll or page run
+    loops over more than once.
 
 - **The app's dice (owner: "Dice look ugly", Backlog item 28):** PR #68.
   - The pips crowded the dice's rounded corners (20% and 80% of the die; the
@@ -2143,6 +2160,15 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-23: the "Mr. Lucky" reaction (Claude Code, PR #69)**
+
+- "Прушник" is slang for someone luck keeps following; "Mr. Lucky" is the
+  owner's English for it.
+- 😎 is my choice: most reactions are faces or hands, and 🍀 is "Lucky!"'s.
+  It sits right after "Lucky!", so the two lucky ones are side by side.
+- A reaction added is protocol 1 (docs/API.md): the app draws the buttons in
+  `info.reaction_list`, and a bubble's words come with its event.
 
 **2026-11-21: the app's dice (Claude Code, PR #68)**
 
