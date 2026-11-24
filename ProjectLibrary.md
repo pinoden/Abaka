@@ -178,6 +178,7 @@ Python + Streamlit.
 | `abaka/effects.py` | What reactions and effects say, for the web page and for apps: a reaction's emoji and label, who sent it to whom, an effect's banner. No Streamlit |
 | `abaka/rules.py` | The rules players read, in English and Russian: Markdown for the web page, blocks for apps (`rules_blocks`). No Streamlit |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
+| `abaka/races.py`, `ui_components/races.py` | The races for the shared bonuses (cells left in column I and II, rows two players are one cell from), for the web page and apps; and their box under the dice |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, the rules dialog (its text is `abaka/rules.py`) |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
 | `tests/` | `unittest` tests |
@@ -598,6 +599,18 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
       `data-testid="stBaseButton-pillsActive"` in 1.48, `aria-checked="true"`
       in 1.67.
   - An option that earns a bonus says so: "Sum · 11 · bonus +52".
+- The foot of the play card shows the races for the shared bonuses while the
+  game is played (Backlog item 30). `abaka/races.py` works them out, and the
+  API sends the same words to apps (`state.races`):
+  - a small table of the cells each player has left in column I and II, while
+    that column's bonus is undecided, someone can still earn it, and someone
+    has written in it. The fewest are bold. A player whose bonus there is
+    crossed out is grey, with ✕: completing the column first still closes it
+    for the others;
+  - a gold line for the rows where two or more players are one cell from the
+    bonus and one of them can still earn it ("One cell to the bonus for you
+    and Bob: Sum.");
+  - column III is each player's own (`bonus.py`), so it is no race.
 - Game buttons (Throw, Roll dice, the two Reroll buttons, the confirm button)
   make their move in an `on_click` callback (`ui_components/actions.py`), so a
   move costs one script run instead of two (the second came from
@@ -682,7 +695,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1371,7 +1384,56 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - The app takes its buttons from the server, so an app already on a phone
       shows it too, without an update.
 
+30. **The races for the shared bonuses, next to the dice.** Done in PR #70.
+    > (a tester, through the owner) "Чего еще не хватает (но это уже из
+    > необязательного) - так это подсказок/ предупреждений в борьбе за премии.
+    > Например, при борьбе за столбец - сколько осталось клеток до столбца у
+    > тебя и у соперника. Поскольку тут сразу таблицу не видно, надо крутить
+    > вниз, считать, то это было бы удобно. Или еще, например, предупреждение,
+    > что тебя догнали по строчке, если у тебя осталась одна клеточка до
+    > премии"
+    - Under the dice, on the website and in the app, while a game is played:
+      - "Cells to the bonus": how many cells each player still has to fill in
+        column I and in column II, while that bonus is still to be won;
+      - a gold line when two or more players are one cell from the same row's
+        bonus ("One cell to the bonus for you and Bob: Sum."). Whoever fills
+        it first decides that bonus, so this is the warning that you have been
+        caught up, or have caught up.
+    - Column III is no race: each player earns their own.
+    - No rule changed: the box counts what the board shows.
+
 ## Status (2026-11-23)
+
+- **The races for the shared bonuses (a tester, through the owner; Backlog
+  item 30):** PR #70.
+  - Under the dice while a game is played, on the website and in the app: the
+    cells each player has left in column I and II, and a gold warning for rows
+    where two or more players are one cell from the bonus.
+  - `abaka/races.py` works it out, in the viewer's language. The website draws
+    it (`ui_components/races.py`). The API sends it with every state (`races`;
+    protocol 1 kept, a field added), so the app shows the same words.
+  - Checked:
+    - 14 new tests (`tests/test_races.py`). Among them, random whole games in
+      which every race shown matches the board, and a row race shown is
+      decided by the next completion of that row (58 times in those games).
+    - Five deliberate breakages of the logic: four failed the tests. The
+      fifth (ignoring that a column was already decided) changes nothing
+      anyone sees, since nobody can still earn a decided column.
+    - The website check looks for the box after the first move, and on the
+      other screen of the online game. With the box switched off, it failed.
+    - The app's browser check (all seven flows) looks for it too, and on the
+      other phone reads 14 cells left in column I for the player who moved.
+      The app's client tests check every move's counts against the board.
+    - In headless Chromium at 390px and 1300px, in English and Russian, the
+      website and the app's web build: no sideways scrolling.
+  - No load-test row: another project's tests kept the machine busy (72 to 90
+    of 100 polls answered, where a quiet machine answers 97 to 100). Main and
+    the branch, measured in turn from two equal copies, three rounds each,
+    gave the same: 27% and 26% CPU, median poll 9.6 and 8.2 ms, page run 130
+    and 112 ms. The box itself costs about 0.3 ms of a page run with five
+    players, and polls never draw it.
+  - Not checked on the emulator, which was not running. The web build runs
+    the same code.
 
 - **A "Mr. Lucky" reaction (owner, Backlog item 29):** PR #69.
   - "😎 Mr. Lucky" / "😎 Прушник", the ninth reaction, after "Lucky!".
@@ -1928,13 +1990,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 294 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 308 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  294 run and 56 are skipped (9 need a database or psycopg; the others need
+  308 run and 57 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  296 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
+  310 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
   scan reads both quotes). The phone app has its own 45 tests (`node --test`).
   8 against a real server (`mobile/tests/api.test.ts`: complete games on one
@@ -1990,7 +2052,12 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   (`test_loadtest_baseline.py`: rows read back, a slowdown flagged, only
   comparable rows compared). 12 club tests
   (`test_clubs.py`: ratings, the running score, club tables, a member once
-  in an online club game, saving, the club pages through the app). CI runs them on 3.13 with
+  in an online club game, saving, the club pages through the app). 14 race
+  tests (`test_races.py`: cells left in column I and II, a crossed-out
+  column, column III left out, decided races gone, rows one cell from the
+  bonus and who can still win them, three players, Russian, random whole
+  games against the board and the bonus rules, the API, the page with
+  hostile names). CI runs them on 3.13 with
   Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 21 database
   tests (`test_postgres.py`: the Postgres repository's contract, background database writes, where games are saved, the secret's name, a dropped
   connection, an unreachable database, a store on Postgres, the mirrored
@@ -2160,6 +2227,37 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-23: the races for the shared bonuses (Claude Code, PR #70)**
+
+- A tester, through the owner, asked for hints in the fight for bonuses
+  ("optional"): how many cells are left to a column for you and the opponent,
+  since on a phone the board is below the dice and has to be scrolled and
+  counted; and a warning that you have been caught up in a row when you have
+  one cell left to its bonus.
+- The races are the bonuses that the first player to complete decides for
+  everyone (`bonus.py`): every row, and columns I and II. Column III is each
+  player's own, so it is left out.
+- A column is shown from its first written cell until its bonus is decided,
+  or until nobody can earn it. A player who crossed out a combination in it
+  can no longer earn it, but completing it first still closes it for the
+  others. So their count stays, grey with ✕, and a note says why.
+- The row warning is the tester's case: two or more players one cell from the
+  same row's bonus, at least one of whom can still win it. It is shown to
+  everyone at the table, with the viewer named first ("you and Bob").
+  - A player one cell away alone gets no line: there is no race to warn about.
+  - Nor does a row where one player is one cell away and the others are
+    further. Late in a game that is most rows; the board shows them.
+- The words come from the server with the state, as for effects (PR #64). So
+  the website and the app say the same, and the rules for races stay in one
+  place. The Russian avoids declining names: "Одна клетка до бонуса — вы и
+  Ann: Сумма."
+- The box sits at the foot of the play card, under the move picker, so the
+  dice and the buttons keep their place on a phone.
+- No load-test row, for the second pull request in a row (PR #69 too): the
+  machine was busy with another project. Main and the branch were measured in
+  turn instead, as in PR #64. The next pull request that changes the app's
+  code on a quiet machine records one.
 
 **2026-11-23: the "Mr. Lucky" reaction (Claude Code, PR #69)**
 

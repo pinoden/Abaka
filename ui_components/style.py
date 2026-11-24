@@ -225,6 +225,24 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-series-head { color: #9AA0B5; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .ab-series b { color: #1C2033; }
 .ab-series-club { margin-left: auto; color: #9A6700; font-weight: 600; font-size: .8rem; }
+/* ---------- the races for shared bonuses (races.py), at the foot of the play card ---------- */
+.ab-race { margin-top: .8rem; padding: .55rem .7rem; border-radius: 12px; background: #F6F7FB; color: #4A4F68;
+  font-size: .85rem; display: flex; flex-direction: column; gap: .4rem; }
+.ab-race-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
+.ab-race-table th, .ab-race-table td { padding: .1rem .25rem; border: none; background: none; text-align: center;
+  font-size: .85rem; line-height: 1.35; }
+.ab-race-table th:first-child { text-align: left; width: 40%; padding-left: 0; color: #4A4F68; font-weight: 600; }
+.ab-race-table thead th { font-size: .72rem; font-weight: 700; color: #6B7089; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.ab-race-table thead th.ab-race-title { color: #9AA0B5; text-transform: uppercase; letter-spacing: .06em;
+  white-space: normal; }
+.ab-race-table thead th.me { color: #4F46E5; }
+.ab-race-table td { color: #1C2033; font-variant-numeric: tabular-nums; }
+.ab-race-table td.lead { font-weight: 800; }
+.ab-race-table td.off { color: #9AA0B5; }
+.ab-race-x { margin-left: .2rem; font-size: .8em; }
+.ab-race-row { padding: .35rem .55rem; border-radius: 9px; background: #FFF4DB; color: #8A5A00; font-weight: 600; }
+.ab-race-note { font-size: .75rem; color: #9AA0B5; line-height: 1.35; }
 .ab-club-result { display: flex; flex-wrap: wrap; gap: .3rem .9rem; justify-content: center; margin: -.4rem 0 1rem;
   padding: .6rem .8rem; border-radius: 12px; background: #EEF0FF; color: #4A4F68; font-size: .9rem; }
 .ab-club-result > div { width: 100%; text-align: center; font-size: .75rem; font-weight: 700; color: #4F46E5;

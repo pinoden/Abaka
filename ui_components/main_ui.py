@@ -17,6 +17,7 @@ from ui_components.actions import run_action, show_action_error
 from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
 from abaka.i18n import LANGUAGES, and_join, md, picked_dice_note, rerolled_dice_note, t
 from ui_components.move_selection import render_move_picker
+from ui_components.races import render_races
 from ui_components.rules import rules_dialog
 from ui_components.scoreboard import render_scoreboard
 from ui_components.style import brand_html, chip, die_uri
@@ -94,6 +95,7 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
                     target = None
                 else:
                     target = _render_play_panel(engine, me)
+                    render_races(engine, me)
                 if below_play is not None:
                     below_play()
             if after_play_card is not None:

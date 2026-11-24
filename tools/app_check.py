@@ -13,15 +13,16 @@ Build the app for the web first, then check it:
 The checks:
 - home in English and Russian, and the rules (How to play) from it in Russian;
 - a game on one device: the starting throw, a roll, two dice picked and rolled again, the
-  best option written, a row crossed out, and both players' columns on the screen; the
+  best option written, the race for column I's bonus under the dice, a row crossed out,
+  and both players' columns on the screen; the
   rules opened in the middle of the game and closed again, back to the same game; then
   home and back to it from "Continue a game", and once it has ended (the check plays it
   to the end through the API) it is not offered there any more;
 - an online game between two phones (the second one 360px wide, in Russian): one creates
   it, goes home and comes back to the waiting room (the seat is kept), the other opens its
   code and joins, the game's code in full at the top (the widest there can be), the
-  starting throws, a roll and a move seen on the other phone, then a reaction and a chat
-  message;
+  starting throws, a roll and a move seen on the other phone, with the mover's cells left
+  in column I, then a reaction and a chat message;
 - a player on the website and a player in the app at one table: each sees the other's
   dice, move, reaction and chat message (the server must serve the pages too, as
   abaka_server.py does);
@@ -323,6 +324,7 @@ def check_one_device(browser, url: str, server: str, games: List[str]) -> None:
         phone.until(lambda: "Roll 2 of 3" in phone.text(), "the reroll")
         label = write_best(phone)
         phone.see(phone.id("last-move"), "the last move under the board")
+        phone.see(phone.id("races").filter(has_text="Column I"), "the race for column I's bonus under the dice")
         board_fits(phone)
         # The next player crosses a row out.
         phone.see(phone.id("roll"), "the next player's turn").click()
@@ -390,6 +392,10 @@ def check_online(browser, url: str, games: List[str]) -> None:
         watcher.until(lambda: watcher.dice() == dice, f"the same dice on both phones ({dice})")
         write_best(roller)
         watcher.see(watcher.id("last-move"), "the move, on the other phone")
+        mover = 0 if roller is ann else 1
+        watcher.until(lambda: watcher.id(f"race-left-0-{mover}").count() > 0
+                      and watcher.id(f"race-left-0-{mover}").first.inner_text().strip() == "14",
+                      "14 cells left in column I for the player who moved, on the other phone")
         watcher.until(lambda: watcher.id("roll").count() > 0, "the turn passing to the other phone")
         # A reaction and a chat message reach the other phone (Bob's is in Russian).
         ann.see(ann.id("react-lucky"), "the reaction buttons").click()
