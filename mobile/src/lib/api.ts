@@ -126,6 +126,8 @@ export type Game = {
 export type State = {
   protocol: number;
   code: string;
+  /** The game's secret key (a state is only sent to someone in the game): the full code is `code-key`. */
+  key: string;
   version: number;
   seen: string;
   now: number;
@@ -211,15 +213,16 @@ export class ApiError extends Error {
  * can make the server read a game from its storage. Null when the server cannot be asked
  * (offline): show what the device remembers.
  */
-export async function gamesToContinue(connection: Connection, codes: string[], limit: number):
-    Promise<{ open: State[]; over: string[]; gone: string[] } | null> {
+export async function gamesToContinue(connection: Connection, games: { code: string; key?: string }[],
+                                      limit: number): Promise<{ open: State[]; over: string[]; gone: string[] } | null> {
   const open: State[] = [];
   const over: string[] = [];
   const gone: string[] = [];
-  for (const code of codes) {
+  for (const { code, key } of games) {
     if (open.length === limit) break;
     try {
-      const { state } = await connection.request<{ state: State }>('state', { code });
+      // With the game's key: the code alone opens nothing, and the invite's view says whether it is over.
+      const { state } = await connection.request<{ state: State }>('state', { code, ...(key ? { key } : {}) });
       if (state.phase === 'over') over.push(code);
       else open.push(state);
     } catch (e) {
@@ -260,6 +263,8 @@ export const TIMINGS: Timings = {
 type Watch = {
   code: string;
   token?: string;
+  /** The game's key, so that the game can be watched without a seat (the invite). */
+  key?: string;
   onState: (state: State) => void;
   onError: (error: ApiError) => void;
   /** The latest state handed to `onState`. */
@@ -379,8 +384,8 @@ export class Connection {
    * one has opened (while one slides over the other) must not stop the next screen's game.
    */
   startWatching(code: string, token: string | undefined, onState: (state: State) => void,
-                onError: (error: ApiError) => void): () => void {
-    const watch: Watch = { code, token, onState, onError, shown: null, since: 0, chat: [] };
+                onError: (error: ApiError) => void, key?: string): () => void {
+    const watch: Watch = { code, token, key, onState, onError, shown: null, since: 0, chat: [] };
     this.watch = watch;
     this.sendWatch();
     return () => {
@@ -462,6 +467,7 @@ export class Connection {
     if (!watch) return;
     const fields: Record<string, unknown> = { code: watch.code };
     if (watch.token) fields.token = watch.token;
+    if (watch.key) fields.key = watch.key;
     this.ask<{ state: State }>('watch', fields, this.timings.requestMs, watch).then(
       () => { /* the state went to the watcher (receive) */ },
       (error: ApiError) => {
@@ -480,7 +486,8 @@ export class Connection {
     const watch = this.watch;
     this.asking = true;
     const question = watch
-      ? this.ask<{ seen?: string }>('seen', { code: watch.code }, this.timings.heartbeatAnswerMs)
+      ? this.ask<{ seen?: string }>('seen', { code: watch.code, token: watch.token, key: watch.key },
+                                    this.timings.heartbeatAnswerMs)
       : this.ask<{ seen?: string }>('unwatch', {}, this.timings.heartbeatAnswerMs);
     question.then(
       (answer) => {

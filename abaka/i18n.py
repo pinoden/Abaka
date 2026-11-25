@@ -218,6 +218,19 @@ RU = {
     "Game code": "Код игры",
     "e.g. Q47CH": "например, Q47CH",
     "Join a friend's game, or continue a saved game.": "Присоединиться к игре друга или продолжить сохранённую.",
+    "e.g. Q47CH-8XJ4PN2R": "например, Q47CH-8XJ4PN2R",
+    "The full code, or the game's link. Join a friend's game, or continue a saved game.":
+        "Полный код или ссылка на игру. Присоединиться к игре друга или продолжить сохранённую.",
+    "That is only the first part of a game's code. The full code looks like Q47CH-8XJ4PN2R: ask a player of "
+    "the game for it.":
+        "Это только первая часть кода игры. Полный код выглядит так: Q47CH-8XJ4PN2R. Попросите его у игрока "
+        "этой партии.",
+    "This link is not complete": "Ссылка неполная",
+    "A game opens only with its full link or code, such as Q47CH-8XJ4PN2R. Ask a player of the game to send it "
+    "again.":
+        "Игра открывается только по полной ссылке или полному коду, например Q47CH-8XJ4PN2R. Попросите игрока "
+        "этой партии прислать их ещё раз.",
+    "The game's full code, to open it on another device:": "Полный код игры, чтобы открыть её на другом устройстве:",
     "Open game": "Открыть игру",
     "No game with that code. Check it and try again.": "Игры с таким кодом нет. Проверьте код и попробуйте ещё раз.",
     "You started a lot of games just now. Please wait a few minutes.":
@@ -233,8 +246,8 @@ RU = {
     "Same device · {code}": "Одно устройство · {code}",
     "Online · {code}": "Онлайн · {code}",
     "{code} · {kind} · {names}": "{code} · {kind} · {names}",
-    "Game {code} is saved. To continue it, open it from this page or enter the code {code}.":
-        "Игра {code} сохранена. Чтобы продолжить, откройте её на этой странице или введите код {code}.",
+    "Game {code} is saved. To continue it, open it from this page or enter its full code {full}.":
+        "Игра {code} сохранена. Чтобы продолжить, откройте её на этой странице или введите её полный код {full}.",
     "This game was opened in another tab or device, so this tab no longer controls it.":
         "Эта игра открыта в другой вкладке или на другом устройстве, поэтому эта вкладка больше ею не управляет.",
     "That game is no longer available.": "Эта игра больше недоступна.",

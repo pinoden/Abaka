@@ -17,6 +17,7 @@ from abaka.clubs import (START_RATING, ClubError, ClubStore, is_club_code, membe
 from abaka.repository import FileRepository
 from abaka.rooms import RoomStore
 from abaka.moves import cross_options, score_options
+from abaka.rooms import full_code
 
 try:
     from streamlit.testing.v1 import AppTest
@@ -60,6 +61,11 @@ def finish_game(store, code, token):
             move = (score_options(engine) or cross_options(engine))[0]
             (store.cross if move.cross else store.score)(code, token, move.category, move.slot)
     raise AssertionError("the game did not finish")
+
+
+def link(store, code):
+    """A game's link: its full code (the code alone opens nothing)."""
+    return full_code(code, store.view(code).key)
 
 
 class TestRatings(unittest.TestCase):
@@ -160,14 +166,14 @@ class TestClubs(unittest.TestCase):
         code, ann = self.store.create("Ann", 3, club=self.club)
         for name in (" ann ", "ANN", "Ann"):
             with self.subTest(name=name), self.assertRaises(rooms.RoomError) as refused:
-                self.store.join(code, name)
+                self.store.join(code, name, self.store.view(code).key)
             self.assertEqual(str(refused.exception), "Each player needs a different name.")
-        self.store.join(code, "Bob")
+        self.store.join(code, "Bob", self.store.view(code).key)
         self.assertEqual(self.store.view(code).names, ["Ann", "Bob"])
         # Outside a club, nothing changed: an exact twin is told apart, another spelling is kept.
         plain, _ = self.store.create("Ann", 3)
-        self.store.join(plain, "Ann")
-        self.store.join(plain, "ann")
+        self.store.join(plain, "Ann", self.store.view(plain).key)
+        self.store.join(plain, "ann", self.store.view(plain).key)
         self.assertEqual(self.store.view(plain).names, ["Ann", "Ann (2)", "ann"])
 
     def test_codes_and_names(self):
@@ -264,7 +270,7 @@ class TestClubPages(unittest.TestCase):
         for rating in ratings:
             self.assertIn(f"<b>{rating}</b>", html)
 
-        results = self.page(room=code)  # the same-device game opens on its results screen
+        results = self.page(room=link(store, code))  # the same-device game opens on its results screen
         html = self.html(results)
         self.assertIn("Club rating · Friday &lt;b&gt;dice&lt;/b&gt;", html)
         self.assertIn("Games at this table: 1", html)
@@ -293,7 +299,7 @@ class TestClubPages(unittest.TestCase):
 
         # Someone joining an online club game is offered the players not seated yet.
         online, _ = store.create("Bob", players=2, club=club)
-        invite = self.page(room=online)
+        invite = self.page(room=link(store, online))
         self.assertEqual(invite.selectbox(key="join_name-pick").options, ["Ann"])
 
         type_new_option(page.selectbox(key="club_p2-pick"), "Zed")  # a new player, typed in

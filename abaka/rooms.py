@@ -21,6 +21,7 @@ with `report_every`, a stats line per period (the app: once a minute).
 from __future__ import annotations
 
 import gc
+import hmac
 import logging
 import os
 import re
@@ -30,6 +31,7 @@ import threading
 import time
 import unicodedata
 from pathlib import Path
+from urllib.parse import unquote
 from typing import Dict, List, Optional, Union
 
 from .engine import GameEngine
@@ -41,6 +43,11 @@ from .scoring import is_royal_full, score_category
 # No 0/O or 1/I, so codes are easy to read aloud and type.
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 5
+# Every game also has a secret key, so that a game's code alone (seen on a screen, said aloud,
+# guessed) opens nothing: its link and its full code carry both, "K7M2Q-8XJ4PN2R" (owner,
+# Backlog item 31). 8 characters of CODE_ALPHABET are 40 bits: a thousand guesses a second
+# would take 17 years on average for one game, and games are deleted after a week unused.
+KEY_LENGTH = 8
 MIN_PLAYERS = 2
 MAX_PLAYERS = 5
 MAX_NAME_LENGTH = 20
@@ -71,6 +78,8 @@ MESSAGE_WINDOW_SECONDS = 3.0          # ...in this many seconds (about one a sec
 # the banner names the first in this list.
 _SPARKLE_HITS = (Category.KARE, Category.FULL, Category.LARGE_STRAIGHT, Category.SMALL_STRAIGHT)
 _CODE_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, CODE_LENGTH))
+_KEY_PATTERN = re.compile("^[%s]{%d}$" % (CODE_ALPHABET, KEY_LENGTH))
+_UNCHECKED = object()  # RoomStore._get: the caller already holds a seat, no key needed
 
 log = logging.getLogger("abaka")
 
@@ -120,6 +129,27 @@ def normalize_code(code: str) -> str:
     return "".join((code or "").split()).upper()
 
 
+def full_code(code: str, key: str) -> str:
+    """What players share and type to open a game: its code and its key, "K7M2Q-8XJ4PN2R"."""
+    return f"{code}-{key}"
+
+
+def split_code(text: str) -> "tuple[str, str]":
+    """
+    (code, key) from what a player typed or pasted: a full code ("K7M2Q-8XJ4PN2R", any case,
+    with or without the dash or spaces) or a game's link (its ?room=). The key is "" when
+    only a code was given (or an old link, from before games had keys).
+    """
+    text = (text or "").strip()
+    found = re.search(r"[?&]room=([^&#\s]*)", text)
+    if found:
+        text = unquote(found.group(1))
+    plain = "".join(ch for ch in text.upper() if ch.isalnum())
+    if len(plain) == CODE_LENGTH + KEY_LENGTH:
+        return plain[:CODE_LENGTH], plain[CODE_LENGTH:]
+    return plain, ""
+
+
 def within_limit(times: List[float], now: float, limit: int, window: float) -> "tuple[bool, List[float]]":
     """
     A simple rate limit: (allowed, the times to keep). Allowed while fewer than `limit` of
@@ -143,8 +173,9 @@ class RoomView:
                  version: int, games_played: int, capacity: int, local: bool = False,
                  club: Optional[str] = None, results: Optional[List[dict]] = None,
                  picked: tuple = (), rerolled: tuple = (), picks: int = 0, events: tuple = (),
-                 chat: tuple = (), last_event_id: int = 0) -> None:
+                 chat: tuple = (), last_event_id: int = 0, key: str = "") -> None:
         self.code = code
+        self.key = key                # the game's secret key: show it only to its players (full_code)
         self.names = names            # seated players, in seat order (seat 0 created the game)
         self.engine = engine
         self.version = version
@@ -188,6 +219,7 @@ def series_wins(results: List[dict], players: int) -> "tuple[List[int], int]":
 class _Room:
     def __init__(self, code: str, capacity: int, local: bool = False) -> None:
         self.code = code
+        self.key = _new_key()   # a game's code alone opens nothing (KEY_LENGTH)
         self.capacity = capacity
         self.local = local
         self.names: List[str] = []
@@ -233,7 +265,7 @@ class _Room:
 
     def to_data(self) -> dict:
         return {
-            "code": self.code, "capacity": self.capacity, "local": self.local,
+            "code": self.code, "key": self.key, "capacity": self.capacity, "local": self.local,
             "names": list(self.names), "tokens": list(self.tokens),
             "engine": engine_to_data(self.engine) if self.engine is not None else None,
             "version": self.version, "games_played": self.games_played, "updated_at": self.updated_at,
@@ -243,6 +275,8 @@ class _Room:
     @classmethod
     def from_data(cls, d: dict) -> "_Room":
         room = cls(d["code"], int(d["capacity"]), bool(d.get("local", False)))
+        # A game saved before games had keys gets one now (a new one, from _Room); the store saves it.
+        room.key = d["key"] if _KEY_PATTERN.match(str(d.get("key") or "")) else room.key
         room.names = list(d["names"])
         room.tokens = list(d["tokens"])
         room.engine = engine_from_data(d["engine"]) if d.get("engine") else None
@@ -375,22 +409,23 @@ class RoomStore:
         self._write(pending)
         return code, token
 
-    def resume_local(self, code: str) -> str:
-        """Continue a same-device game from its link or code (on any browser). Returns its token."""
+    def resume_local(self, code: str, key: Optional[str]) -> str:
+        """Continue a same-device game from its link or full code (on any browser). Returns its token."""
         with self._lock:
-            room = self._get(code)
+            room = self._get(code, key)
             if not room.local:
                 raise RoomError("This is an online game: join it or rejoin as one of its players.")
             return room.tokens[0]
 
-    def join(self, code: str, name: str) -> str:
+    def join(self, code: str, name: str, key: Optional[str]) -> str:
         """
-        Take a free seat in a room. The game starts once every seat is taken. In a club game a
-        name already at the table (ignoring capitals and spaces) is refused: the club counts it
-        as one member, who would then play against themselves.
+        Take a free seat in a room, with its key (from the link or the full code). The game
+        starts once every seat is taken. In a club game a name already at the table (ignoring
+        capitals and spaces) is refused: the club counts it as one member, who would then play
+        against themselves.
         """
         with self._lock:
-            room = self._get(code)
+            room = self._get(code, key)
             if room.engine is not None or len(room.names) >= room.capacity:
                 raise RoomError("This game is already full.")
             seat_no = len(room.names) + 1
@@ -446,13 +481,13 @@ class RoomStore:
             pending = self._snapshot(room)
         self._write(pending)
 
-    def reclaim(self, code: str, seat: int) -> str:
+    def reclaim(self, code: str, seat: int, key: Optional[str]) -> str:
         """
-        Take over an existing seat (after a page refresh or a device switch).
-        The seat gets a fresh token, so whichever tab held it before stops controlling it.
+        Take over an existing seat (after a page refresh or a device switch), with the game's
+        key. The seat gets a fresh token, so whichever tab held it before stops controlling it.
         """
         with self._lock:
-            room = self._get(code)
+            room = self._get(code, key)
             if not 0 <= seat < len(room.names):
                 raise RoomError("That seat does not exist.")
             if room.local:
@@ -466,8 +501,16 @@ class RoomStore:
 
     # ----- reading -----
     def exists(self, code: str) -> bool:
+        """Whether there is a game with this code. Only for pages already in it: it says nothing
+        to someone who has only the code (opens() needs the key)."""
         with self._lock:
             return self._room(code) is not None
+
+    def opens(self, code: str, key: Optional[str]) -> bool:
+        """Whether this key opens the game with this code (false too if there is no such game)."""
+        with self._lock:
+            room = self._room(code)
+            return room is not None and _key_matches(room, key)
 
     def seat_of(self, code: str, token: Optional[str]) -> Optional[int]:
         """Seat index for this token, or None if the token no longer controls a seat."""
@@ -494,7 +537,7 @@ class RoomStore:
             return RoomView(room.code, list(room.names), room.engine, room.version, room.games_played,
                             room.capacity, room.local, room.club, list(room.results),
                             room.picked, room.rerolled, room.picks, tuple(room.events), tuple(room.chat),
-                            room.last_event_id)
+                            room.last_event_id, room.key)
 
     def seen(self, code: str):
         """
@@ -725,11 +768,16 @@ class RoomStore:
             counts.get("left memory", 0), saves, 1000 * save_seconds / saves if saves else 0.0,
             1000 * slowest, failed, gc_runs, "%.0f MB" % memory if memory is not None else "unknown")
 
-    def _get(self, code: str) -> _Room:
+    def _get(self, code: str, key=_UNCHECKED) -> _Room:
+        """
+        The room with this code. Given a `key` (None and "" included), only if it is the room's
+        key: a wrong or missing key is refused exactly as a game that does not exist, so trying
+        codes and keys tells nothing about which games there are.
+        """
         if self._retired:
             raise RoomError("The app was just updated. Please try again.")
         room = self._room(code)
-        if room is None:
+        if room is None or (key is not _UNCHECKED and not _key_matches(room, key)):
             raise RoomError("Game not found. Check the code, or ask for a new invite.")
         return room
 
@@ -861,6 +909,12 @@ class RoomStore:
             return None
         self._rooms[code] = room
         self._count("loaded")
+        if data.get("key") != room.key:
+            # Saved before games had keys: keep the key it got now, or the next load would make
+            # another and its players' links would stop working. A newer version, or the save is
+            # refused. Under the lock, once per such game.
+            room.version += 1
+            self._write(self._snapshot(room))
         return room
 
 
@@ -882,6 +936,15 @@ def _memory_mb() -> Optional[float]:
     except (ImportError, OSError, ValueError):
         return None
     return peak / 2 ** 20 if sys.platform == "darwin" else peak / 1024  # bytes on macOS, KB on Linux
+
+
+def _new_key() -> str:
+    return "".join(secrets.choice(CODE_ALPHABET) for _ in range(KEY_LENGTH))
+
+
+def _key_matches(room: _Room, key: Optional[str]) -> bool:
+    typed = "".join(ch for ch in (key or "").upper() if ch.isalnum())
+    return hmac.compare_digest(typed.encode(), room.key.encode())
 
 
 def _distinct(name: str, taken: List[str]) -> str:

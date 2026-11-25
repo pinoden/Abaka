@@ -12,6 +12,7 @@ import abaka.rooms as rooms
 import code_version
 from abaka.rooms import clean_name
 from abaka.i18n import md
+from abaka.rooms import full_code
 
 try:
     from streamlit.testing.v1 import AppTest
@@ -21,6 +22,11 @@ except ImportError:  # e.g. the base Python 3.8 on the owner's machine
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "abaka_ui.py")
 IMAGE = "![i](http://e.vil/a)"
 LINK = "[x](http://e.vil)"
+
+
+def link(store, code):
+    """A game's link: its full code (the code alone opens nothing)."""
+    return full_code(code, store.view(code).key)
 
 
 class TestMarkdownEscaping(unittest.TestCase):
@@ -78,21 +84,21 @@ class TestNamesInTheApp(unittest.TestCase):
         self.page()
         store = self.stores[-1]
         code, host = store.create(IMAGE)
-        store.join(code, LINK)
+        store.join(code, LINK, store.view(code).key)
 
         # A visitor sees "Rejoin as" buttons with both names: escaped.
-        labels = [b.label for b in self.page(room=code).button if b.key and b.key.startswith("rejoin-")]
+        labels = [b.label for b in self.page(room=link(store, code)).button if b.key and b.key.startswith("rejoin-")]
         self.assertEqual(labels, [md(IMAGE), md(LINK)])
 
         # The guest waits while the host throws: the caption names the host, escaped.
-        guest = store.reclaim(code, 1)
+        guest = store.reclaim(code, 1, store.view(code).key)
         captions = [c.value for c in self.page(room=code, room_code=code, seat_token=guest).caption]
         self.assertTrue(any(md(IMAGE) in c for c in captions), captions)
         self.assertFalse(any(IMAGE in c for c in captions), captions)
 
         # A same-device game: the Throw button names the player, escaped.
         local, _ = store.create_local([LINK, "Bob"])
-        at = self.page(room=local)
+        at = self.page(room=link(store, local))
         self.assertEqual(at.button(key="start-throw").label, "Throw for " + md(LINK))
 
 

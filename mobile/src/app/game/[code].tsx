@@ -22,7 +22,8 @@ import { useApp } from '@/lib/app';
 import { memberKey, offered } from '@/lib/clubs';
 import { errorText } from '@/lib/errors';
 import { nothingShown, type Show, showsFor } from '@/lib/shows';
-import { forgetGame, saveGame, tokenFor, updateGame } from '@/lib/storage';
+import { fullCode, splitCode } from '@/lib/codes';
+import { forgetGame, keyFor, saveGame, tokenFor, updateGame } from '@/lib/storage';
 
 type Act = (op: string, fields?: Record<string, unknown>, move?: boolean) => Promise<void>;
 type Pick = (dice: number[]) => void;
@@ -34,9 +35,12 @@ type Talk = {
 
 export default function GameScreen() {
   const params = useLocalSearchParams<{ code: string }>();
-  const code = String(params.code ?? '').trim().toUpperCase();
+  // A game's full code (from "Open game"), or the code of a game this device remembers with its key.
+  const opened = splitCode(String(params.code ?? ''));
+  const code = opened.code;
   const { t, connection, online } = useApp();
   const [token, setToken] = useState<string | null | undefined>(undefined); // undefined: not read yet
+  const [key, setKey] = useState<string | null>(opened.key || null);
   const [state, setState] = useState<State | null>(null);
   const [gone, setGone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,19 +54,28 @@ export default function GameScreen() {
 
   useEffect(() => {
     let live = true;
-    tokenFor(code).then((saved) => { if (live) setToken(saved); });
+    Promise.all([tokenFor(code), keyFor(code)]).then(([savedToken, savedKey]) => {
+      if (!live) return;
+      setKey((typed) => typed ?? savedKey);
+      setToken(savedToken);
+    });
     return () => { live = false; };
   }, [code]);
 
-  /** A seat taken (join, rejoin, resume): keep its token, and watch the game with it. */
+  /** A seat taken (join, rejoin, resume): keep its token and the game's key, and watch the game with them. */
   const keepSeat = useCallback(async (seat: Seat) => {
-    await saveGame({ code: seat.code, local: seat.state.local, names: seat.state.names }, seat.token);
+    await saveGame({ code: seat.code, key: seat.state.key, local: seat.state.local, names: seat.state.names },
+                   seat.token);
     setState(seat.state);
+    setKey(seat.state.key);
     setToken(seat.token);
   }, []);
 
+  // Neither a seat nor the key: the code alone opens nothing (Backlog item 31).
+  const incomplete = token === null && !key;
+
   useEffect(() => {
-    if (token === undefined) return;
+    if (token === undefined || incomplete) return;
     return connection.startWatching(
       code,
       token ?? undefined,
@@ -81,7 +94,7 @@ export default function GameScreen() {
         // A game on one device opened from its code: carry on at once (no seat to pick).
         if (!next.seated && next.can.includes('resume') && !resuming.current) {
           resuming.current = true;
-          connection.request<Seat>('resume', { code })
+          connection.request<Seat>('resume', { code, key })
             .then(keepSeat, (e) => setError(errorText(e, t)))
             .finally(() => { resuming.current = false; });
         }
@@ -95,23 +108,24 @@ export default function GameScreen() {
           setError(errorText(e, t));
         }
       },
+      key ?? undefined,
     );
     // t changes with the language; the connection watches again by itself then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, token, connection, keepSeat]);
+  }, [code, token, key, incomplete, connection, keepSeat]);
 
   /** Join the game, or take a seat back. */
   const takeSeat = useCallback(async (op: string, fields: Record<string, unknown>) => {
     setBusy(true);
     setError(null);
     try {
-      await keepSeat(await connection.request<Seat>(op, { code, ...fields }));
+      await keepSeat(await connection.request<Seat>(op, { code, key, ...fields }));
     } catch (e) {
       setError(errorText(e, t));
     } finally {
       setBusy(false);
     }
-  }, [code, connection, keepSeat, t]);
+  }, [code, key, connection, keepSeat, t]);
 
   const act: Act = useCallback(async (op, fields = {}, move = true) => {
     if (!state || !token) return;
@@ -167,7 +181,17 @@ export default function GameScreen() {
   };
 
   let body: ReactNode;
-  if (gone) {
+  if (incomplete) {
+    body = (
+      <Card testID="incomplete">
+        <Title>{t('This link is not complete')}</Title>
+        <Muted>
+          {t('A game opens only with its full link or code, such as Q47CH-8XJ4PN2R. Ask a player of the game to send it again.')}
+        </Muted>
+        <Button label={t('Go to start')} onPress={() => router.dismissTo('/')} />
+      </Card>
+    );
+  } else if (gone) {
     body = (
       <Card testID="gone">
         <Title>{t('Game not found')}</Title>
@@ -282,7 +306,7 @@ function WaitingRoom({ state, act, busy, onLeave }: {
   const joined = state.names.length;
   const share = async () => {
     try {
-      await Share.share({ message: state.code });
+      await Share.share({ message: fullCode(state.code, state.key) });
     } catch {
       // Sharing is not offered here: the code is on the screen.
     }
@@ -291,7 +315,10 @@ function WaitingRoom({ state, act, busy, onLeave }: {
     <Card testID="waiting">
       <Title>{t('Invite your friends')}</Title>
       <Muted>{t('Give your friends the game code. They open it under "Open game".')}</Muted>
-      <Text testID="game-code" selectable style={styles.code}>{state.code}</Text>
+      {/* The full code: the code, and under it its key (the code alone opens nothing). */}
+      <Text testID="game-code" selectable style={styles.code} accessibilityLabel={fullCode(state.code, state.key)}>
+        {state.code}{'\n'}<Text style={styles.codeKey}>{state.key}</Text>
+      </Text>
       <Button kind="secondary" label={t('Invite a friend')} onPress={share} />
       <Muted>
         {t('{joined} of {capacity} players are here. Waiting for {missing} more…', {
@@ -650,6 +677,7 @@ const styles = StyleSheet.create({
   },
   rulesButtonText: { fontSize: 17, fontWeight: '700', color: colors.accent },
   code: { fontSize: 34, fontWeight: '800', letterSpacing: 6, color: colors.text, textAlign: 'center' },
+  codeKey: { fontSize: 24, fontWeight: '700', letterSpacing: 4, color: colors.accent },
   waitingName: { fontSize: 16, color: colors.text },
   turn: { fontSize: 20, fontWeight: '700', color: colors.text },
   turnMine: { color: colors.accent },

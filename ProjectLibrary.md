@@ -337,15 +337,31 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     `POLL_CALM`, `POLL_IDLE`).
   - Streamlit fixes a fragment's interval where the fragment is defined, so
     there is one fragment function per interval.
-- The URL carries only `?room=CODE`, so it is safe to share. The seat token
-  stays in `st.session_state`. After a refresh, the player opens the link and
-  clicks their name; `store.reclaim` issues a new token and the old tab loses
-  control.
+- A game's code alone opens nothing (owner, Backlog item 31, PR #72). Every
+  room also has a secret `key` (8 characters of the code alphabet, saved with
+  the room), and players share the full code `CODE-KEY`
+  (`rooms.full_code`; "K7M2Q-8XJ4PN2R"):
+  - `store.join`, `store.reclaim` and `store.resume_local` take the key, and
+    `store.opens(code, key)` checks it. A missing or wrong key gets the same
+    "Game not found" as a game that does not exist.
+  - The URL carries `?room=CODE-KEY` (`rooms.split_code` reads it, a typed
+    full code, or a pasted link). It is the link to share with the players,
+    and never holds the seat token. `?room=CODE` alone shows "This link is not
+    complete", the same whether or not the game exists.
+  - The seat token stays in `st.session_state`. After a refresh, the player
+    opens the link and clicks their name; `store.reclaim` issues a new token
+    and the old tab loses control. So anyone with the link can still take a
+    seat by its name, as before; only the code alone no longer can.
+  - The game's code (without the key) is not secret: it shows in the top bar.
+    The waiting room shows the link and the full code, the game menu the full
+    code, for another device.
+  - A game saved before keys gets one the first time it is loaded, saved at
+    once (a version bump), so later loads keep it.
 - Same-device games are rooms too (`store.create_local`, `room.local`): every
   seat belongs to one token, the turn check is skipped, and nobody can join.
-  They get a code and `?room=CODE` like online games. Opening that link (a
-  reload, a dropped session, another device) or typing the code on the home
-  page continues the game at once (`store.resume_local`, no seat to pick).
+  They get a code and a link like online games. Opening that link (a reload,
+  a dropped session, another device) or typing the full code on the home page
+  continues the game at once (`store.resume_local`, no seat to pick).
 - Saving: the store keeps rooms through a repository (`abaka/repository.py`,
   chosen by `abaka_ui._repository()`).
   - Without a database, the app uses `FileRepository`, which writes each room
@@ -491,6 +507,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   Apps offer just that and never apply the rules themselves.
 - A state is drawn for one seat, the holder of the token. Tokens never appear
   in a state. Without a seat, the state shows only what the invite page shows.
+- A game's code alone opens nothing (Backlog item 31): `join`, `rejoin`,
+  `resume`, and `state` and `seen` without a seat need the game's `key` (as
+  `key`, or the full code in `code`), and a wrong one is `not_found`. Every
+  state carries the key, since only someone in the game gets a state
+  (`api._admit`). The live connection's watch keeps it for its pushes.
 - A move carries the `version` of the state it was chosen on. If the room has
   changed since, it is refused as `outdated`, like the web's buttons.
 - Texts come in the request's `lang` (en/ru). The call sets it for its thread
@@ -697,7 +718,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -912,6 +933,10 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       stored hashed. Tap-to-rejoin only when the seat's holder has gone
       quiet. An optional PIN for same-device games. The owner chooses the
       exact scheme.
+      - The owner chose the first layer (2026-11-25, Backlog item 31,
+        PR #72): a game's link and full code carry a secret key, and its
+        code alone opens nothing. Still open: protecting one seat from
+        another player who has the link.
     - [ ] Presence (who is online), rate limits, and longer game codes for
       new games.
     - [x] A load-test baseline recorded for every release. PR #47.
@@ -1214,6 +1239,27 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       (for example Fly.io, Render or Railway; check current prices), with
       Neon as it is, and a domain. The web app moves with it, so web and app
       players keep sharing games.
+      - The owner (2026-11-25): "we need to select host. I also don't mind
+        moving away from Streamlit for a web version." The comparison given
+        to the owner that day (prices from the hosts' pages and reviews of
+        2026-11; check again before paying):
+
+        | Host | A month | For this server |
+        |---|---|---|
+        | Fly.io | about $3.69 (512 MB, Virginia) | With one machine, a deploy stops the old one before starting the new: never two servers at once. Pay as you go; deploys from GitHub Actions with a token |
+        | Railway | $5 (includes $5 of use) | Deploys from GitHub by itself; during a deploy the old copy runs on, and how it treats live connections then is not documented |
+        | Render | $7 (512 MB) | Deploys from GitHub by itself; the old copy runs up to 30 s next to the new |
+        | Hetzner (US) | about $20 | Prices about tripled in 2026; a server to look after |
+
+      - Recommended: Fly.io in Virginia (`iad`, next to Neon's us-east-1).
+        Games live in the server's memory, so two copies at once could each
+        take moves (the rule "two servers writing the same games would lose
+        moves"); and it costs least. Without Streamlit a plain Python server
+        fits 512 MB; Streamlit would want about 1 GB.
+      - Recommended for the web version: the phone app's web build (the
+        same code as the app, already playing every feature), served by the
+        same server. It needs a layout for wide screens.
+      - Waiting for the owner: the account (a card) and a domain.
       - The move keeps the website working. The new host first runs next to
         Streamlit Cloud, with its own Neon branch, and passes
         `tools/website_check.py --url <new host>`. Then the owner decides when
@@ -1300,7 +1346,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - [ ] "Your turn!" notifications (Apple's and Google's push services):
       the server keeps each seat's device address.
     - [ ] Seat protection, already open in item 11, matters more for a public
-      app. The token on the device is already personal, but anyone with the
+      app. The token on the device is already personal, and since item 31 a
+      game's code alone opens nothing, but anyone with the game's link or full
       code can still take a seat by its name.
     - [ ] Optional: games on one device without a network, by running the
       rules in the app (a port of the engine, checked against games recorded
@@ -1311,7 +1358,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - The host for the server, its budget, and a domain.
     - The store accounts, the app's name and its identifier.
     - Whether games on one device must work without a network.
-    - How seats are protected (also in item 11).
+    - How seats are protected beyond the game's key (also in item 11).
 
 26. **A full test round, with a new model.** Done: the server's side in
     PR #62, the app's side in PR #63.
@@ -1409,7 +1456,57 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       website's play card on a desktop, so nobody could tell whose count was
       whose.
 
-## Status (2026-11-24)
+31. **A game opens only with its key.** Done in PR #72.
+    > "For 4 I think it's important to fix it now, the link should be somewhat
+    > encrypted, one shouldn't be able to enter a game just knowing the code"
+    - Every game has a secret key of 8 characters. Its link and its full code
+      carry both: `?room=K7M2Q-8XJ4PN2R`, "K7M2Q-8XJ4PN2R".
+    - The code alone (on a screen, said aloud, guessed, an old link) opens
+      nothing: no names, no join, no taking a seat. A wrong key is answered as
+      a game that does not exist.
+    - On the website, in the app and through the API. Games saved before get
+      a key when they are next opened; their players' open pages switch to the
+      full link by themselves.
+    - Still possible, as before: someone who has the link takes a seat by
+      tapping its name (item 11's next layer, if the owner wants it).
+
+## Status (2026-11-25)
+
+- **A game opens only with its key (owner: "one shouldn't be able to enter a
+  game just knowing the code", Backlog item 31):** PR #72.
+  - Every game has a secret 8-character key, saved with it. Its link
+    (`?room=CODE-KEY`) and its full code carry it; the code alone opens
+    nothing, and a wrong key is refused exactly as a game that does not exist.
+  - The website: the invite page needs the full link ("This link is not
+    complete" for a code alone, whether or not the game exists); "Open game"
+    takes a full code or a pasted link; the waiting room shows the key under
+    the code; the game menu shows the full code, for another device; a seated
+    page puts the full link in the address bar.
+  - The API: `join`, `rejoin`, `resume`, and `state`, `seen` and `watch`
+    without a seat need the key; every state carries it (docs/API.md).
+  - The app: the home page opens a game by its full code or link only; the
+    waiting room shows and shares the full code; the device keeps each game's
+    key with its token.
+  - Checked:
+    - 16 new tests (`tests/test_game_keys.py`), and the app's test of the
+      full code (`mobile/tests/codes.test.ts`). With the key check switched
+      off, 27 of them failed.
+    - The website check opens an online game by its code alone (nothing of
+      the game shows), then by the full link. The app's browser check types
+      the code alone (refused), then the full code; and the website's full
+      code into the app.
+    - At 360px, English and Russian: the waiting room's code and key, the
+      page for a code alone, the menu's full code. No sideways scrolling.
+    - Every Python test on 3.13 (327; the 8 database tests skipped, no
+      Postgres here), 3.9 (325) and 3.8 (325); the app's 46 tests, typecheck,
+      lint and all seven browser flows; 60 random games.
+  - No load-test row: the machine was busy (load average 5 to 10). Main and
+    the branch measured in turn, two rounds each: median poll 27.5 and 279.7
+    ms on main, 15.3 and 15.4 on the branch; page runs alike (164 to 189 ms).
+    The poll path did not change.
+  - Also that day: the hosts compared for Backlog item 25, B1 (Fly.io
+    recommended); waiting for the owner's account and domain.
+
 
 - **The race box, a row per player (owner: "Run it", the emulator check of
   Backlog item 30):** PR #71.
@@ -2036,15 +2133,21 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 309 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 325 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  309 run and 58 are skipped (9 need a database or psycopg; the others need
+  325 run and 62 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  311 run and none is skipped. 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
+  327 run and none is skipped. 16 game-key tests (`test_game_keys.py`: a
+  key per game, saved, made once for older saved games; the code alone or a
+  wrong key refused as a missing game in the store and the API; the key typed
+  any way, or as a pasted link; the pages for a code alone, a wrong key and
+  the full link; the home page's full code; the waiting room's key). 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 45 tests (`node --test`).
+  scan reads both quotes). The phone app has its own 46 tests (`node --test`),
+  1 of them of the full code (`mobile/tests/codes.test.ts`: typed, pasted as a
+  link, or a code alone, read as the server reads them).
   8 against a real server (`mobile/tests/api.test.ts`: complete games on one
   device and online through its API client, pushes, reactions and chat with
   their words, a club game and its table, the rules in a request's own
@@ -2236,8 +2339,11 @@ From the architecture review (details and file:line in
 - (Fixed in PR #28: the global lock was held across deep copies and file
   writes, so every poll and render waited behind any room's save.)
 - **Security, "friends only":**
-  - anyone with a game's code can take any seat or empty a waiting room;
-  - 5-character codes can be guessed;
+  - anyone with a game's link or full code can take any seat by its name;
+  - (Fixed in PR #72: a game's 5-character code alone, which can be seen on a
+    screen or guessed, let anyone join, take a seat or fill a waiting room. A
+    game now opens only with its 8-character key as well: 40 bits, about 17
+    years of a thousand guesses a second for one game.)
   - room creation was unlimited (now 10 per browser per 10 minutes, and
     rooms beyond 2,000 leave memory; a script opening new sessions is not
     stopped yet).
@@ -2273,6 +2379,64 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-25: a game opens only with its key (Claude Code, PR #72)**
+
+- The owner asked to fix seat protection now: "the link should be somewhat
+  encrypted, one shouldn't be able to enter a game just knowing the code".
+- A secret key next to the code, rather than a longer code:
+  - the 5-character code stays the game's name everywhere it already is (the
+    top bar, file names, the database, logs, what the owner reports: "game
+    LWUNK"), and it is no longer a secret;
+  - the key goes only where it is needed: the link, the full code, a state.
+- 8 characters of the code alphabet (no 0/O, 1/I) are 40 bits. Online guessing
+  at a thousand tries a second takes about 17 years for one game, and games
+  are deleted after a week unused, so no lockout is needed (a lockout would
+  let anyone who knows a code block its players).
+- The full code is `CODE-KEY`, and the link carries the same text in `?room=`.
+  One parameter: what players see in a link is what they type. A typed full
+  code may have any case, spaces, no dash, or be a whole pasted link.
+- A wrong key, a missing key and a missing game get the same answer, so trying
+  codes tells nothing. Only the website's page for a code alone says "This link
+  is not complete", the same whether or not the game exists.
+- Seated players need no key: their token proves the seat. So moves, picks,
+  reactions and chat did not change.
+- The key is kept in the room as it is, not hashed: the waiting room and the
+  menu must show it again after a reload, and the database already holds the
+  seat tokens.
+- Games saved before have no key. One is made the first time such a game is
+  loaded and saved at once (a version bump, since the repository refuses a save
+  that is not newer); otherwise the next load would make another and the
+  players' links would stop working. Pages already in such a game switch the
+  address bar to the full link by themselves. Players who were not seated and
+  only had an old `?room=CODE` link need the full link from someone at the
+  table.
+- Taking a seat by its name with the link stays as it was: the owner's words
+  were about the code. Protecting a seat from another holder of the link (item
+  11) is the next layer, if wanted; the new web client (item 25, B1) can keep a
+  seat's own key in the browser, which Streamlit cannot.
+- Protocol 1 changed what `join`, `rejoin`, `resume`, and `state` and `seen`
+  without a seat need. That breaks the rule in docs/API.md (Versions) once,
+  knowingly: no app has been released, the only installs are test devices, and
+  every client had to stop opening games by code. The exception is written
+  there. The app's client and its tests send the key.
+- Clubs are unchanged: a club's code still opens its page and lets anyone add
+  games to its table. The owner's words were about games; clubs can get the
+  same key if wanted.
+
+**2026-11-25: choosing a host (Claude Code)**
+
+- The owner asked to select a host, and does not mind leaving Streamlit for
+  the web version. The comparison and the recommendation (Fly.io in Virginia)
+  are in Backlog item 25, B1. Nothing is set up until the owner has an account
+  and a domain.
+- What decided it: one server process holds the games in memory, so a host
+  must never run two copies at once, even during a deploy. Fly.io with one
+  machine stops the old one first; Render and Railway overlap them. Each
+  host's deploy would close live connections anyway; the app reconnects.
+- The web version without Streamlit: the app's web build, which `tools/app_check.py`
+  already plays in Chromium on every pull request, served next to the API by a
+  plain Starlette server (`server/http.py` is Starlette already).
 
 **2026-11-24: the race box, a row per player (Claude Code, PR #71)**
 

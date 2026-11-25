@@ -12,6 +12,7 @@ from unittest import mock
 
 import abaka.rooms as rooms
 import code_version
+from abaka.rooms import full_code
 
 try:
     from streamlit.testing.v1 import AppTest
@@ -19,6 +20,11 @@ except ImportError:  # e.g. the base Python 3.8 on the owner's machine
     AppTest = None
 
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "abaka_ui.py")
+
+
+def link(store, code):
+    """A game's link: its full code (the code alone opens nothing)."""
+    return full_code(code, store.view(code).key)
 
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
@@ -104,7 +110,7 @@ class TestRenderingLeavesTheGameAlone(unittest.TestCase):
             engine = store.view(code).engine
             before = engine_to_data(engine)
             at = AppTest.from_file(APP, default_timeout=30)
-            at.query_params["room"] = code
+            at.query_params["room"] = link(store, code)
             at.run()
             self.assertFalse(at.exception, [e.value for e in at.exception])
             self.assertIs(store.view(code).engine, engine)  # no action happened

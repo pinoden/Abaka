@@ -204,7 +204,8 @@ class TestApi(unittest.TestCase):
         store = RoomStore(starting_throw=False)
         made = api.handle({"op": "create", "name": "Ann"}, store)
         code = made["code"]
-        bob = api.handle({"op": "join", "code": code, "name": "Bob"}, store)["token"]
+        key = made["state"]["key"]
+        bob = api.handle({"op": "join", "code": code, "key": key, "name": "Bob"}, store)["token"]
         self.assertIsNone(made["state"]["races"])  # the waiting room
         state = api.handle({"op": "roll", "code": code, "token": made["token"],
                             "version": store.view(code).version}, store)["state"]
@@ -214,7 +215,7 @@ class TestApi(unittest.TestCase):
         races = api.handle({"op": "state", "code": code, "token": bob, "lang": "ru"}, store)["state"]["races"]
         self.assertEqual(races["heads"], ["Ann", "Вы"])
         self.assertEqual(columns(races), [(0, [14, 15], [True, True])])
-        self.assertIsNone(api.handle({"op": "state", "code": code}, store)["state"]["races"])
+        self.assertIsNone(api.handle({"op": "state", "code": code, "key": key}, store)["state"]["races"])
 
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")

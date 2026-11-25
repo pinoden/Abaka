@@ -9,7 +9,7 @@ from abaka.rooms import OutdatedPage, RoomEngine, RoomError, RoomStore
 def started_room():
     store = RoomStore(starting_throw=False)
     code, host = store.create("Ann")
-    guest = store.join(code, "Bob")
+    guest = store.join(code, "Bob", store.view(code).key)
     return store, code, host, guest
 
 
@@ -19,7 +19,7 @@ class TestLobby(unittest.TestCase):
         code, host = store.create("Ann")
         self.assertFalse(store.view(code).started)
 
-        guest = store.join(code.lower(), "Bob")  # codes are case-insensitive
+        guest = store.join(code.lower(), "Bob", store.view(code.lower()).key)  # codes are case-insensitive
         view = store.view(code)
         self.assertTrue(view.started)
         self.assertEqual([p.name for p in view.engine.players], ["Ann", "Bob"])
@@ -29,25 +29,25 @@ class TestLobby(unittest.TestCase):
     def test_third_player_is_refused(self):
         store, code, _, _ = started_room()
         with self.assertRaises(RoomError):
-            store.join(code, "Eve")
+            store.join(code, "Eve", store.view(code).key)
 
     def test_unknown_room(self):
         store = RoomStore(starting_throw=False)
         self.assertFalse(store.exists("NOPE1"))
         self.assertEqual(store.version("NOPE1"), -1)
         with self.assertRaises(RoomError):
-            store.join("NOPE1", "Bob")
+            store.join("NOPE1", "Bob", store.view("NOPE1").key)
 
     def test_same_name_is_made_distinct(self):
         store = RoomStore(starting_throw=False)
         code, _ = store.create("Ann")
-        store.join(code, "Ann")
+        store.join(code, "Ann", store.view(code).key)
         names = store.view(code).names
         self.assertEqual(len(set(names)), 2)
 
     def test_reclaim_moves_the_seat_to_the_new_token(self):
         store, code, host, _ = started_room()
-        new_host = store.reclaim(code, 0)
+        new_host = store.reclaim(code, 0, store.view(code).key)
         self.assertIsNone(store.seat_of(code, host))
         self.assertEqual(store.seat_of(code, new_host), 0)
         with self.assertRaises(RoomError):
@@ -134,7 +134,7 @@ class TestTurns(unittest.TestCase):
         store = RoomStore(starting_throw=False)
         code, host = store.create("Ann")
         seen = {store.version(code)}
-        guest = store.join(code, "Bob")
+        guest = store.join(code, "Bob", store.view(code).key)
         seen.add(store.version(code))
         store.roll(code, host)
         seen.add(store.version(code))
@@ -202,17 +202,17 @@ class TestMorePlayers(unittest.TestCase):
     def test_game_starts_when_the_last_seat_is_taken(self):
         store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=4)
-        bob = store.join(code, "Bob")
-        cy = store.join(code, "Cy")
+        bob = store.join(code, "Bob", store.view(code).key)
+        cy = store.join(code, "Cy", store.view(code).key)
         view = store.view(code)
         self.assertFalse(view.started)
         self.assertEqual((view.capacity, view.names), (4, ["Ann", "Bob", "Cy"]))
-        dee = store.join(code, "Dee")
+        dee = store.join(code, "Dee", store.view(code).key)
         view = store.view(code)
         self.assertTrue(view.started)
         self.assertEqual([p.name for p in view.engine.players], ["Ann", "Bob", "Cy", "Dee"])
         with self.assertRaises(RoomError):
-            store.join(code, "Eve")
+            store.join(code, "Eve", store.view(code).key)
 
         # Turns go round the table in seat order.
         for token, seat in ((ann, 0), (bob, 1), (cy, 2), (dee, 3), (ann, 0)):
@@ -227,7 +227,7 @@ class TestMorePlayers(unittest.TestCase):
                 store.create("Ann", players=bad)
         code, _ = store.create("Ann", players=5)
         for name in ("B", "C", "D", "E"):
-            store.join(code, name)
+            store.join(code, name, store.view(code).key)
         self.assertEqual(len(store.view(code).engine.players), 5)
 
     def test_creator_can_start_early(self):
@@ -235,38 +235,38 @@ class TestMorePlayers(unittest.TestCase):
         code, ann = store.create("Ann", players=5)
         with self.assertRaises(RoomError):
             store.start_now(code, ann)  # nobody else yet
-        bob = store.join(code, "Bob")
+        bob = store.join(code, "Bob", store.view(code).key)
         with self.assertRaises(RoomError):
             store.start_now(code, bob)  # only the creator
-        cy = store.join(code, "Cy")
+        cy = store.join(code, "Cy", store.view(code).key)
         store.start_now(code, ann)
         view = store.view(code)
         self.assertTrue(view.started)
         self.assertEqual(view.capacity, 3)
         self.assertEqual(len(view.engine.players), 3)
         with self.assertRaises(RoomError):
-            store.join(code, "Dee")
+            store.join(code, "Dee", store.view(code).key)
         with self.assertRaises(RoomError):
             store.start_now(code, ann)
 
     def test_names_are_made_distinct(self):
         store = RoomStore(starting_throw=False)
         code, _ = store.create("Ann", players=3)
-        store.join(code, "Ann")
-        store.join(code, "Ann")
+        store.join(code, "Ann", store.view(code).key)
+        store.join(code, "Ann", store.view(code).key)
         self.assertEqual(store.view(code).names, ["Ann", "Ann (2)", "Ann (3)"])
 
     def test_leaving_the_waiting_room_frees_the_seat(self):
         store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=3)
-        bob = store.join(code, "Bob")
+        bob = store.join(code, "Bob", store.view(code).key)
         version = store.version(code)
         store.leave(code, bob)
         self.assertEqual(store.view(code).names, ["Ann"])
         self.assertGreater(store.version(code), version)  # the others' pages redraw
         self.assertIsNone(store.seat_of(code, bob))
-        store.join(code, "Cy")
-        store.join(code, "Dee")  # the freed seat is filled: the game starts without Bob
+        store.join(code, "Cy", store.view(code).key)
+        store.join(code, "Dee", store.view(code).key)  # the freed seat is filled: the game starts without Bob
         view = store.view(code)
         self.assertTrue(view.started)
         self.assertEqual([p.name for p in view.engine.players], ["Ann", "Cy", "Dee"])
@@ -274,8 +274,8 @@ class TestMorePlayers(unittest.TestCase):
     def test_when_the_creator_leaves_the_next_player_takes_over(self):
         store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=4)
-        bob = store.join(code, "Bob")
-        cy = store.join(code, "Cy")
+        bob = store.join(code, "Bob", store.view(code).key)
+        cy = store.join(code, "Cy", store.view(code).key)
         store.leave(code, ann)
         self.assertEqual(store.view(code).names, ["Bob", "Cy"])
         self.assertEqual((store.seat_of(code, bob), store.seat_of(code, cy)), (0, 1))
@@ -287,7 +287,7 @@ class TestMorePlayers(unittest.TestCase):
     def test_room_closes_when_everyone_leaves(self):
         store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=3)
-        bob = store.join(code, "Bob")
+        bob = store.join(code, "Bob", store.view(code).key)
         store.leave(code, ann)
         store.leave(code, bob)
         self.assertFalse(store.exists(code))
@@ -304,8 +304,8 @@ class TestMorePlayers(unittest.TestCase):
     def test_rematch_rotates_the_first_player(self):
         store = RoomStore(starting_throw=False)
         code, ann = store.create("Ann", players=3)
-        store.join(code, "Bob")
-        store.join(code, "Cy")
+        store.join(code, "Bob", store.view(code).key)
+        store.join(code, "Cy", store.view(code).key)
         room = store._rooms[code]
         for expected in (1, 2, 0):
             room.engine.is_game_over = lambda: True  # pretend the game finished

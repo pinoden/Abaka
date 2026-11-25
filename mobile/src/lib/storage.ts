@@ -15,8 +15,11 @@ export const CLUBS_KEPT = 6; // the clubs it remembers, as on the web (MY_CLUBS_
 
 export type SavedClub = { code: string; name: string };
 
-/** `over`: the game had ended when the device last saw it (the home page lists the others). */
-export type SavedGame = { code: string; local: boolean; names: string[]; at: number; over?: boolean };
+/**
+ * `over`: the game had ended when the device last saw it (the home page lists the others).
+ * `key`: the game's secret key, without which its code opens nothing (Backlog item 31).
+ */
+export type SavedGame = { code: string; key?: string; local: boolean; names: string[]; at: number; over?: boolean };
 
 // Changes to the list of games happen one after another: each reads the list and writes
 // it back, and two at once would lose one of them.
@@ -71,6 +74,11 @@ export async function savedGames(): Promise<SavedGame[]> {
 
 export async function tokenFor(code: string): Promise<string | null> {
   return read(tokenKey(code));
+}
+
+/** The key of a game the device remembers, or null. */
+export async function keyFor(code: string): Promise<string | null> {
+  return (await savedGames()).find((g) => g.code === code)?.key ?? null;
 }
 
 /** Remember a game and this device's seat in it (newest first, at most GAMES_KEPT). */

@@ -11,6 +11,7 @@ import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Screen, Title } from '@/components/ui';
 import { type Club, gamesToContinue } from '@/lib/api';
 import { useApp } from '@/lib/app';
+import { fullCode, splitCode } from '@/lib/codes';
 import { errorText } from '@/lib/errors';
 import { startGame } from '@/lib/start';
 import {
@@ -28,6 +29,7 @@ export default function Home() {
   const [myName, setMyName] = useState('');
   const [capacity, setCapacity] = useState(2);
   const [code, setCode] = useState('');
+  const [openError, setOpenError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [clubs, setClubs] = useState<SavedClub[]>([]);
@@ -48,7 +50,8 @@ export default function Home() {
     (async () => {
       const saved = await savedGames();
       if (shown) setGames(saved.filter((game) => !game.over).slice(0, GAMES_SHOWN));
-      const now = await gamesToContinue(connection, saved.map((game) => game.code), GAMES_SHOWN);
+      const now = await gamesToContinue(connection, saved.map((game) => ({ code: game.code, key: game.key })),
+                                        GAMES_SHOWN);
       if (!now) return;
       for (const code of now.gone) await forgetGame(code);
       for (const code of now.over) {
@@ -57,7 +60,8 @@ export default function Home() {
       }
       for (const state of now.open) await updateGame(state.code, { names: state.names, over: false });
       if (shown) {
-        setGames(now.open.map((state) => ({ code: state.code, local: state.local, names: state.names, at: 0 })));
+        setGames(now.open.map((state) => ({ code: state.code, key: state.key, local: state.local, names: state.names,
+                                            at: 0 })));
       }
     })();
     return () => { shown = false; };
@@ -95,9 +99,18 @@ export default function Home() {
     }
   };
 
+  /** A game by its full code (or a pasted link): its code alone opens nothing (Backlog item 31). */
   const open = () => {
-    const wanted = code.trim().toUpperCase().replace(/\s+/g, '');
-    if (wanted) router.push({ pathname: '/game/[code]', params: { code: wanted } });
+    const wanted = splitCode(code);
+    if (!wanted.code) return;
+    if (!wanted.key) {
+      setOpenError(
+        t("That is only the first part of a game's code. The full code looks like Q47CH-8XJ4PN2R: ask a player of the game for it."),
+      );
+      return;
+    }
+    setOpenError(null);
+    router.push({ pathname: '/game/[code]', params: { code: fullCode(wanted.code, wanted.key) } });
   };
 
   return (
@@ -182,10 +195,11 @@ export default function Home() {
 
       <Card testID="card-open">
         <Title>{t('or open a game by its code')}</Title>
-        <Muted>{t("Join a friend's game, or continue a saved game.")}</Muted>
-        <Field testID="open-code" label={t('Game code')} value={code} onChange={setCode}
-               placeholder={t('e.g. Q47CH')} maxLength={8} autoCapitalize="characters"
+        <Muted>{t("The full code, or the game's link. Join a friend's game, or continue a saved game.")}</Muted>
+        <Field testID="open-code" label={t('Game code')} value={code} onChange={(text) => { setCode(text); setOpenError(null); }}
+               placeholder={t('e.g. Q47CH-8XJ4PN2R')} maxLength={300} autoCapitalize="characters"
                onSubmit={() => { if (code.trim()) open(); }} />
+        {openError ? <Notice testID="open-error" text={openError} /> : null}
         <Button testID="open-game" kind="secondary" label={t('Open game')} disabled={!code.trim()} onPress={open} />
       </Card>
 

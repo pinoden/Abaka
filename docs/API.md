@@ -39,6 +39,18 @@ device and never shows it.
   appears in a state.
 - A token stops working when the seat is taken back on another device (`rejoin`).
 
+Every game also has a `key`, 8 characters of the same alphabet as codes (Backlog
+item 31). A game's code alone opens nothing: `join`, `rejoin` and `resume` need
+the key, and so do `state` and `seen` for anyone without a seat in the game. A
+missing or wrong key is answered `not_found`, exactly as a game that does not
+exist, so trying codes tells nothing.
+- The key comes in every state (`key`), which only someone in the game gets.
+- Players share the game's full code, `CODE-KEY` ("Q47CH-8XJ4PN2R"), and its link
+  (`?room=Q47CH-8XJ4PN2R`). Spaces, a missing dash and lower case are accepted.
+- A request gives the key as `key`, or as the full code in `code`.
+- Keep the key with the token: with a token that lost its seat, `state` needs the
+  key to show the invite.
+
 Moves also carry `version`: the `version` of the state the player chose the move
 on. If the game has changed since, the move is refused with `outdated` and nothing
 changes. This catches double taps and moves made on an old screen.
@@ -80,28 +92,28 @@ In a club game every name must be different, ignoring capitals and spaces;
 otherwise the request is `refused`.
 
 #### `join`
-Take the next free seat of an online game: `code`, `name`. Names are made distinct
+Take the next free seat of an online game: `code`, `key`, `name`. Names are made distinct
 ("Ann (2)"). Answer: `{"code", "token", "state"}`.
 In a club game a name already at the table, ignoring capitals and spaces, is
 `refused`: the club would count both as one member.
 
 #### `rejoin`
-Take a seat back: `code`, `seat`. The seat gets a new token, and the device that
-held it before loses it (its requests are refused with `not_seated`). Anyone with
-the code may do this today; protecting seats is an open decision (Backlog item 11).
+Take a seat back: `code`, `key`, `seat`. The seat gets a new token, and the device
+that held it before loses it (its requests are refused with `not_seated`). Anyone
+with the game's key (its link or full code) may do this.
 
 #### `resume`
-Carry on with a game played on one device from its `code`: answers with its token.
-An online game is `refused`.
+Carry on with a game played on one device from its `code` and `key`: answers with
+its token. An online game is `refused`.
 
 #### `state`
-The game as the holder of `token` sees it: `code`, `token` (optional), `since`
-(optional). Answer: `{"state": ...}`. Without a seat (no token, or one that was
-taken over), the state shows only what an invite shows: the names, and in `can`
-how to take a seat.
+The game as the holder of `token` sees it: `code`, `token` (optional), `key`
+(needed without a seat), `since` (optional). Answer: `{"state": ...}`. Without a
+seat (no token, or one that was taken over), the state shows only what an invite
+shows: the names, and in `can` how to take a seat.
 
 #### `seen`
-`code` → `{"seen": "12.3.1795157785252"}`. The text changes whenever the state
+`code` and a seat's `token` or the game's `key` → `{"seen": "12.3.1795157785252"}`. The text changes whenever the state
 does (a move, a pick, a reaction, a chat message). It is cheap, so an app can ask
 every second and fetch `state` only when it changes.
 
@@ -192,6 +204,7 @@ them: ask for the rules again rather than keeping them in the app.
 {
   "protocol": 1,
   "code": "Q47CH",
+  "key": "8XJ4PN2R",
   "version": 12,
   "seen": "12.3.1795157785252",
   "now": 1795157790.125,
@@ -215,6 +228,7 @@ them: ask for the rules again rather than keeping them in the app.
 
 | Field | Meaning |
 |---|---|
+| `key` | The game's key: the full code to share is `code-key`. A state goes only to someone in the game. |
 | `version` | Send it back with a move. |
 | `seen` | As the `seen` operation gives it. |
 | `now` | The server's clock, in seconds. Use it to tell how old an event is, whatever the device's clock says. |
@@ -358,7 +372,7 @@ what the app should do:
 |---|---|
 | `bad_request` | A bug in the app: the request is malformed. The message is for developers, in English. |
 | `protocol` | The app and the server speak different versions: ask the player to update the app. |
-| `not_found` | No game or club with this code (any more): go back to the start. |
+| `not_found` | No game or club with this code (any more), or a game's code without its key: go back to the start. |
 | `not_seated` | The token holds no seat here; it was taken back on another device. Offer to rejoin. |
 | `outdated` | The move was made on an old state: draw the new state. Nothing to show. |
 | `too_fast` | Too many reactions or messages: show the message. |
@@ -408,7 +422,7 @@ answer. Two more requests exist only here:
 
 | Request | What it does |
 |---|---|
-| `{"op": "watch", "code", "token", "lang", "since"}` | Answers like `state`, and from then on pushes the game's state whenever it changes. A connection watches one game; `watch` another to switch. |
+| `{"op": "watch", "code", "token", "key", "lang", "since"}` | Answers like `state` (so it needs a seat's token or the game's key), and from then on pushes the game's state whenever it changes. A connection watches one game; `watch` another to switch. |
 | `{"op": "unwatch"}` | Stops the pushes (the player left the game's screen); the connection stays for other requests. Answers `{"watching": null}`, also when nothing was watched, so it can serve as a check that the server is there. |
 
 The server sends:
@@ -450,3 +464,8 @@ The server sends:
 - Changing what an existing field means, or what an operation needs, makes
   protocol 2. The server then answers both versions while older apps are still in
   use.
+- One exception, before any app was released: the game's key (Backlog item 31,
+  2026-11-25) made `join`, `rejoin`, `resume`, and `state` and `seen` without a
+  seat, need `key`, within protocol 1. No app was installed anywhere but on test
+  devices, and a game's code alone had to stop opening it for every client. From the
+  first release on, the rule above holds.

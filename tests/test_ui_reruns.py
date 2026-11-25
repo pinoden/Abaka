@@ -173,7 +173,7 @@ class TestReruns(unittest.TestCase):
         ann_page = self.page(room=code, room_code=code, seat_token=ann)
         self.assertEqual(self.polls[-1], 1.0)  # waiting for players to join
 
-        bob = self.store.join(code, "Bob")
+        bob = self.store.join(code, "Bob", self.store.view(code).key)
         self.store.start_now(code, ann)
         ann_page.run()
         self.assertEqual(self.polls[-1], 3.0)  # Ann's throw: nobody else can move

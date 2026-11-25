@@ -209,7 +209,7 @@ class TestOnlineEngine(unittest.TestCase):
     def test_works_through_room_engine(self):
         store = RoomStore(starting_throw=False)
         code, host = store.create("Ann")
-        store.join(code, "Bob")
+        store.join(code, "Bob", store.view(code).key)
         store.roll(code, host)
         view = store.view(code).engine
         proxy = RoomEngine(store, code, host, view)

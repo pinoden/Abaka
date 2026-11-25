@@ -181,7 +181,7 @@ def check_one_device(browser, url: str, size: Tuple[int, int], label: str, games
     s.see(s.app.get_by_label("Player 2"), "the Player 2 box").fill(NAMES[1])
     s.see(s.app.get_by_role("button", name="Start game"), 'the "Start game" button').click()
     s.see(s.app.get_by_text("Who goes first?"), '"Who goes first?"')
-    games.append(s.room())
+    games.append(s.room().split("-")[0])  # the address holds the full code: the code and its key
     roll = s.key("roll")
     for _ in range(40):  # each player throws in turn; a tie throws again
         if roll.count():
@@ -216,9 +216,18 @@ def check_online(browser, url: str, games: List[str]) -> None:
     host.see(host.app.get_by_label("Your name"), "the online game's name box", START_MS).fill(NAMES[0])
     host.see(host.app.get_by_role("button", name="Create game"), 'the "Create game" button').click()
     host.see(host.app.get_by_text("Invite a friend"), "the waiting room")
-    code = host.room()
+    full = host.room()  # the game's full code, its code and its key: the address holds it
+    code, key = full.split("-") if full.count("-") == 1 else (full, "")
     games.append(code)
-    guest = Screen(browser, f"{url}?room={code}&lang=en", PHONE, "an online game, the guest (phone)")
+    if len(key) != 8:
+        raise Problem(f"the host's address does not hold the game's full code ({full!r})")
+    # The code alone opens nothing (Backlog item 31): not even the host's name shows.
+    alone = Screen(browser, f"{url}?room={code}&lang=en", PHONE, "an online game opened by its code alone")
+    alone.see(alone.app.get_by_text("This link is not complete"), "the page for a code alone", START_MS)
+    if alone.app.get_by_text(NAMES[0]).count() or alone.app.get_by_role("button", name="Join game").count():
+        raise Problem("the game's code alone showed the game")
+    alone.close()
+    guest = Screen(browser, f"{url}?room={full}&lang=en", PHONE, "an online game, the guest (phone)")
     guest.see(guest.app.get_by_text(f"{NAMES[0]} invited you to play"), "the invitation", START_MS)
     guest.see(guest.app.get_by_label("Your name"), "the name box").fill(NAMES[1])
     guest.see(guest.app.get_by_role("button", name="Join game"), 'the "Join game" button').click()

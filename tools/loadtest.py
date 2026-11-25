@@ -67,7 +67,7 @@ def make_games(save_dir: str, rooms: int, seed: int = 1) -> list:
             store.roll(code, key)
             store.score(code, key, *_any_cell(store, code))
         store.roll(code, key)
-        codes.append(code)
+        codes.append(f"{code}-{store.view(code).key}")  # the game's link holds its full code
     return codes
 
 

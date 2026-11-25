@@ -207,7 +207,7 @@ def engine_game(n, rng):
 
 def room_game(store, n, rng, rematches=1):
     code, host = store.create("<b>Host</b>", n)
-    tokens = [host] + [store.join(code, "Guest") for _ in range(n - 1)]
+    tokens = [host] + [store.join(code, "Guest", store.view(code).key) for _ in range(n - 1)]
     view = store.view(code)
     assert view.started and len(set(view.names)) == n, view.names  # names made distinct
     for game_no in range(rematches + 1):

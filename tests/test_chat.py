@@ -25,7 +25,7 @@ APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 def started_game(store, names=("Ann", "Bob")):
     """An online game past the starting throw, nobody rolled yet. Returns code, tokens by seat."""
     code, first = store.create(names[0], players=len(names))
-    tokens = [first] + [store.join(code, name) for name in names[1:]]
+    tokens = [first] + [store.join(code, name, store.view(code).key) for name in names[1:]]
     for _ in range(100):
         engine = store.view(code).engine
         if not engine.choosing_first_player:
