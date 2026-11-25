@@ -14,6 +14,7 @@ import abaka.rooms as rooms
 import code_version
 from abaka.engine import GameEngine
 from abaka.models import Category, Die
+from abaka.rooms import full_code
 
 try:
     from streamlit.testing.v1 import AppTest
@@ -30,6 +31,11 @@ def throw(*faces):
 
 # Ann 17, Bob 9 (the lowest), Cy 22: Cy, the last thrower, is not the first player.
 THROWS = [throw(3, 3, 3, 4, 4), throw(1, 2, 2, 2, 2), throw(4, 4, 4, 5, 5)]
+
+
+def link(store, code):
+    """A game's link: its full code (the code alone opens nothing)."""
+    return full_code(code, store.view(code).key)
 
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
@@ -77,7 +83,7 @@ class TestStartingThrowsOnScreen(unittest.TestCase):
             for _ in range(3):
                 store.throw_for_start(code, key)
 
-        html = self.html(self.page(room=code))
+        html = self.html(self.page(room=link(store, code)))
         self.assertIn("Bob threw the lowest (9) and goes first.", html)
         for total in ("17", "9", "22"):  # Ann's, Bob's and Cy's totals, Cy's included
             self.assertIn(f"<b>{total}</b>", html)
@@ -87,7 +93,7 @@ class TestStartingThrowsOnScreen(unittest.TestCase):
         # The summary goes once the game has moved on (the first move was made).
         store.roll(code, key)
         store.score(code, key, Category.SUM, 0)
-        self.assertNotIn('class="ab-start-note"', self.html(self.page(room=code)))
+        self.assertNotIn('class="ab-start-note"', self.html(self.page(room=link(store, code))))
 
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")

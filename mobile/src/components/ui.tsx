@@ -177,9 +177,9 @@ export function Field({ label, value, onChange, placeholder, maxLength, testID, 
 }
 
 /** A line the player should not miss: a refusal, a lost connection. */
-export function Notice({ text, tone = 'error' }: { text: string; tone?: 'error' | 'info' }) {
+export function Notice({ text, tone = 'error', testID }: { text: string; tone?: 'error' | 'info'; testID?: string }) {
   return (
-    <View accessibilityRole="alert" style={[styles.notice, tone === 'info' && styles.noticeInfo]}>
+    <View testID={testID} accessibilityRole="alert" style={[styles.notice, tone === 'info' && styles.noticeInfo]}>
       <Text style={[styles.noticeText, tone === 'info' && styles.noticeInfoText]}>{text}</Text>
     </View>
   );

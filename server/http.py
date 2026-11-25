@@ -163,7 +163,7 @@ class _Live:
     def __init__(self, websocket: WebSocket, address: str) -> None:
         self.websocket = websocket
         self.address = address
-        self.watching: Optional[dict] = None  # the state request of the watched game: code, token, lang
+        self.watching: Optional[dict] = None  # the state request of the watched game: code, key, token, lang
         self.seen: Optional[str] = None       # its `seen` when its state was last sent
         self.since = 0                        # its events and chat messages up to this id have been sent
         self.closed = False
@@ -215,7 +215,8 @@ class _Live:
         state = response.get("state")
         if watch:
             self.watching = {k: request[k] for k in ("token", "lang", "protocol") if request.get(k) is not None}
-            self.watching.update(op="state", code=state["code"])
+            # The key comes from the state (so only someone in the game has it): the pushes ask with it.
+            self.watching.update(op="state", code=state["code"], key=state["key"])
             since = request.get("since")
             self.since = since if isinstance(since, int) and not isinstance(since, bool) else 0
         if state is not None and self._is_watched(state, request):
@@ -295,7 +296,7 @@ class _Live:
 
 def _changed_state(request: dict, seen: Optional[str], address: str) -> Optional[Tuple[int, dict]]:
     """The watched game's (status, state) if it changed since `seen`, else None. Runs in a worker thread."""
-    status, response = answer({"op": "seen", "code": request["code"]}, address)
+    status, response = answer({"op": "seen", "code": request["code"], "key": request["key"]}, address)
     if status == 200 and response["seen"] == seen:
         return None
     return (status, response) if status != 200 else answer(request, address)

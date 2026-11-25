@@ -23,7 +23,7 @@ def started_game(store):
     """An online game for Ann and Bob, past the starting throw, the first player rolled.
     Returns code, tokens by seat, and the seat whose turn it is."""
     code, ann = store.create("Ann", players=2)
-    bob = store.join(code, "Bob")
+    bob = store.join(code, "Bob", store.view(code).key)
     tokens = [ann, bob]
     for _ in range(50):
         engine = store.view(code).engine

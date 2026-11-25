@@ -367,7 +367,8 @@ def check_online(browser, url: str, games: List[str]) -> None:
         ann.see(ann.id("create-online"), "the home page")
         ann.id("online-name").fill(NAMES[0])
         ann.id("create-online").click()
-        code = ann.see(ann.id("game-code"), "the game code").inner_text().strip()
+        full = ann.see(ann.id("game-code"), "the game code").inner_text().strip()  # the code, then its key
+        code = full.split()[0]
         games.append(code)
         # Home and back while waiting: the seat is kept, so the game is still there for friends.
         ann.id("home").click()
@@ -375,7 +376,10 @@ def check_online(browser, url: str, games: List[str]) -> None:
         ann.see(ann.id("game-code"), "the waiting room again")
 
         bob.see(bob.id("open-code"), "Bob's home page")
-        bob.id("open-code").fill(code)
+        bob.id("open-code").fill(code)  # the code alone opens nothing (Backlog item 31)
+        bob.id("open-game").click()
+        bob.see(bob.id("open-error"), "the home page saying that the code alone is not enough")
+        bob.id("open-code").fill(full)
         bob.id("open-game").click()
         bob.see(bob.id("join-name"), "the invite").fill(NAMES[1])
         bob.id("join").click()
@@ -428,8 +432,8 @@ def check_website_and_app(browser, url: str, server: str, games: List[str]) -> N
         web.see(web.app.get_by_label("Your name"), "the website's name box", website_check.START_MS).fill(NAMES[0])
         web.see(web.app.get_by_role("button", name="Create game"), 'the website\'s "Create game" button').click()
         web.see(web.app.get_by_text("Invite a friend"), "the website's waiting room")
-        code = web.room()
-        games.append(code)
+        code = web.room()  # the website's full code: the app opens it too
+        games.append(code.split("-")[0])
         phone.see(phone.id("open-code"), "the app's home page").fill(code)
         phone.id("open-game").click()
         phone.see(phone.id("join-name"), "the invite, in the app").fill(NAMES[1])
@@ -563,7 +567,7 @@ def check_clubs(browser, url: str, server: str, games: List[str]) -> str:
             raise Problem("clubs: tapping a player did not fill the host's name")
         ann.id("club-create-online").click()
         online = ann.see(ann.id("game-code"), "the club game's waiting room").inner_text().strip()
-        games.append(online)
+        games.append(online.split()[0])
         bob.see(bob.id("open-code"), "Bob's home page").fill(online)
         bob.id("open-game").click()
         bob.see(bob.id("join-name"), "the invite")

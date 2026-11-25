@@ -281,6 +281,9 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-code { display: flex; gap: .4rem; justify-content: center; margin: .6rem 0 .2rem; }
 .ab-code span { width: 46px; height: 56px; border-radius: 12px; background: #F1F2FA; display: flex;
   align-items: center; justify-content: center; font-size: 1.7rem; font-weight: 800; color: #1C2033; }
+/* the game's key, under its code: 8 smaller boxes that fit a 360px phone (Backlog item 31) */
+.ab-code-key { gap: .3rem; margin-top: .35rem; }
+.ab-code-key span { width: 32px; height: 40px; border-radius: 9px; font-size: 1.2rem; font-weight: 700; color: #4F46E5; }
 .ab-seats { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center; margin: .9rem 0 0; }
 .ab-seats span { padding: .3rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
   border: 1.5px dashed #D5D9E5; color: #9AA0B5; }

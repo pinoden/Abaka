@@ -52,8 +52,13 @@ def online(server, players=2, names=("Ann", "Bob", "Cy", "Dee", "Eve")):
     first = server(op="create", name=names[0], players=players)
     code, tokens = first["code"], [first["token"]]
     for name in names[1:players]:
-        tokens.append(server(op="join", code=code, name=name)["token"])
+        tokens.append(server(op="join", code=code, key=key_of(server, code), name=name)["token"])
     return code, tokens
+
+
+def key_of(server, code):
+    """A game's key, as its link carries it to someone who is not seated."""
+    return server.store.view(code).key
 
 
 def play(server, code, tokens, rng, local=False, until=None):
@@ -126,7 +131,7 @@ class TestBasics(unittest.TestCase):
         """
         half, other_half = json.loads('"\\ud83d"'), json.loads('"\\udc00"')
         made = self.server(op="create", name="Ann" + half, players=2)
-        bob = self.server(op="join", code=made["code"], name=other_half + "Bob")["token"]
+        bob = self.server(op="join", code=made["code"], key=made["state"]["key"], name=other_half + "Bob")["token"]
         said = self.server(op="say", code=made["code"], token=bob, text="hi " + half + " there")["state"]
         local = self.server(op="create_local", names=["Cy" + half, half])["state"]
         club = self.server(op="create_club", name="Fri" + half + "day")["club"]
@@ -185,7 +190,8 @@ class TestOnline(unittest.TestCase):
 
     def state(self, seat=None, **extra):
         token = self.tokens[seat] if seat is not None else None
-        return self.server(op="state", code=self.code, token=token, **extra)["state"]
+        return self.server(op="state", code=self.code, token=token, key=None if token else key_of(self.server, self.code),
+                           **extra)["state"]
 
     def test_waiting_room(self):
         server = Server()
@@ -193,10 +199,10 @@ class TestOnline(unittest.TestCase):
         code = first["code"]
         self.assertEqual((first["state"]["phase"], first["state"]["you"], first["state"]["can"]),
                          ("waiting", 0, ["leave"]))
-        guest = server(op="join", code=code, name="Ann")  # names are made distinct
+        guest = server(op="join", code=f"{code}-{first['state']['key']}", name="Ann")  # names are made distinct
         self.assertEqual(guest["state"]["names"], ["Ann", "Ann (2)"])
         self.assertEqual(server(op="state", code=code, token=first["token"])["state"]["can"], ["leave", "start_now"])
-        self.assertEqual(server(op="state", code=code)["state"]["can"], ["join", "rejoin"])
+        self.assertEqual(server(op="state", code=code, key=first["state"]["key"])["state"]["can"], ["join", "rejoin"])
         self.assertEqual(server.refused(op="start_now", code=code, token=guest["token"])[0], "refused")
         state = server(op="start_now", code=code, token=first["token"])["state"]
         self.assertEqual((state["phase"], state["capacity"]), ("starting_throw", 2))
@@ -204,9 +210,10 @@ class TestOnline(unittest.TestCase):
     def test_leaving_the_waiting_room(self):
         server = Server()
         first = server(op="create", name="Ann", players=3)
-        server(op="join", code=first["code"], name="Bob")
+        key = first["state"]["key"]
+        server(op="join", code=first["code"], key=key, name="Bob")
         self.assertEqual(server(op="leave", code=first["code"], token=first["token"]), {"left": True})
-        self.assertEqual(server(op="state", code=first["code"])["state"]["names"], ["Bob"])
+        self.assertEqual(server(op="state", code=first["code"], key=key)["state"]["names"], ["Bob"])
 
     def test_what_each_player_sees(self):
         state = self.state(1)
@@ -214,7 +221,7 @@ class TestOnline(unittest.TestCase):
         thrower = state["game"]["current"]
         self.assertIn("throw", self.state(thrower)["can"])
         self.assertNotIn("throw", self.state((thrower + 1) % 3)["can"])
-        # Someone with only the code sees what the invite page shows, and how to take a seat.
+        # Someone with the link (the code and the key) sees what the invite page shows, and how to take a seat.
         outsider = self.state()
         self.assertEqual((outsider["seated"], outsider["game"], outsider["can"]), (False, None, ["rejoin"]))
         self.assertEqual(outsider["names"], ["Ann", "Bob", "Cy"])
@@ -234,9 +241,10 @@ class TestOnline(unittest.TestCase):
         self.assertEqual(self.state(0)["version"], after["version"])
 
     def test_a_seat_taken_back_on_another_device(self):
-        token = self.server(op="rejoin", code=self.code, seat=1)["token"]
+        key = key_of(self.server, self.code)
+        token = self.server(op="rejoin", code=self.code, key=key, seat=1)["token"]
         self.assertNotEqual(token, self.tokens[1])
-        old = self.server(op="state", code=self.code, token=self.tokens[1])["state"]
+        old = self.server(op="state", code=self.code, token=self.tokens[1], key=key)["state"]
         self.assertFalse(old["seated"])
         self.assertEqual(self.server.refused(op="say", code=self.code, token=self.tokens[1], text="hi")[0],
                          "not_seated")
@@ -316,9 +324,9 @@ class TestOnline(unittest.TestCase):
         mover = self.state(0)["game"]["current"]
         watcher = (mover + 1) % 3
         self.server(op="roll", code=self.code, token=self.tokens[mover], version=self.state(0)["version"])
-        seen = self.server(op="seen", code=self.code)["seen"]
+        seen = self.server(op="seen", code=self.code, token=self.tokens[watcher])["seen"]
         self.server(op="pick", code=self.code, token=self.tokens[mover], dice=[0, 3])
-        self.assertNotEqual(self.server(op="seen", code=self.code)["seen"], seen)
+        self.assertNotEqual(self.server(op="seen", code=self.code, token=self.tokens[watcher])["seen"], seen)
         self.assertEqual(self.state(watcher)["game"]["picked"], [0, 3])
         self.assertEqual(self.server.refused(op="pick", code=self.code, token=self.tokens[watcher], dice=[1])[0],
                          "refused")
@@ -377,8 +385,9 @@ class TestCompleteGames(unittest.TestCase):
         code, token = made["code"], made["token"]
         self.assertEqual(made["state"]["names"], ["Ann", "Игрок 2", "Cy"])
         self.assertEqual((made["state"]["you"], made["state"]["local"]), (None, True))
-        self.assertEqual(server(op="state", code=code)["state"]["can"], ["resume"])
-        self.assertEqual(server(op="resume", code=code)["token"], token)
+        key = made["state"]["key"]
+        self.assertEqual(server(op="state", code=code, key=key)["state"]["can"], ["resume"])
+        self.assertEqual(server(op="resume", code=f"{code}-{key}")["token"], token)
         state = play(server, code, [token], random.Random(3), local=True)
         self.assertEqual(state["phase"], "over")
         self.assertNotIn("react", state["can"])
@@ -402,7 +411,8 @@ class TestClubs(unittest.TestCase):
         self.assertEqual(server.refused(op="create_club", name="  ", lang="ru")[1], "Дайте клубу название.")
         self.assertEqual(server.refused(op="create_local", names=["Ann", "ann "], club=club["code"])[0], "refused")
         online = server(op="create", name="Ann", players=2, club=club["code"])
-        self.assertEqual(server.refused(op="join", code=online["code"], name=" ANN", lang="ru"),
+        self.assertEqual(server.refused(op="join", code=online["code"], key=online["state"]["key"], name=" ANN",
+                                        lang="ru"),
                          ("refused", "У каждого игрока должно быть своё имя."))  # one member, once a game
         made = server(op="create_local", names=["Ann", "Bob"], club=club["code"].lower())
         self.assertEqual(made["state"]["club"], club["code"])
@@ -431,7 +441,7 @@ class TestHostileRequests(unittest.TestCase):
     OTHERS = [None, True, False, 0, 1, -1, 5, 10 ** 30, 1.5, float("nan"), [], {}, [[]], {"a": 1}, [0, 1],
               [0, 0, 0], [5], [-1], ["0"], [True], ["Ann", "\ud800"], ["Ann", "ann "], ["a"] * 6, ["", ""]]
     FIELDS = ["lang", "protocol", "name", "names", "players", "seat", "version", "since", "dice", "row", "slot",
-              "reaction", "to", "text", "club", "games"]
+              "reaction", "to", "text", "club", "games", "key"]
     MOVES = ("throw", "roll", "reroll", "score", "cross")
     REQUESTS = 4000
 
@@ -475,6 +485,8 @@ class TestHostileRequests(unittest.TestCase):
         mover = tokens[game["current"]] if game and game["current"] < len(tokens) else tokens[0]
         if op not in ("join", "rejoin", "resume", "seen"):
             request["token"] = mover if op in self.MOVES + ("pick",) else rng.choice(tokens)
+        else:  # from the game's link, which a seat's state carries
+            request["key"] = state["key"]
         if op in self.MOVES:
             request["version"] = state["version"]
         request.update({"join": {"name": "Bob"}, "rejoin": {"seat": rng.randrange(len(tokens))},

@@ -120,7 +120,7 @@ class TestOverTheNetwork(unittest.TestCase):
     def game(self, players=2):
         """A game for Ann and Bob: (code, Ann's token, Bob's token, the latest state)."""
         made = self.post({"op": "create", "name": "Ann", "players": players})[1]
-        joined = self.post({"op": "join", "code": made["code"], "name": "Bob"})[1]
+        joined = self.post({"op": "join", "code": made["code"], "key": made["state"]["key"], "name": "Bob"})[1]
         return made["code"], made["token"], joined["token"], joined["state"]
 
     def test_answers_and_refusals_have_their_http_status(self):
@@ -175,7 +175,7 @@ class TestOverTheNetwork(unittest.TestCase):
             reply = receive(ws)
             self.assertEqual((reply["type"], reply["id"], reply["response"]["state"]["names"]), ("reply", 1, ["Ann"]))
             started = time.time()
-            bob = self.post({"op": "join", "code": code, "name": "Bob"})[1]["token"]  # another device
+            bob = self.post({"op": "join", "code": f"{code}-{made['state']['key']}", "name": "Bob"})[1]["token"]
             push = receive(ws)
             self.assertEqual((push["type"], push["state"]["names"]), ("state", ["Ann", "Bob"]))
             self.assertLess(time.time() - started, 2)
@@ -349,7 +349,7 @@ class TestPagesShareTheApiStores(unittest.TestCase):
     def test_a_game_made_in_an_app_is_joined_on_a_page(self):
         made = api.handle({"op": "create", "name": "Ann"}, stores.get_store(), stores.get_clubs())
         page = AppTest.from_file(APP, default_timeout=30)
-        page.query_params["room"] = made["code"]
+        page.query_params["room"] = f"{made['code']}-{made['state']['key']}"  # the game's link
         page.run()
         self.assertFalse(page.exception, [e.value for e in page.exception])
         page.text_input(key="join_name").input("Bob")
@@ -404,7 +404,7 @@ class TestServerProcess(unittest.TestCase):
         with connect(f"ws://127.0.0.1:{port}/api/v1/live", open_timeout=10) as ws:
             ws.send(json.dumps({"op": "watch", "code": made["code"], "token": made["token"]}))
             self.assertEqual(receive(ws)["type"], "reply")
-            post(port, {"op": "join", "code": made["code"], "name": "Bob"})
+            post(port, {"op": "join", "code": made["code"], "key": made["state"]["key"], "name": "Bob"})
             self.assertEqual(receive(ws)["state"]["names"], ["Ann", "Bob"])
 
 

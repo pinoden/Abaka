@@ -34,7 +34,7 @@ APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 def started_game(store, names=("Ann", "Bob")):
     """An online game past the starting throw, nobody rolled yet. Returns code, tokens by seat."""
     code, first = store.create(names[0], players=len(names))
-    tokens = [first] + [store.join(code, name) for name in names[1:]]
+    tokens = [first] + [store.join(code, name, store.view(code).key) for name in names[1:]]
     for _ in range(100):
         engine = store.view(code).engine
         if not engine.choosing_first_player:
@@ -207,7 +207,7 @@ class TestCelebrations(unittest.TestCase):
 
     def test_the_starting_throw_brings_nothing(self):
         code, first = self.store.create("Ann", players=2)
-        tokens = [first, self.store.join(code, "Bob")]
+        tokens = [first, self.store.join(code, "Bob", self.store.view(code).key)]
         with mock.patch("abaka.engine.roll_dice", lambda: dice([6, 6, 6, 6, 6])):
             for _ in range(6):  # every throw ties, so the starting throw goes on
                 self.store.throw_for_start(code, tokens[self.store.view(code).engine.current])

@@ -35,7 +35,7 @@ from .models import Category
 from .moves import ROW_ORDER, cross_options, free_slot, is_school, most_points, row_hint, row_name, score_options
 from .races import bonus_races
 from .rooms import (MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, REACTIONS, OutdatedPage,
-                    RoomError, RoomStore, RoomView, TooFast, normalize_code)
+                    RoomError, RoomStore, RoomView, TooFast, normalize_code, split_code)
 from .rules import rules_blocks
 
 # The version of the messages below. Adding an operation or a field keeps it; anything an
@@ -158,7 +158,16 @@ class _Request:
         return value
 
     def code(self) -> str:
-        return normalize_code(self.text("code"))
+        """The game's code. `code` may also be the full code ("K7M2Q-8XJ4PN2R"): see key()."""
+        code, _ = split_code(self.text("code"))
+        return normalize_code(code)
+
+    def key(self) -> Optional[str]:
+        """The game's key: `key`, or the key part of a full code in `code`. None if neither has one."""
+        if self.get("key") is not None:
+            return self.text("key")
+        _, key = split_code(self.text("code"))
+        return key or None
 
     def token(self) -> str:
         return self.text("token")
@@ -224,21 +233,35 @@ def _create_local(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -
 
 def _join(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
     code = req.code()
+    _admit(req, store, code, seat_will_do=False)
     seated = len(store.view(code).names)
-    token = store.join(code, req.text("name", "").strip() or t("Player {i}", i=seated + 1))
+    token = store.join(code, req.text("name", "").strip() or t("Player {i}", i=seated + 1), req.key())
     return _entered(store, clubs, code, token)
 
 
 def _rejoin(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
-    """Take a seat back (a new device, a lost token): the old token stops working."""
+    """Take a seat back (a new device, a lost token), with the game's key: the old token stops working."""
     code = req.code()
-    return _entered(store, clubs, code, store.reclaim(code, req.number("seat", low=0)))
+    return _entered(store, clubs, code, store.reclaim(code, req.number("seat", low=0), req.key()))
 
 
 def _resume(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
-    """Carry on with a same-device game from its code."""
+    """Carry on with a same-device game from its full code (or its code and key)."""
     code = req.code()
-    return _entered(store, clubs, code, store.resume_local(code))
+    return _entered(store, clubs, code, store.resume_local(code, req.key()))
+
+
+def _admit(req: _Request, store: RoomStore, code: str, seat_will_do: bool = True) -> None:
+    """
+    Only for someone in the game: a token that holds one of its seats (if `seat_will_do`), or
+    its key. Anyone else is told there is no such game, as when there is none, so a game's
+    code alone tells nothing (Backlog item 31).
+    """
+    token = req.get("token")
+    if seat_will_do and isinstance(token, str) and store.seat_of(code, token) is not None:
+        return
+    if not store.opens(code, req.key()):
+        raise ApiError("not_found", error("Game not found. Check the code, or ask for a new invite."))
 
 
 def _entered(store: RoomStore, clubs: Optional[ClubStore], code: str, token: str) -> dict:
@@ -246,13 +269,18 @@ def _entered(store: RoomStore, clubs: Optional[ClubStore], code: str, token: str
 
 
 def _get_state(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
+    """The game for a seat's token, or, with the game's key, as its invite shows it."""
     token = req.text("token") if req.get("token") is not None else None
-    return {"state": _state(store, clubs, req.code(), token, req.number("since", 0, low=0))}
+    code = req.code()
+    _admit(req, store, code)
+    return {"state": _state(store, clubs, code, token, req.number("since", 0, low=0))}
 
 
 def _seen(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
     """A short text that changes whenever the state does: cheap to ask for every second."""
-    seen = store.seen(req.code())
+    code = req.code()
+    _admit(req, store, code)
+    seen = store.seen(code)
     if seen[0] < 0:
         raise ApiError("not_found", error("Game not found. Check the code, or ask for a new invite."))
     return {"seen": _seen_text(seen)}
@@ -370,6 +398,8 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
     state = {
         "protocol": PROTOCOL,
         "code": view.code,
+        # Only ever sent to someone in the game (_admit): what opens it, for the link and the full code.
+        "key": view.key,
         "version": view.version,
         "seen": _seen_text(view.seen),
         "now": round(time.time(), 3),

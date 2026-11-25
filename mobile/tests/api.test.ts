@@ -121,8 +121,11 @@ describe('the API client against a real server', { skip }, () => {
     assert.equal(created.state.phase, 'waiting');
     assert.deepEqual(created.state.can, ['leave']);
 
-    // Bob opens the code: without a seat he is offered to join.
-    const invite = (await bob.request<{ state: State }>('state', { code: created.code })).state;
+    // The code alone opens nothing: it takes the game's key, which its link and full code carry.
+    const alone = await bob.request('state', { code: created.code }).catch((e) => e);
+    assert.ok(alone instanceof ApiError && alone.code === 'not_found');
+    // Bob opens the full code: without a seat he is offered to join.
+    const invite = (await bob.request<{ state: State }>('state', { code: created.code, key: created.state.key })).state;
     assert.equal(invite.seated, false);
     assert.ok(invite.can.includes('join'));
 
@@ -136,7 +139,7 @@ describe('the API client against a real server', { skip }, () => {
     }, (e) => assert.fail(e.message));
     await until(() => annSees !== null, 'the watch');
 
-    const joined = await bob.request<Seat>('join', { code: created.code, name: 'Test Bob' });
+    const joined = await bob.request<Seat>('join', { code: created.code, key: created.state.key, name: 'Test Bob' });
     assert.equal(joined.state.you, 1);
     // Ann's screen learns that Bob joined without asking.
     await until(() => annSees!.names.length === 2 && annSees!.phase === 'starting_throw', 'the join pushed');
@@ -218,11 +221,12 @@ describe('the API client against a real server', { skip }, () => {
     const ann = connect();
     const other = connect();
     const created = await ann.request<Seat>('create', { name: 'Test Ann', players: 2 });
-    await other.request<Seat>('join', { code: created.code, name: 'Test Bob' });
-    const taken = await other.request<Seat>('rejoin', { code: created.code, seat: 0 });
+    const key = created.state.key;
+    await other.request<Seat>('join', { code: created.code, key, name: 'Test Bob' });
+    const taken = await other.request<Seat>('rejoin', { code: created.code, key, seat: 0 });
     assert.equal(taken.state.you, 0);
-    // The old token holds no seat any more: its state is the invite's.
-    const old = (await ann.request<{ state: State }>('state', { code: created.code, token: created.token })).state;
+    // The old token holds no seat any more: with the game's key, its state is the invite's.
+    const old = (await ann.request<{ state: State }>('state', { code: created.code, token: created.token, key })).state;
     assert.equal(old.seated, false);
     assert.ok(old.can.includes('rejoin'));
   });
@@ -233,22 +237,23 @@ describe('the API client against a real server', { skip }, () => {
     const closed = await connection.request<Seat>('create', { name: 'Test Ann', players: 2 });
     await connection.request('leave', { code: closed.code, token: closed.token }); // alone: the game is closed
 
-    const before = await gamesToContinue(connection, [closed.code, game.code], 4);
+    const games = [closed, game].map((seat) => ({ code: seat.code, key: seat.state.key }));
+    const before = await gamesToContinue(connection, games, 4);
     assert.ok(before);
     assert.deepEqual(before.open.map((s) => [s.code, s.names]), [[game.code, ['Test Ann', 'Test Bob']]]);
     assert.deepEqual([before.over, before.gone], [[], [closed.code]]);
     // It looks no further than it must: each look can make the server read a game.
-    const one = await gamesToContinue(connection, [game.code, closed.code], 1);
+    const one = await gamesToContinue(connection, [...games].reverse(), 1);
     assert.deepEqual([one!.open.length, one!.gone], [1, []]);
 
     await play(game.code, [{ connection, token: game.token }], 3);
-    const after = await gamesToContinue(connection, [closed.code, game.code], 4);
+    const after = await gamesToContinue(connection, games, 4);
     assert.deepEqual([after!.open, after!.over, after!.gone], [[], [game.code], [closed.code]]);
 
     // A server that cannot be asked: nothing is known, and nothing is forgotten.
     const nowhere = new Connection('http://127.0.0.1:9');
     connections.push(nowhere);
-    assert.equal(await gamesToContinue(nowhere, [game.code], 4), null);
+    assert.equal(await gamesToContinue(nowhere, games, 4), null);
   });
 
   test('a club: a club game counts for its table, and a member plays once a game', async () => {
@@ -272,12 +277,13 @@ describe('the API client against a real server', { skip }, () => {
     // Online: a player already at the table cannot join again under another spelling.
     const host = await connection.request<Seat>('create', { name: 'Test Ann', players: 2, club: club.code });
     const guest = connect('ru');
-    const twice = await guest.request('join', { code: host.code, name: ' test ANN' }).catch((e) => e);
+    const twice = await guest.request('join', { code: host.code, key: host.state.key, name: ' test ANN' })
+      .catch((e) => e);
     assert.ok(twice instanceof ApiError);
     assert.equal(twice.code, 'refused');
     assert.match(twice.message, /своё имя/);
     assert.deepEqual(offered(table.names, host.state.names), ['Test Bob']); // what the invite offers
-    const joined = await guest.request<Seat>('join', { code: host.code, name: 'Test Bob' });
+    const joined = await guest.request<Seat>('join', { code: `${host.code}-${host.state.key}`, name: 'Test Bob' });
     assert.deepEqual([joined.state.names, joined.state.club], [['Test Ann', 'Test Bob'], club.code]);
 
     const missing = await connection.request('club', { club: 'ZZZZZZ' }).catch((e) => e);

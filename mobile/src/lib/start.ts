@@ -9,6 +9,7 @@ import { saveGame } from './storage';
 export async function startGame(connection: Connection, op: 'create' | 'create_local',
                                 fields: Record<string, unknown>): Promise<void> {
   const seat = await connection.request<Seat>(op, fields);
-  await saveGame({ code: seat.code, local: seat.state.local, names: seat.state.names }, seat.token);
+  await saveGame({ code: seat.code, key: seat.state.key, local: seat.state.local, names: seat.state.names },
+                 seat.token);
   router.push({ pathname: '/game/[code]', params: { code: seat.code } });
 }

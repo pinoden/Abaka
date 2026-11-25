@@ -88,8 +88,8 @@ class TestStoreOnDisk(unittest.TestCase):
         rng = random.Random(3)
         a = RoomStore(save_dir=self.dir)
         code, ann = a.create("Ann", players=3)
-        bob = a.join(code, "Bob")
-        cy = a.join(code, "Cy")
+        bob = a.join(code, "Bob", a.view(code).key)
+        cy = a.join(code, "Cy", a.view(code).key)
         tokens = [ann, bob, cy]
         for _ in range(7):  # throws and turns, each by whoever is due
             g = a.view(code).engine
@@ -110,9 +110,9 @@ class TestStoreOnDisk(unittest.TestCase):
         g = b.view(code).engine
         play_some(RoomEngine(b, code, tokens[g.current], g), rng, 1)
         self.assertGreater(b.version(code), a.version(code))
-        self.assertEqual(b.resume_local(local), key)
+        self.assertEqual(b.resume_local(local, b.view(local).key), key)
         self.assertFalse(b.view(waiting).started)
-        b.join(waiting, "Gus")
+        b.join(waiting, "Gus", b.view(waiting).key)
         self.assertEqual(RoomStore(save_dir=self.dir).view(waiting).names, ["Fay", "Gus"])
         self.assertEqual(list(self.dir.glob("*.tmp")), [])  # writes are atomic
 
@@ -166,7 +166,7 @@ class TestWritingFiles(unittest.TestCase):
     def test_a_closed_room_is_not_brought_back_by_a_late_write(self):
         store = RoomStore(save_dir=self.dir)
         code, ann = store.create("Ann", players=3)
-        bob = store.join(code, "Bob")
+        bob = store.join(code, "Bob", store.view(code).key)
         with store._lock:
             late = store._snapshot(store._rooms[code])
         store.leave(code, ann)
@@ -236,14 +236,14 @@ class TestLocalRooms(unittest.TestCase):
         with self.assertRaises(RoomError):
             store.roll(code, "someone else")
         with self.assertRaises(RoomError):
-            store.join(code, "Dan")  # nobody joins a same-device game
-        self.assertEqual(store.reclaim(code, 1), key)  # no seat juggling either
+            store.join(code, "Dan", store.view(code).key)  # nobody joins a same-device game
+        self.assertEqual(store.reclaim(code, 1, store.view(code).key), key)  # no seat juggling either
 
     def test_online_rooms_cannot_be_resumed_as_local(self):
         store = RoomStore()
         code, _ = store.create("Ann")
         with self.assertRaises(RoomError):
-            store.resume_local(code)
+            store.resume_local(code, store.view(code).key)
 
     def test_player_count_limits(self):
         store = RoomStore()

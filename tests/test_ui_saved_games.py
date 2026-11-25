@@ -11,6 +11,7 @@ from unittest import mock
 
 import abaka.rooms as rooms
 import code_version
+from abaka.rooms import full_code
 
 try:
     from streamlit.testing.v1 import AppTest
@@ -18,6 +19,11 @@ except ImportError:  # e.g. the base Python 3.8 on the owner's machine
     AppTest = None
 
 APP = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "abaka_ui.py")
+
+
+def link(store, code):
+    """A game's link: its full code (the code alone opens nothing)."""
+    return full_code(code, store.view(code).key)
 
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
@@ -65,7 +71,7 @@ class TestSavedGames(unittest.TestCase):
         store.throw_for_start(code, key)  # Ann throws for the first turn
 
         # A new browser session with the game's link (a reload, or a session dropped after a pause).
-        at = self.page(room=code)
+        at = self.page(room=link(store, code))
         self.assertEqual(at.session_state["room_code"], code)
         html = self.html(at)
         self.assertIn(f"Same device · {code}", html)
@@ -74,7 +80,7 @@ class TestSavedGames(unittest.TestCase):
 
         # A restart: the new store reads the game from disk, and the link still opens it.
         self.fresh_store_class()
-        at = self.page(room=code)
+        at = self.page(room=link(store, code))
         self.assertEqual(len(self.stores), 2)
         self.assertIn("Throw for Bob", [b.label for b in at.button])
         self.assertEqual(len(self.stores[-1].view(code).engine.starting_throws), 1)

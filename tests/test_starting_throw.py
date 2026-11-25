@@ -79,8 +79,8 @@ class TestRooms(unittest.TestCase):
     def setUp(self):
         self.store = RoomStore()
         self.code, self.ann = self.store.create("Ann", players=3)
-        self.bob = self.store.join(self.code, "Bob")
-        self.cy = self.store.join(self.code, "Cy")
+        self.bob = self.store.join(self.code, "Bob", self.store.view(self.code).key)
+        self.cy = self.store.join(self.code, "Cy", self.store.view(self.code).key)
         self.tokens = [self.ann, self.bob, self.cy]
 
     def engine(self):

@@ -50,11 +50,15 @@ def render_language_switch(key: str) -> None:
 
 
 def render_top_bar(status_html: str, on_leave: Optional[Callable[[], None]] = None,
-                   leave_label: str = "Leave game") -> None:
+                   leave_label: str = "Leave game", full_code: str = "") -> None:
+    """`full_code`: the game's code with its key, shown in the menu to its players, for another device."""
     with st.container(horizontal=True, vertical_alignment="center", key="topbar"):
         st.html(f'<div class="ab-topbar">{brand_html()}{status_html}</div>')
         with st.popover(t("Menu"), icon=":material/menu:", width="content"):
             render_language_switch("lang-menu")
+            if full_code:
+                st.caption(t("The game's full code, to open it on another device:"))
+                st.code(full_code, language=None)
             if st.button(t("How to play"), icon=":material/help:", key="menu-rules", use_container_width=True):
                 rules_dialog()
             if on_leave is not None and st.button(leave_label, icon=":material/logout:", key="menu-leave",
@@ -68,7 +72,7 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
                 leave_label: str, board_note_html: str = "", results_note_html: str = "",
                 after_results: Optional[Callable[[], None]] = None,
                 below_play: Optional[Callable[[], None]] = None,
-                after_play_card: Optional[Callable[[], None]] = None) -> None:
+                after_play_card: Optional[Callable[[], None]] = None, full_code: str = "") -> None:
     """
     Args:
         engine: A GameEngine, or anything shaped like one (see abaka.rooms.RoomEngine).
@@ -78,8 +82,9 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
         after_results: draws more buttons on the results screen, under "Play again".
         below_play: draws more at the foot of the play card (the reactions of an online game).
         after_play_card: draws a card under the play card (the chat of an online game).
+        full_code: the game's code and key, for the menu (render_top_bar).
     """
-    render_top_bar(status_html, on_leave, leave_label)
+    render_top_bar(status_html, on_leave, leave_label, full_code)
     # Up to 4 players fit the usual layout; with 5 the scoreboard gets more room and the dice shrink a little.
     # With 3 players the two cards stack on screens up to 1000px wide, with 4 or 5 up to 1180px
     # (style.py), so the scoreboard does not scroll sideways there.

@@ -135,7 +135,7 @@ class TestDisk(Base):
         code, _ = self.store.create_local(["Ann", "Bob"])
         self.age(code, rooms.IDLE_IN_MEMORY_SECONDS + 5)
         self.sweep()
-        with mock.patch.object(rooms.secrets, "choice", side_effect=list(code) + list("XYZ23")):
+        with mock.patch.object(rooms.secrets, "choice", side_effect=list(code) + list("XYZ23") + list("K" * rooms.KEY_LENGTH)):
             new_code, _ = self.store.create("Cy")
         self.assertEqual(new_code, "XYZ23")
 
