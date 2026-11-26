@@ -178,6 +178,7 @@ Python + Streamlit.
 | `abaka/effects.py` | What reactions and effects say, for the web page and for apps: a reaction's emoji and label, who sent it to whom, an effect's banner. No Streamlit |
 | `abaka/rules.py` | The rules players read, in English and Russian: Markdown for the web page, blocks for apps (`rules_blocks`). No Streamlit |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
+| `abaka/standings.py`, `ui_components/chart.py` | How the players stand, for one viewer: each row's difference from the opponent (the board's column behind the "Row differences" switch) and every total after each move (`engine.score_history`, the chart under the board). For the web page and apps |
 | `abaka/races.py`, `ui_components/races.py` | The races for the shared bonuses (cells left in column I and II, rows two players are one cell from), for the web page and apps; and their box under the dice |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, the rules dialog (its text is `abaka/rules.py`) |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
@@ -725,7 +726,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in progress: the row warning, tears and teasing reactions in PR #73. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1477,9 +1478,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Still possible, as before: someone who has the link takes a seat by
       tapping its name (item 11's next layer, if the owner wants it).
 
-32. **A tester's second round.** In progress: the row warning, tears and the
-    teasing reactions in PR #73; the board's row differences and the score
-    chart next.
+32. **A tester's second round.** Done: the row warning, tears and the teasing
+    reactions in PR #73; the board's row differences and the score chart in
+    PR #74.
     > (a tester, through the owner) "Играл в абаку с Пашей, видел нововведения.
     > По строчкам, мне кажется, немного не то, о чем я говорил. Я имел ввиду
     > предупреждение, которое появляется на один ход, когда кто-то догоняет и
@@ -1502,11 +1503,42 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - [x] Teasing reactions (PR #73): 🤬 Damn! / Блин!, 🙄 Seriously? /
       Серьёзно?, 😤 Unfair! / Нечестно!, 🤡 Clown / Клоун, after the nine
       there were.
-    - [ ] The board: each row's difference from the opponent, on the right.
-    - [ ] A chart of the scores by move, a line per player, as chess sites
-      show.
+    - [x] The board: each row's difference from the opponent, as a last
+      column (PR #74): the player's points in the row (its three cells and its
+      bonus) minus the opponent's, or the best of the others' at a table of
+      three or more; +12 green, −8 red. Behind a "Row differences" switch above
+      the board, off at first. On one device it is read for whose turn it is.
+    - [x] A chart of the scores by move under the board (PR #74): a line per
+      player, from move 0 to the latest, on the website and in the app.
 
 ## Status (2026-11-26)
+
+- **A tester's second round, second part (Backlog item 32):** PR #74.
+  - The board's column of row differences, behind a switch, on the website
+    and in the app. The chart of scores by move under the board.
+  - The engine keeps every player's total after each move
+    (`score_history`), saved with the game; the API sends it
+    (`game.history`) and each seat's differences (`differences`). Protocol 1:
+    fields added.
+  - Checked:
+    - 13 new Python tests (`tests/test_standings.py`): the differences row by
+      row, with two and three players, on one device, and adding up to the
+      totals' difference in random whole games; the history after every move,
+      saved, shared by a clone, and for a game saved before it; the API; the
+      board's HTML (every row as wide as the header); the switch on the page.
+    - The app's browser check turns the switch on and off and finds the chart.
+    - Headless Chromium, the website's board with the column and the chart,
+      English at 1300px and Russian at 390px: two players fit at 390 (the
+      board's font and gaps narrow on a phone while the column is on); three
+      or more scroll inside the card, as before. The app at 390: the board
+      scrolls so the column shows when it is switched on.
+    - Every Python test on 3.13 (345; the 8 database tests skipped, no
+      Postgres here), 3.9 (343) and 3.8 (343); the app's 47 tests, typecheck,
+      lint and all seven browser flows.
+    - The website check now also finds the chart and switches the column on;
+      with the chart left out on purpose it failed, on both widths.
+  - Load-test row: no slowdown (26% CPU, 6.8 ms median poll, page run 97 ms
+    against 91).
 
 - **A tester's second round, first part (Backlog item 32):** PR #73.
   - The row warning now comes for the one move that caught up, on the website
@@ -2192,13 +2224,17 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 330 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 343 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  330 run and 63 are skipped (9 need a database or psycopg; the others need
+  343 run and 65 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  332 run and none is skipped. 16 game-key tests (`test_game_keys.py`: a
+  345 run and none is skipped. 13 standings tests (`test_standings.py`: row
+  differences with two and three players, on one device, adding up to the
+  totals over whole games; the score history after every move, saved, cloned,
+  and for games saved before it; the API; the board's HTML and the chart; the
+  switch on the page). 16 game-key tests (`test_game_keys.py`: a
   key per game, saved, made once for older saved games; the code alone or a
   wrong key refused as a missing game in the store and the API; the key typed
   any way, or as a pasted link; the pages for a code alone, a wrong key and
@@ -2439,6 +2475,34 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-26: a tester's second round, second part (Claude Code, PR #74)**
+
+- The row differences are behind a switch, off at first. The tester had just
+  said the board area carried too much information, and asked for these
+  "as a whim". The column also does not fit beside two players on a 360px
+  phone, where the board was made to fit exactly (PR #67). On the website the
+  switch lasts the session; in the app, the game screen.
+- A row's points are its three cells and its row bonus, the way the total adds
+  them up: the School rows' balance changes count as written. Against the best
+  of the others with three or more players: "how much you are losing" is to
+  whoever leads the row. With two players the rows and the column bonuses add
+  up to the difference in totals, apart from the School penalty (a test checks
+  this over whole games).
+- On one device the column is read for the player whose turn it is, the
+  player deciding. After the game nobody's turn is on, so it is not shown
+  there.
+- The chart's history lives in the engine, appended at the end of every move,
+  because the game's totals cannot be rebuilt later from the board (the order
+  of the moves is not kept). It is a tuple, so `clone()` shares it, as the
+  other immutable fields. A game saved before starts its line at its next
+  move; a made-up point at 0 would draw a jump.
+- Drawn without a library on both sides: an inline SVG on the website (the
+  lines stretch, the labels are HTML and keep their size on a phone), plain
+  views in the app (a line's pieces are thin turned bars; Expo Go has only its
+  bundled native modules). Colours per seat are the same on both.
+- The chart is under the board, where the scores are, so the play card keeps
+  only what a turn needs.
 
 **2026-11-26: a tester's second round, first part (Claude Code, PR #73)**
 

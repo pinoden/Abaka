@@ -188,6 +188,17 @@ RU = {
     # ----- the races for shared bonuses (abaka/races.py) -----
     "Cells to the bonus": "Клеток до бонуса",
     "Column {n}": "Столбец {n}",
+    "Row differences": "Разница по строкам",
+    "Your points in each row minus the opponent's: what you are winning or losing in it.":
+        "Ваши очки в строке минус очки соперника: сколько вы в ней выигрываете или проигрываете.",
+    "Your points in each row minus {name}'s": "Ваши очки в каждой строке минус очки игрока {name}",
+    "{name}'s points in each row minus {other}'s": "Очки игрока {name} в каждой строке минус очки игрока {other}",
+    "Your points in each row minus the best of the others'":
+        "Ваши очки в каждой строке минус лучший результат остальных",
+    "{name}'s points in each row minus the best of the others'":
+        "Очки игрока {name} в каждой строке минус лучший результат остальных",
+    "Scores by move": "Очки по ходам",
+    "move {n}": "ход {n}",
     "You caught up in {row}: one cell to the bonus for {names}.":
         "Вы догнали в «{row}»: одна клетка до бонуса — {names}.",
     "{name} caught up in {row}: one cell to the bonus for {names}.":

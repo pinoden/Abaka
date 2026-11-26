@@ -43,6 +43,7 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/components/Reactions.tsx`, `Chat.tsx` | The reaction buttons and the chat card of an online game |
 | `src/components/Shows.tsx` | What plays over the game: bubbles, fireworks and sparkles with their banner |
 | `src/lib/codes.ts` | A game's full code (`CODE-KEY`) as players type or paste it: the code alone opens nothing (Backlog item 31). The device keeps each game's key with its token (`storage.ts`) |
+| `src/components/Chart.tsx` | The scores by move under the board, a line per player, drawn with plain views (no drawing package). The board's column of row differences is in `Board.tsx`, behind a switch on the game screen |
 | `src/components/Races.tsx` | The races for the shared bonuses under the dice: cells left in column I and II (a row per player, so names fit), rows one cell from the bonus. The server sends the words (`state.races`) |
 | `src/components/Club.tsx` | A club's table, its latest games, the ratings after a club game, its players to tap as names |
 | `src/lib/clubs.ts` | The club's rows and numbers (rounded as Python rounds them), the names offered and tapped. Tested in Node |

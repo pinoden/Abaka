@@ -64,6 +64,7 @@ def engine_to_data(g: GameEngine) -> Dict[str, Any]:
             for t in getattr(g, "starting_throws", [])
         ],
         "first_player": getattr(g, "first_player", None),
+        "score_history": [[moves, list(totals)] for moves, totals in getattr(g, "score_history", ())],
     }
 
 
@@ -90,6 +91,7 @@ def engine_from_data(d: Dict[str, Any]) -> GameEngine:
         for t in d.get("starting_throws", [])
     ]
     g.first_player = d.get("first_player")
+    g.score_history = tuple((moves, tuple(totals)) for moves, totals in d.get("score_history", ()))
     return g
 
 

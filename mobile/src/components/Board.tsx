@@ -7,9 +7,10 @@
  * School cell (✓) or a crossed-out one (✕), and in a bonus cell a lost bonus (✕).
  */
 
+import { type ComponentRef, useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
-import type { Cell, Game, Move } from '@/lib/api';
+import type { Cell, Differences, Game, Move } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { BONUS_W, CELL_W, cellWidths, COLUMN_PADDING, GAP, NAME_W } from '@/lib/board';
 
@@ -19,15 +20,18 @@ const ROW_H = 30;
 const HEAD_H = 56;
 const SUB_H = 22;
 const SECTION_H = 24;
+const DIFF_W = 38;
 
 const isSchool = (row: string) => row.startsWith('SCHOOL_');
 
-export function Board({ game, you, target }: {
+export function Board({ game, you, target, differences }: {
   game: Game;
   /** This device's seat online (marked "You"), null on one device. */
   you: number | null;
   /** The move being chosen: its cell and the bonus cells it gives up are previewed. */
   target: Move | null;
+  /** The difference row by row, as a last column (null: not shown). On a narrow phone it scrolls into view. */
+  differences?: Differences | null;
 }) {
   const { t, rowName } = useApp();
   const players = game.players;
@@ -41,6 +45,12 @@ export function Board({ game, you, target }: {
   const over = game.winners.length > 0;
   const active = over ? null : game.current;
   const last = game.last_move;
+  // Switched on, the column of differences is scrolled into view (on a narrow phone it is past the edge).
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
+  const showing = !!differences;
+  useEffect(() => {
+    if (showing) scroller.current?.scrollToEnd({ animated: true });
+  }, [showing]);
 
   const nameColumn = (
     <View style={{ width: NAME_W }}>
@@ -106,13 +116,39 @@ export function Board({ game, you, target }: {
     );
   };
 
+  const diffColumn = differences ? (
+    <View testID="board-differences" style={{ width: DIFF_W }}>
+      <Text accessibilityLabel={differences.hint} style={[styles.diffHead, { height: HEAD_H + SUB_H, lineHeight: HEAD_H + SUB_H }]}>
+        {differences.title}
+      </Text>
+      <View style={{ height: SECTION_H }} />
+      {school.map((row) => <DiffText key={row} value={differences.rows[row] ?? null} />)}
+      <View style={{ height: SECTION_H }} />
+      {combos.map((row) => <DiffText key={row} value={differences.rows[row] ?? null} />)}
+      <View style={{ height: SECTION_H }} />
+      <DiffText value={players.some((p) => p.column_bonus.some((v) => v !== null)) ? differences.columns : null} />
+      <DiffText value={differences.total} total />
+    </View>
+  ) : null;
+
   return (
     <View testID="board" style={styles.board}>
       {nameColumn}
-      <ScrollView horizontal showsHorizontalScrollIndicator={players.length > 2}>
-        <View style={styles.players}>{players.map((_, seat) => playerColumn(seat))}</View>
+      <ScrollView ref={scroller} horizontal showsHorizontalScrollIndicator={players.length > 2 || !!differences}>
+        <View style={styles.players}>{players.map((_, seat) => playerColumn(seat))}{diffColumn}</View>
       </ScrollView>
     </View>
+  );
+}
+
+/** One row's difference: +12 in green, −8 in red, 0 in grey, nothing while nobody wrote there. */
+function DiffText({ value, total }: { value: number | null; total?: boolean }) {
+  const text = value === null ? '' : value > 0 ? `+${value}` : value < 0 ? `−${-value}` : '0';
+  return (
+    <Text numberOfLines={1} style={[styles.diff, total && styles.diffTotal,
+      value !== null && value > 0 && styles.diffUp, value !== null && value < 0 && styles.negative]}>
+      {text}
+    </Text>
   );
 }
 
@@ -208,4 +244,9 @@ const styles = StyleSheet.create({
   last: { backgroundColor: colors.lastSoft, color: '#9A4D00', fontWeight: '700' },
   target: { backgroundColor: colors.accent, color: '#FFFFFF', fontWeight: '700' },
   total: { fontWeight: '700', fontSize: 15 },
+  diffHead: { textAlign: 'right', fontSize: 15, fontWeight: '700', color: colors.muted, paddingRight: 2 },
+  diff: { height: ROW_H, lineHeight: ROW_H, textAlign: 'right', fontSize: 12, fontWeight: '700', color: colors.faint,
+    paddingRight: 2 },
+  diffTotal: { fontSize: 14 },
+  diffUp: { color: colors.green },
 });

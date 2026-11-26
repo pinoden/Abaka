@@ -13,7 +13,9 @@ from typing import Callable, Optional
 import streamlit as st
 
 from abaka.engine import GameEngine
+from abaka.standings import row_differences
 from ui_components.actions import run_action, show_action_error
+from ui_components.chart import render_score_chart
 from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
 from abaka.i18n import LANGUAGES, and_join, md, picked_dice_note, rerolled_dice_note, t
 from ui_components.move_selection import render_move_picker
@@ -47,6 +49,21 @@ def render_language_switch(key: str) -> None:
     ss[key] = ss.get("lang", "en")
     st.segmented_control(t("Language"), list(LANGUAGES), format_func=str.upper, key=key,
                          label_visibility="collapsed", on_change=_language_picked, args=(key,))
+
+
+def _diffs_picked() -> None:
+    st.session_state.show_diffs = bool(st.session_state.get("diffs-switch"))
+
+
+def _render_diffs_switch() -> bool:
+    """The switch for the column of row differences (a tester, 2026-11-26), off until a player
+    turns it on: the board is full enough, and on a phone the column makes it scroll sideways.
+    The choice stays for the session, across games."""
+    ss = st.session_state
+    ss["diffs-switch"] = ss.get("show_diffs", False)
+    st.toggle(t("Row differences"), key="diffs-switch", on_change=_diffs_picked,
+              help=t("Your points in each row minus the opponent's: what you are winning or losing in it."))
+    return ss.get("show_diffs", False)
 
 
 def render_top_bar(status_html: str, on_leave: Optional[Callable[[], None]] = None,
@@ -107,9 +124,13 @@ def render_game(engine: GameEngine, *, me: Optional[int] = None, status_html: st
                 after_play_card()
         with right:
             with st.container(border=True, key="card-board"):
-                render_scoreboard(engine, me=me, target=target)
+                differences = row_differences(engine, me)
+                if differences is not None and not _render_diffs_switch():
+                    differences = None
+                render_scoreboard(engine, me=me, target=target, differences=differences)
                 if board_note_html:
                     st.html(board_note_html)
+                render_score_chart(engine, me)
 
 
 def _render_play_panel(engine: GameEngine, me: Optional[int]):
