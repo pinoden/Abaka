@@ -171,6 +171,30 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 
 /* ---------- scoreboard ---------- */
 .ab-board-wrap { overflow-x: auto; }
+/* The difference row by row (a tester, 2026-11-26): the viewer's points minus the opponent's. */
+.ab-board .ab-diff { font-size: .8rem; font-weight: 700; color: #9AA0B5; text-align: right; padding: 6px 4px 6px 2px;
+  width: 3em; min-width: 2.6em; white-space: nowrap; }
+.ab-board .ab-diff.up { color: #15803D; }
+.ab-board .ab-diff.down { color: #E5484D; }
+@media (max-width: 640px) { .ab-board.ab-diffs .ab-gap { width: 3px; }
+  .ab-board.ab-diffs td, .ab-board.ab-diffs .ab-sub th { padding-left: 2px; padding-right: 2px; }
+  .ab-board.ab-diffs:not(.ab-many) { font-size: .84rem; } .ab-board.ab-diffs .ab-row { padding-right: 6px; }
+  .ab-board.ab-diffs .ab-diff { min-width: 2.3em; width: 2.3em; padding-left: 0; } }
+.ab-board th.ab-diff-head { font-size: 1rem; color: #4A4F68; border-bottom: none; cursor: help; }
+/* Scores by move (chart.py): a line per player. */
+.ab-chart { margin-top: .9rem; padding-top: .7rem; border-top: 1px solid #F0F1F6; }
+.ab-chart-title { font-size: .8rem; font-weight: 700; color: #6B7089; text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: .3rem; }
+.ab-chart-plot { position: relative; height: 150px; margin-left: 42px; }
+.ab-chart-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ab-chart-y { position: absolute; left: -42px; width: 36px; text-align: right; transform: translateY(-50%);
+  font-size: .72rem; color: #8A90A8; }
+.ab-chart-x { display: flex; justify-content: space-between; margin-left: 42px; font-size: .72rem; color: #8A90A8;
+  margin-top: .15rem; }
+.ab-chart-keys { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .8rem; color: #3A3F55; margin-top: .3rem; }
+.ab-chart-keys span { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; }
+.ab-chart-keys i { width: 14px; height: 3px; border-radius: 2px; background: var(--c); flex: none; }
+.ab-chart-keys b { font-weight: 700; }
 .ab-board { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .92rem;
   font-variant-numeric: tabular-nums; color: #1C2033; }
 .ab-board th, .ab-board td { padding: 6px 4px; text-align: center; border-bottom: 1px solid #F0F1F6; }

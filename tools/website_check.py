@@ -11,7 +11,7 @@ It checks, at a desktop and a phone width:
 - the home page in English and in Russian, and its note on where games are saved;
 - a game on one device: the starting throw, a roll, a die picked and rolled again, the
   option with the most points written, the race for column I's bonus shown, then a row
-  crossed out;
+  crossed out, the chart of scores by move, and the row differences switched on;
 - an online game between a desktop and a phone: created, joined, the starting throws on
   each player's screen, a roll seen on the other screen, the turn passing with the bonus
   race shown, a chat message and a reaction;
@@ -175,7 +175,7 @@ def write_best(screen: Screen) -> str:
 
 
 def check_one_device(browser, url: str, size: Tuple[int, int], label: str, games: List[str]) -> None:
-    """A game on one device, from the home page to a row crossed out."""
+    """A game on one device, from the home page to a row crossed out; the score chart and the row differences."""
     s = Screen(browser, url + "?lang=en", size, f"a game on one device ({label})")
     s.see(s.app.get_by_label("Player 1"), "the Player 1 box", START_MS).fill(NAMES[0])
     s.see(s.app.get_by_label("Player 2"), "the Player 2 box").fill(NAMES[1])
@@ -206,6 +206,9 @@ def check_one_device(browser, url: str, size: Tuple[int, int], label: str, games
     s.until(lambda: "Cross out " in (confirm.inner_text() or ""), "the confirm button naming the row")
     confirm.click()
     s.see(s.app.get_by_text(re.compile(r"Last move:.*crossed out")), 'the crossed-out row in the "Last move" line')
+    s.see(s.app.locator(".ab-chart"), "the chart of scores by move under the board")
+    s.see(s.app.locator(".st-key-diffs-switch label"), 'the "Row differences" switch').click()
+    s.see(s.app.locator("table.ab-board.ab-diffs"), "the column of row differences, switched on")
     s.healthy()
     s.close()
 

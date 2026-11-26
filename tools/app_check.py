@@ -334,6 +334,14 @@ def check_one_device(browser, url: str, server: str, games: List[str]) -> None:
         phone.see(phone.page.locator('[data-testid^="option-"]'), "a row to cross out").click()
         phone.id("confirm").first.click()
         phone.until(lambda: "crossed out" in phone.id("last-move").first.inner_text(), "the crossed-out row")
+        # Under the board, the scores by move; the row differences once switched on, and gone when off.
+        phone.see(phone.id("score-chart"), "the chart of scores by move under the board")
+        if phone.id("board-differences").count():
+            raise Problem("one device: the row differences show before they are switched on")
+        phone.id("differences-switch").click()
+        phone.see(phone.id("board-differences"), "the row differences, switched on")
+        phone.id("differences-switch").click()
+        phone.until(lambda: phone.id("board-differences").count() == 0, "the row differences, switched off")
         # The rules in the middle of the game, and back to the same game.
         phone.id("rules-button").click()
         phone.see(phone.id("rules").filter(has_text="Combinations"), "the rules, from the game")

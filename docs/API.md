@@ -219,6 +219,7 @@ them: ask for the rules again rather than keeping them in the app.
   "game": { ... },
   "moves": null,
   "races": { ... },
+  "differences": { ... },
   "events": [ ... ],
   "chat": [ ... ],
   "table": {"games": 2, "wins": [1, 1, 0], "draws": 0},
@@ -241,6 +242,7 @@ them: ask for the rules again rather than keeping them in the app.
 | `game` | The game (below), once it has started and the token holds a seat. |
 | `moves` | The moves to offer, when it is this player's turn and the dice are on the table. |
 | `races` | The races for the shared bonuses (below), while the game is played, or null when there is none. |
+| `differences` | The difference row by row (below), for this seat; on one device for the player whose turn it is. Null in the waiting room, during the starting throw, and on one device once the game is over. |
 | `events` | Recent reactions and effects (below), newer than `since`. |
 | `chat` | The game's messages, newer than `since`: `id`, `seat`, `text`, `at`. Show `text` as plain text, never as HTML or Markdown. |
 | `table` | The running score at this table: games finished here, wins per seat, draws. |
@@ -274,6 +276,7 @@ them: ask for the rules again rather than keeping them in the app.
 | `starting_throw` | `round`, `throwing` (the seats throwing in this round; empty once decided), `throws` (`round`, `seat`, `dice`, `total`), `first_player`. |
 | `players` | Per seat: `name`, `total`, `school_balance`, `balance_cell`, `rows`, `column_bonus` (below). |
 | `winners` | Once the game is over, the seats with the top score. Two or more means a draw. |
+| `history` | Every player's total after each move, for a chart of the scores by move: `[{"move": 0, "totals": [0, 0]}, {"move": 1, "totals": [24, 0]}, ...]`. `move` counts the moves made (cells written). A game saved before the history was kept (2026-11-26) starts where it was then, without a point at 0. |
 
 `rows` gives each row its three cells, then its row bonus cell, for example
 `"SUM": [22, 18, null, null]`.
@@ -307,6 +310,26 @@ them: ask for the rules again rather than keeping them in the app.
 | `balance_change` | School rows: the balance change (negative: paid from the balance). |
 | `bonus_lost`, `column_bonus_lost` | The move gives up the row bonus or the column bonus: show their cells crossed out in the preview. |
 | `label`, `action`, `preview` | Texts in the request's language: the option, its confirm button, and the cell's text on the board. |
+
+### `differences`
+
+"How much you are losing in each row" (a tester, 2026-11-26): this player's
+points in each row (its three cells and its bonus) minus the opponent's, or
+minus the best of the others' at a table of three or more. The website shows it
+as a last column of the board, behind a switch that is off at first.
+
+```json
+{"seat": 0, "rows": {"PAIR": 12, "SUM": -6, "ABAKA": null, ...},
+ "columns": 0, "total": 6, "title": "±",
+ "hint": "Your points in each row minus Bob's"}
+```
+
+| Field | Meaning |
+|---|---|
+| `seat` | Whose points are compared. |
+| `rows` | Per row name, the difference; null while nobody has written in the row. |
+| `columns`, `total` | The same for the column bonuses and for the totals. |
+| `title`, `hint` | A heading for the column, and what it means, in the request's language. |
 
 ### `races`
 

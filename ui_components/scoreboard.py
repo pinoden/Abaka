@@ -23,9 +23,22 @@ CHECK = "✓"
 EMPTY = "·"
 
 
-def render_scoreboard(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None) -> None:
-    """`me`: this browser's seat in an online game (marks "You"). `target`: move to preview."""
-    st.html(build_scoreboard_html(engine, me, target))
+def render_scoreboard(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None,
+                      differences: Optional[dict] = None) -> None:
+    """`me`: this browser's seat in an online game (marks "You"). `target`: move to preview.
+    `differences`: abaka.standings.row_differences, drawn as a last column (None: not shown)."""
+    st.html(build_scoreboard_html(engine, me, target, differences))
+
+
+def _diff_cell(value) -> str:
+    """One row's difference: +12 in green, −8 in red, 0 in grey, nothing while nobody wrote there."""
+    if value is None:
+        return '<td class="ab-gap"></td><td class="ab-diff"></td>'
+    if value > 0:
+        return f'<td class="ab-gap"></td><td class="ab-diff up">+{value}</td>'
+    if value < 0:
+        return f'<td class="ab-gap"></td><td class="ab-diff down">−{-value}</td>'
+    return '<td class="ab-gap"></td><td class="ab-diff">0</td>'
 
 
 def _bonus_cell(value, classes: str, crossed_tail: str) -> str:
@@ -36,7 +49,8 @@ def _bonus_cell(value, classes: str, crossed_tail: str) -> str:
     return f'<td class="{classes} ab-bval">{value}</td>'
 
 
-def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None) -> str:
+def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: Optional[Move] = None,
+                          differences: Optional[dict] = None) -> str:
     """
     The whole table as HTML. It has about 75 cells per player and is drawn on every page
     run, so everything that does not depend on the cell (translated tooltips, each
@@ -45,7 +59,8 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
     players = engine.players
     over = engine.is_game_over()
     active = None if over else engine.current
-    span = 1 + 5 * len(players)  # row label + (gap + 3 cells + bonus) per player
+    diffs = differences
+    span = 1 + 5 * len(players) + (2 if diffs else 0)  # row label + (gap + 3 cells + bonus) per player
     last = getattr(engine, "last_move", None)  # (player, category, slot) of the latest move
     last = tuple(last) if last is not None else (None, None, None)
     many = len(players) > 2
@@ -61,7 +76,8 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
     aim_cat = target.category if target is not None and active is not None else None
     aim_slot = target.slot if aim_cat is not None else None
 
-    h = [f'<div class="ab-board-wrap"><table class="ab-board{" ab-many" if many else ""}"><thead><tr><th></th>']
+    h = [f'<div class="ab-board-wrap"><table class="ab-board{" ab-many" if many else ""}{" ab-diffs" if diffs else ""}">'
+         '<thead><tr><th></th>']
     for i, p in enumerate(players):
         dot = '<span class="ab-dot"></span>' if i == active else ""
         you = f'<span class="ab-you">{t("You")}</span>' if i == me else ""
@@ -73,11 +89,16 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
             f'{"<br>" if many else " &middot; "}<span class="ab-nw">{t("balance {balance}", balance=bal_txt)}</span>'
             f'</div></th>'
         )
+    if diffs:
+        h.append(f'<th class="ab-gap"></th><th class="ab-diff ab-diff-head" title="{escape(diffs["hint"])}">'
+                 f'{escape(diffs["title"])}</th>')
     h.append('</tr><tr class="ab-sub"><th></th>')
     row_bonus_tip = t("Row bonus")
     for a in acts:
         h.append(f'<th class="ab-gap"></th><th class="{a}">I</th><th class="{a}">II</th>'
                  f'<th class="{a}">III</th><th class="ab-bonus{a}" title="{row_bonus_tip}">★</th>')
+    if diffs:
+        h.append('<th class="ab-gap"></th><th class="ab-diff"></th>')
     h.append("</tr></thead><tbody>")
 
     lose_row_tip = t("This move crosses out the row bonus")
@@ -112,6 +133,8 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
                     h.append(f'<td class="ab-bonus{acts[i]} ab-target" title="{lose_row_tip}">{CROSS}</td>')
                 else:
                     h.append(_bonus_cell(cells[3], "ab-bonus" + acts[i], bonus_x))
+            if diffs:
+                h.append(_diff_cell(diffs["rows"].get(cat.name)))
             h.append("</tr>")
 
     h.append(f'<tr class="ab-section"><td colspan="{span}">{escape(t("Bonuses & total"))}</td></tr>')
@@ -128,9 +151,14 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
             else:
                 h.append(_bonus_cell(value, plain[i], bonus_x))
         h.append(f'<td class="ab-bonus{acts[i]}"></td>')
+    if diffs:
+        h.append(_diff_cell(diffs["columns"] if any(v is not None for p in players for v in p.column_bonus)
+                            else None))
     h.append(f'</tr><tr class="ab-total"><th class="ab-row">{t("Total")}</th>')
     for i in range(len(players)):
         h.append(f'<td class="ab-gap"></td><td colspan="4" class="{plain[i]}">{scores[i]}</td>')
+    if diffs:
+        h.append(_diff_cell(diffs["total"]))
     h.append("</tr></tbody></table></div>")
     if last[0] is not None:
         h.append(f'<div class="ab-legend"><span class="ab-swatch"></span>'

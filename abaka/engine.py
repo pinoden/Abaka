@@ -44,6 +44,10 @@ class GameEngine:
         self.row_bonus_blocked: Dict[tuple[int, Category], bool] = {}
         # The cell written by the most recent move: (player index, category, slot), or None.
         self.last_move: Optional[Tuple[int, Category, int]] = None
+        # Every player's total after each move, for the chart of scores by move (a tester,
+        # 2026-11-26): (moves made so far, (total of each seat)). A tuple, never changed in
+        # place, so clone() shares it. Games saved before it start theirs where they are.
+        self.score_history: Tuple[Tuple[int, Tuple[int, ...]], ...] = ()
 
         # Starting throw. `throw_round` lists the players throwing in the current round, in
         # order; `current` is the one whose throw is next. It is empty once the first player
@@ -121,6 +125,8 @@ class GameEngine:
 
     def _end_turn(self) -> None:
         """Pass the turn. Dice are cleared, so `not self.dice` means "not rolled yet"."""
+        moves = sum(v is not None for p in self.players for cells in p.table.values() for v in cells[:3])
+        self.score_history += ((moves, tuple(p.calculate_score() for p in self.players)),)
         self.dice = []
         self.rolls_left = 0
         self.first_roll = True

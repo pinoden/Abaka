@@ -121,6 +121,21 @@ export type Game = {
   };
   players: PlayerBoard[];
   winners: number[];
+  /** Every player's total after each move, for the chart of scores by move (docs/API.md). */
+  history?: { move: number; totals: number[] }[];
+};
+
+/**
+ * The difference row by row (docs/API.md, `differences`): `seat`'s points in each row minus the
+ * opponent's (the best of the others'), null while nobody wrote in the row. Words included.
+ */
+export type Differences = {
+  seat: number;
+  rows: Record<string, number | null>;
+  columns: number;
+  total: number;
+  title: string;
+  hint: string;
 };
 
 export type State = {
@@ -143,6 +158,8 @@ export type State = {
   moves: { score: Move[]; cross: Move[] } | null;
   /** The races for the shared bonuses, drawn for this player; null when there is none. Older servers leave it out. */
   races?: Races | null;
+  /** The difference row by row, for this player (on one device: whose turn it is). Older servers leave it out. */
+  differences?: Differences | null;
   /**
    * In an answer: the events and messages newer than the request's `since`. In a state
    * handed to a watcher (`Connection.startWatching`): `events` are the ones not handed

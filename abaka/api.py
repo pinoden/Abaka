@@ -34,6 +34,7 @@ from .i18n import LANGUAGES, error, get_language, set_language, t
 from .models import Category
 from .moves import ROW_ORDER, cross_options, free_slot, is_school, most_points, row_hint, row_name, score_options
 from .races import bonus_races
+from .standings import row_differences, score_history
 from .rooms import (MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, REACTIONS, OutdatedPage,
                     RoomError, RoomStore, RoomView, TooFast, normalize_code, split_code)
 from .rules import rules_blocks
@@ -414,6 +415,7 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
         "game": None,
         "moves": None,
         "races": None,
+        "differences": None,
         "events": [],
         "chat": [],
         "table": _table(view),
@@ -453,6 +455,8 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
                           "cross": [_move(m, False) for m in cross]}
     if phase == "playing":
         state["races"] = bonus_races(engine, state["you"])
+    if phase in ("playing", "over"):
+        state["differences"] = row_differences(engine, state["you"])
     state["events"] = [_event(e, view.names, state["you"]) for e in view.events if e["id"] > since]
     state["chat"] = [dict(m) for m in view.chat if m["id"] > since]
     if phase == "over" and view.club and clubs is not None:
@@ -484,6 +488,7 @@ def _game(view: RoomView) -> dict:
         "players": [_player(p, total) for p, total in zip(engine.players, totals)],
         "winners": ([i for i, total in enumerate(totals) if total == max(totals)]
                     if engine.is_game_over() else []),
+        "history": score_history(engine),
     }
 
 

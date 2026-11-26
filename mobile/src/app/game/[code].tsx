@@ -7,9 +7,10 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Pressable, Share, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Board, lastMoveText } from '@/components/Board';
+import { Chart } from '@/components/Chart';
 import { Chat } from '@/components/Chat';
 import { ClubRatings, PlayerChips } from '@/components/Club';
 import { DieFace } from '@/components/Dice';
@@ -353,6 +354,8 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
   const myTurn = state.local || game.current === state.you;
   // The move being chosen is kept only for this throw: a new roll or turn starts afresh.
   const turn = `${game.number}.${game.current}.${game.rolls_left}.${game.dice.map((d) => d.value).join('')}`;
+  // The column of row differences (a tester, 2026-11-26): off until the player turns it on, as on the web.
+  const [showDiffs, setShowDiffs] = useState(false);
   const [choice, setChoice] = useState<{ turn: string; mode: 'score' | 'cross'; move: Move | null }>(
     { turn, mode: 'score', move: null });
   const current = choice.turn === turn ? choice : { turn, mode: 'score' as const, move: null };
@@ -384,9 +387,19 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
       {state.can.includes('react') ? <Card><ReactionBar state={state} react={talk.react} /></Card> : null}
       {state.can.includes('say') ? <Chat state={state} chat={state.chat} say={talk.say} /> : null}
       <Card testID="scoreboard" style={styles.boardCard}>
-        <Board game={game} you={state.local ? null : state.you} target={target} />
+        {state.differences ? (
+          <View style={styles.diffSwitch}>
+            <Text style={styles.diffLabel}>{t('Row differences')}</Text>
+            <Switch testID="differences-switch" value={showDiffs} onValueChange={setShowDiffs}
+                    trackColor={{ true: colors.accent, false: colors.line }}
+                    accessibilityHint={state.differences.hint} />
+          </View>
+        ) : null}
+        <Board game={game} you={state.local ? null : state.you} target={target}
+               differences={showDiffs ? state.differences : null} />
         {last ? <Text testID="last-move" style={styles.lastMove}>{last}</Text> : null}
         <TableScore state={state} />
+        <Chart game={game} you={state.local ? null : state.you} />
       </Card>
     </>
   );
@@ -667,6 +680,8 @@ function TableScore({ state }: { state: State }) {
 }
 
 const styles = StyleSheet.create({
+  diffSwitch: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 4 },
+  diffLabel: { fontSize: 13, color: colors.muted },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   barHome: { fontSize: 16, color: colors.accent, fontWeight: '600' },
   barTitle: { flex: 1, fontSize: 15, color: colors.muted, textAlign: 'center' },
