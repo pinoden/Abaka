@@ -1,6 +1,6 @@
 /**
  * What plays over the game's screen, and when: bubbles for reactions and for other
- * players' chat messages, and effects (fireworks, sparkles) with their banners. The rules
+ * players' chat messages, and effects (fireworks, sparkles, tears) with their banners. The rules
  * are the website's (ui_components/effects.py, chat.py):
  *
  * - what happened before this screen opened the game is not news;
@@ -26,7 +26,7 @@ export type Show = {
   label?: string;
   toYou?: boolean;
   // An effect and its banner.
-  effect?: 'grand_fireworks' | 'fireworks' | 'sparkles';
+  effect?: 'grand_fireworks' | 'fireworks' | 'sparkles' | 'tears';
   title?: string;
   text?: string;
 };
@@ -41,7 +41,7 @@ export type Shown = {
 };
 
 export const BUBBLE_MS = 3500;
-export const EFFECT_MS = { grand_fireworks: 6000, fireworks: 4500, sparkles: 2800 };
+export const EFFECT_MS = { grand_fireworks: 6000, fireworks: 4500, sparkles: 2800, tears: 4500 };
 export const DICE_LAND_MS = 450; // the dice's spin (components/Dice.tsx)
 export const STALE_SECONDS = 15;
 const MESSAGES_ANNOUNCED = 3; // of a burst of chat messages, the latest few get a bubble
@@ -78,7 +78,8 @@ export function showsFor(state: State, shown: Shown, now: number): Show[] {
       });
     } else if (event.kind === 'effect') {
       // An effect this app does not know yet still has its banner: sparkles go with it.
-      const effect = event.effect === 'grand_fireworks' || event.effect === 'fireworks' ? event.effect : 'sparkles';
+      const effect = event.effect === 'grand_fireworks' || event.effect === 'fireworks' || event.effect === 'tears'
+        ? event.effect : 'sparkles';
       // A throw's effect starts as the dice land; a bonus at once (the move clears the dice).
       const startAt = Math.max(now + (event.what === 'BONUS' ? 0 : DICE_LAND_MS), shown.effectsEnd);
       shown.effectsEnd = startAt + EFFECT_MS[effect];

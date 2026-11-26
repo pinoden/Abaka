@@ -599,7 +599,8 @@ def check_clubs(browser, url: str, server: str, games: List[str]) -> str:
 
 
 def check_fireworks(browser, build_url: str) -> str:
-    """An Abaka on the first roll, with steered dice: bigger fireworks on both phones as the dice land."""
+    """An Abaka on the first roll, with steered dice: bigger fireworks on both phones as the dice land.
+    Then an Abaka with the Abaka row full: tears instead (a tester, 2026-11-26)."""
     try:
         steered = Steered()
     except ImportError as e:
@@ -632,7 +633,28 @@ def check_fireworks(browser, build_url: str) -> str:
             phone.until(lambda: phone.page.locator('[data-testid^="effect-"]').count() == 0,
                         "the fireworks ending")
             phone.healthy()
-        return "Abaka! on both phones, in English and in Russian"
+        # Abaka again, once both have crossed out their whole Abaka row: tears, not fireworks.
+        from abaka.models import Category
+        tokens = list(steered.store._room(code.split()[0]).tokens)  # the shown code is CODE and KEY
+        for turn in range(6):  # Ann's turn is on (the dice are thrown), then Bob's, Ann's...
+            seat = turn % 2
+            if turn:
+                steered.throws = [[1, 2, 4, 5, 6]]  # nothing special
+                steered.store.roll(code.split()[0], tokens[seat])
+            steered.store.cross(code.split()[0], tokens[seat], Category.ABAKA, turn // 2)
+        steered.throws = [[6, 6, 6, 6, 6]]
+        ann.see(ann.id("roll"), "Ann's turn again").first.click()
+        for phone, title in ((ann, "Abaka, and nowhere to write it"), (bob, "Абака, а записать некуда")):
+            phone.see(phone.id("effect-tears"), "the tears")
+            banner = " | ".join(phone.id("effect-banner").first.inner_text().split("\n"))
+            if title not in banner:
+                raise Problem(f"{phone.name}: the banner says {banner!r}, not {title!r}")
+            if phone.id("effect-grand_fireworks").count():
+                raise Problem(f"{phone.name}: fireworks for an Abaka with nowhere to write it")
+        for phone in (ann, bob):
+            phone.until(lambda: phone.page.locator('[data-testid^="effect-"]').count() == 0, "the tears ending")
+            phone.healthy()
+        return "Abaka! on both phones, in English and in Russian; tears for one with nowhere to write it"
     finally:
         ann.close()
         bob.close()

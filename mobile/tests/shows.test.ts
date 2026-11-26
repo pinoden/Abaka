@@ -102,6 +102,14 @@ describe('what plays over the game', () => {
     assert.deepEqual(shows.map((s) => [s.kind, s.effect, s.title]), [['effect', 'sparkles', 'Meteors!']]);
   });
 
+  test('tears: a great throw with nowhere to write it, as the dice land, for as long as fireworks', () => {
+    const shown = opened();
+    const shows = showsFor(state([effect(10, { effect: 'tears', what: 'ABAKA', title: 'Abaka, and nowhere to write it 😭' })]),
+      shown, NOW);
+    assert.deepEqual(shows.map((s) => [s.effect, s.title, s.startAt - NOW, s.ms]),
+      [['tears', 'Abaka, and nowhere to write it 😭', 450, 4500]]);
+  });
+
   test('other players’ new messages are announced, the latest three, cut short', () => {
     const shown = opened([], [{ id: 5 }]);
     const long = 'x'.repeat(200);

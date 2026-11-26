@@ -1,7 +1,7 @@
 """
 The races for the shared bonuses (Backlog item 30, from a tester): "how many cells are left to
 the column, for you and the opponent", and a warning "that you have been caught up in a row
-when you have one cell left to the bonus". abaka/races.py works them out from the game; the
+when you have one cell left to the bonus", for the one move that caught up (2026-11-26). abaka/races.py works them out from the game; the
 web page draws them under the dice, and the API sends them to apps with their words.
 """
 
@@ -103,37 +103,51 @@ class TestColumns(unittest.TestCase):
 
 
 class TestRows(unittest.TestCase):
+    """The row warning is about the move that caught up, for that one move (a tester, 2026-11-26:
+    "a warning that shows for one move when someone catches up and leaves the bonus hanging")."""
+
     def setUp(self):
         self.addCleanup(set_language, "en")
 
-    def test_two_players_one_cell_from_the_same_row_bonus(self):
+    def test_the_move_that_catches_up_warns_everyone(self):
+        g = GameEngine(["Ann", "Bob"])
+        write(g, 0, C.SUM, 0)
+        write(g, 0, C.SUM, 1)  # Ann is one cell from Sum's bonus, alone: no race yet
+        self.assertEqual(bonus_races(g, 0)["rows"], [])
+        write(g, 1, C.SUM, 0)
+        self.assertEqual(bonus_races(g, 0)["rows"], [])  # Bob is two cells away
+        write(g, 1, C.SUM, 1)  # Bob catches up
+        self.assertEqual(bonus_races(g, 0)["rows"], [{
+            "rows": ["SUM"], "seats": [0, 1], "by": 1,
+            "text": "Bob caught up in Sum: one cell to the bonus for you and Bob."}])
+        self.assertEqual(bonus_races(g, 1)["rows"][0]["text"],
+                         "You caught up in Sum: one cell to the bonus for you and Ann.")
+
+    def test_only_for_one_move(self):
         g = GameEngine(["Ann", "Bob"])
         for seat in (0, 1):
-            for cat in (C.SUM, C.FULL):
-                write(g, seat, cat, 0)
-                write(g, seat, cat, 1)
-        write(g, 1, C.PAIR, 0)
-        write(g, 1, C.PAIR, 1)  # only Bob is one cell from Pair's bonus: no race to warn about
-        self.assertEqual(bonus_races(g, 1)["rows"], [{
-            "rows": ["FULL", "SUM"], "seats": [0, 1],
-            "text": "One cell to the bonus for you and Ann: Full house, Sum."}])
+            write(g, seat, C.SUM, 0)
+            write(g, seat, C.SUM, 1)
+        self.assertEqual(len(bonus_races(g, 0)["rows"]), 1)
+        write(g, 0, C.PAIR, 0)  # Ann writes elsewhere: both are still one cell away, but that is old news
+        self.assertEqual(bonus_races(g, 0)["rows"], [])
+        self.assertEqual(bonus_races(g, 1)["rows"], [])
 
     def test_the_warning_goes_once_the_row_is_decided(self):
         g = GameEngine(["Ann", "Bob"])
         for seat in (0, 1):
             write(g, seat, C.SUM, 0)
             write(g, seat, C.SUM, 1)
-        self.assertEqual(len(bonus_races(g, 0)["rows"]), 1)
-        write(g, 1, C.SUM, 2)  # Bob was first: the bonus is his, Ann's cell is crossed out
+        write(g, 0, C.SUM, 2)  # Ann was first: the bonus is hers, Bob's cell is crossed out
         self.assertTrue(g.row_bonus_claimed[C.SUM])
-        self.assertEqual(bonus_races(g, 0)["rows"], [])
+        self.assertEqual(bonus_races(g, 1)["rows"], [])
 
     def test_a_race_counts_while_one_of_its_players_can_win_it(self):
         g = GameEngine(["Ann", "Bob"])
-        write(g, 0, C.SUM, 0)
-        write(g, 0, C.SUM, 1, "X")  # Ann gave Sum's bonus up, but can still close it for Bob
         write(g, 1, C.SUM, 0)
         write(g, 1, C.SUM, 1)
+        write(g, 0, C.SUM, 0)
+        write(g, 0, C.SUM, 1, "X")  # Ann gave Sum's bonus up, but can now close it for Bob
         self.assertEqual([r["rows"] for r in bonus_races(g, 1)["rows"]], [["SUM"]])
         g2 = GameEngine(["Ann", "Bob"])
         for seat in (0, 1):
@@ -141,17 +155,14 @@ class TestRows(unittest.TestCase):
             write(g2, seat, C.SUM, 1, "X")  # neither can win it: nothing to warn about
         self.assertEqual(bonus_races(g2, 0)["rows"], [])
 
-    def test_three_players_grouped_by_who_is_close_the_viewer_first(self):
+    def test_three_players_the_viewer_first(self):
         g = GameEngine(["Ann", "Bob", "Cid"])
-        for seat in (0, 1, 2):
+        for seat in (0, 2, 1):
             write(g, seat, C.SUM, 0)
             write(g, seat, C.SUM, 1)
-        for seat in (0, 2):
-            write(g, seat, C.PAIR, 0)
-            write(g, seat, C.PAIR, 1)
-        self.assertEqual([r["text"] for r in bonus_races(g, 2)["rows"]], [
-            "One cell to the bonus for you, Ann and Bob: Sum.",
-            "One cell to the bonus for you and Ann: Pair."])
+        self.assertEqual(bonus_races(g, 2)["rows"][0]["text"],
+                         "Bob caught up in Sum: one cell to the bonus for you, Ann and Bob.")
+        self.assertEqual(bonus_races(g, 2)["rows"][0]["seats"], [0, 1, 2])
 
     def test_russian_and_one_shared_screen(self):
         g = GameEngine(["Ann", "Bob"])
@@ -159,18 +170,21 @@ class TestRows(unittest.TestCase):
             write(g, seat, C.SUM, 0)
             write(g, seat, C.SUM, 1)
         set_language("ru")
-        races = bonus_races(g, 1)
+        races = bonus_races(g, 0)
         self.assertEqual(races["title"], "Клеток до бонуса")
-        self.assertEqual(races["heads"], ["Ann", "Вы"])
+        self.assertEqual(races["heads"], ["Вы", "Bob"])
         self.assertEqual(races["columns"][0]["label"], "Столбец I")
-        self.assertEqual(races["rows"][0]["text"], "Одна клетка до бонуса — вы и Ann: Сумма.")
-        self.assertEqual(bonus_races(g, None)["rows"][0]["text"], "Одна клетка до бонуса — Ann и Bob: Сумма.")
+        self.assertEqual(races["rows"][0]["text"], "Bob догоняет в «Сумма»: одна клетка до бонуса — вы и Bob.")
+        self.assertEqual(bonus_races(g, 1)["rows"][0]["text"], "Вы догнали в «Сумма»: одна клетка до бонуса — вы и Ann.")
+        self.assertEqual(bonus_races(g, None)["rows"][0]["text"],
+                         "Bob догоняет в «Сумма»: одна клетка до бонуса — Ann и Bob.")
 
 
 class TestWholeGames(unittest.TestCase):
     def test_a_race_shown_is_the_one_the_next_completion_decides(self):
         """Random games: what the races say matches the board, and agrees with the bonus rules."""
         rng = random.Random(30)
+        warned = 0
         for number in range(16):
             g = GameEngine(["Ann", "Bob", "Cid"][:2 + number % 2])
             while not g.is_game_over():
@@ -182,6 +196,12 @@ class TestWholeGames(unittest.TestCase):
                 move = rng.choice(score_options(g) or cross_options(g))  # cross out when nothing scores
                 shown_rows = {cat for r in (races or {}).get("rows", []) if seat in r["seats"] for cat in r["rows"]}
                 shown_columns = {c["column"]: c["left"][seat] for c in (races or {}).get("columns", [])}
+                for r in (races or {}).get("rows", []):  # only the race the last move started
+                    warned += 1
+                    self.assertEqual((r["by"], r["rows"]), (g.last_move[0], [g.last_move[1].name]))
+                    self.assertIn(g.last_move[0], r["seats"])
+                    self.assertEqual(r["seats"], [i for i, p in enumerate(g.players)
+                                                  if p.table[g.last_move[1]][:3].count(None) == 1])
                 for c in (races or {}).get("columns", []):
                     self.assertFalse(g.col_bonus_claimed[c["column"]])
                     self.assertEqual(c["left"], [sum(p.table[cat][c["column"]] is None for cat in C)
@@ -197,6 +217,7 @@ class TestWholeGames(unittest.TestCase):
                     self.assertTrue(g.col_bonus_claimed[move.slot])
                     self.assertNotIn(move.slot, [c["column"] for c in after["columns"]])
             self.assertIsNone(bonus_races(g, 0))
+        self.assertGreater(warned, 10)
 
 
 class TestApi(unittest.TestCase):

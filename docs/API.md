@@ -319,15 +319,15 @@ the board. Column III is each player's own, so it is no race.
 {"title": "Cells to the bonus",
  "heads": ["Ann", "You"],
  "columns": [{"column": 0, "label": "Column I", "left": [4, 6], "open": [true, false]}],
- "rows": [{"rows": ["PAIR", "SUM"], "seats": [0, 1],
-           "text": "One cell to the bonus for you and Ann: Pair, Sum."}],
+ "rows": [{"rows": ["SUM"], "seats": [0, 1], "by": 0,
+           "text": "Ann caught up in Sum: one cell to the bonus for you and Ann."}],
  "note": "✕ — the bonus is crossed out, but whoever completes the column first still closes it for the others."}
 ```
 
 | Field | Meaning |
 |---|---|
 | `columns` | Column I and II while their bonus is undecided, someone can still earn it, and someone has written in it. Per seat: `left`, its empty cells, and `open`, false once that player's bonus there is crossed out (they can still close it for the others by completing the column first). |
-| `rows` | Rows whose bonus is undecided where two or more players have one cell left, at least one of whom can still earn it, grouped by those players. `text` says it. |
+| `rows` | The row race the last move started, if it did (at most one entry), until the next move: its mover (`by`) has just come to one cell from the row's bonus, where another player already was, and one of them can still earn it. `seats` are everyone one cell from it, `text` says it. Since 2026-11-26 a race is told only on the move that starts it (before, every such row stayed listed); a client shows `text` as it comes. |
 | `title`, `heads`, `label` | Words for a small table of `columns`: its corner, one heading per seat ("You" for this player), each column's name. |
 | `note` | What a crossed-out column means, when `columns` shows one; otherwise null. |
 
@@ -347,7 +347,10 @@ text; they hold players' names.
     "Ann → Bob", "Ann → you").
   - `to_you` is true when it was aimed at this player.
 - **Effect:** `"kind": "effect"`, with `effect` and `what`.
-  - `effect` is `grand_fireworks`, `fireworks` or `sparkles`.
+  - `effect` is `grand_fireworks`, `fireworks`, `sparkles` or `tears`. Tears: Abaka
+    or the royal full house thrown when the thrower's row for it (Abaka, Full house) is
+    already full. A combination counts for an effect only while its row has a free
+    cell. A client that does not know an effect shows its banner with sparkles.
   - `what` names what earned it: a row name (`ABAKA`, `KARE`, `FULL`,
     `LARGE_STRAIGHT`, `SMALL_STRAIGHT`), `ROYAL` for 1-1-1-2-2, or `BONUS`.
   - `first` (throws only) is true for a first roll.
@@ -355,8 +358,8 @@ text; they hold players' names.
     `columns` (`[column 0-2, points]`).
   - Its words, for a banner: `title` ("Abaka!", "Bonus!") and `text`
     ("Ann · first roll", "You · Sum row +52").
-  - The website shows bigger fireworks for 6 seconds, fireworks for 4.5 and
-    sparkles for 2.8. An effect that arrives while another plays waits for it to
+  - The website shows bigger fireworks for 6 seconds, fireworks and tears for
+    4.5 and sparkles for 2.8. An effect that arrives while another plays waits for it to
     end.
 - An effect from a throw should start when the dice land.
 - Skip events from before the game was opened, and events more than 15 seconds

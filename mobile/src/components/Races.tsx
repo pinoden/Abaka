@@ -1,7 +1,7 @@
 /**
  * The races for the shared bonuses, at the foot of the play card, as on the web
- * (ui_components/races.py): the cells each player has left in column I and II, and the rows
- * where two or more players are one cell from the bonus. On a phone the board is below the
+ * (ui_components/races.py): the cells each player has left in column I and II, and, for one
+ * move, the row race that move started (someone caught up to one cell from a bonus). On a phone the board is below the
  * dice, so this saves scrolling down and counting.
  *
  * The server works it all out and sends the words (`state.races`, abaka/races.py); this only
