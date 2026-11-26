@@ -358,8 +358,22 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 @keyframes ab-banner-small { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.6); }
   14% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 78% { opacity: 1; }
   100% { opacity: 0; transform: translate(-50%, -70%); } }
-@media (prefers-reduced-motion: reduce) { .ab-burst, .ab-star { display: none; } }
+/* Tears: Abaka or the royal full house thrown with its row already full. A grey-blue gloom
+   and a rain of drops instead of fireworks. */
+.ab-fx-tears { position: absolute; inset: 0; }
+.ab-gloom { position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(circle at 50% 45%, rgba(90, 110, 150, .28), rgba(90, 110, 150, 0) 75%);
+  animation: ab-gloom 4.5s ease-out var(--d) both; }
+@keyframes ab-gloom { 0% { opacity: 0; } 15% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.ab-tear { position: absolute; top: -30px; font-size: var(--s); line-height: 1; opacity: 0;
+  animation: ab-drip 1.9s cubic-bezier(.5, 0, .9, .6) calc(var(--d) + var(--bd)) both; }
+@keyframes ab-drip { 0% { opacity: 0; transform: translateY(0); } 12% { opacity: .9; }
+  85% { opacity: .9; } 100% { opacity: 0; transform: translateY(80vh); } }
+.ab-fx-tears .ab-fx-banner { border: 2px solid #A9BCE0; }
+.ab-fx-tears .ab-fx-title { font-size: 1.9rem; color: #3B5E9C; }
+@media (prefers-reduced-motion: reduce) { .ab-burst, .ab-star, .ab-tear { display: none; } }
 @media (max-width: 640px) { .ab-fx-title { font-size: 2rem; } .ab-fx-grand .ab-fx-title { font-size: 2.6rem; }
+  .ab-fx-tears .ab-fx-title { font-size: 1.45rem; }
   .ab-bubbles { top: 3.6rem; } }
 
 /* ---------- chat (chat.py) ---------- */

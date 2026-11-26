@@ -8,7 +8,8 @@ screen shows it as a bubble for a few seconds.
 Celebrations (owner, 2026-11-19), as the dice land, whatever the player then writes:
 bigger fireworks for Abaka or the royal full house (1-1-1-2-2) on the first roll, fireworks
 for either after a reroll, and sparkles for a straight, a full house or four of a kind on
-the first roll. Sparkles also when a move earns a row or column bonus. Every screen of the
+the first roll. Sparkles also when a move earns a row or column bonus. Abaka or the royal
+full house thrown with its row already full brings tears (a tester, 2026-11-26). Every screen of the
 game shows them, the mover's own included, online and on one device. The rules of what
 earns which are in abaka.rooms._celebration.
 
@@ -27,10 +28,10 @@ import streamlit as st
 
 from abaka.effects import REACTION_LOOKS as REACTIONS  # reaction -> (emoji, label); a label goes through t()
 from abaka.effects import effect_words, reaction_words
-from abaka.rooms import FIREWORKS, GRAND_FIREWORKS, SPARKLES, TooFast
+from abaka.rooms import FIREWORKS, GRAND_FIREWORKS, SPARKLES, TEARS, TooFast
 from abaka.i18n import t
 
-SECONDS = {"reaction": 3.5, GRAND_FIREWORKS: 6.0, FIREWORKS: 4.5, SPARKLES: 2.8}  # how long each is on screen
+SECONDS = {"reaction": 3.5, GRAND_FIREWORKS: 6.0, FIREWORKS: 4.5, SPARKLES: 2.8, TEARS: 4.5}  # how long each is on screen
 LEAD_IN_SECONDS = 0.45  # a throw's effect waits for the dice to land (their spin in dice.py takes .45s)
 STALE_SECONDS = 15.0   # an event first seen later than this after it happened is skipped
 EVERYONE = -1          # the "to" picker's value for the whole table
@@ -90,11 +91,19 @@ _LOOKS = {
     SPARKLES: ("small", 12, 80, [(35, 26, 0.0), (65, 22, 0.3)]),
 }
 _STARS = 28  # the rain of sparkles in the bigger fireworks
+_TEARS = 22  # the drops of tears: a great throw with nowhere to write it
 
 
 def _effect_html(event: dict, names: List[str], me: Optional[int]) -> str:
-    kind, spokes, reach, bursts = _LOOKS.get(event["effect"], _LOOKS[SPARKLES])
     title, sub = (escape(text) for text in effect_words(event, names, me))  # the banner: the apps' words too
+    if event["effect"] == TEARS:
+        drops = "".join(
+            f'<b class="ab-tear" style="left:{(k * 41 + 7) % 100}%;--bd:{(k * 7) % 11 * 0.23:.2f}s;'
+            f'--s:{14 + (k * 5) % 14}px">💧</b>' for k in range(_TEARS))
+        return (f'<div class="ab-fx-tears"><div class="ab-gloom"></div>{drops}'
+                f'<div class="ab-fx-banner"><div class="ab-fx-title">{title}</div>'
+                f'<div class="ab-fx-sub">{sub}</div></div></div>')
+    kind, spokes, reach, bursts = _LOOKS.get(event["effect"], _LOOKS[SPARKLES])
     layers = []
     for b, (x, y, delay) in enumerate(bursts):
         dots = "".join(

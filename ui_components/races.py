@@ -1,7 +1,7 @@
 """
 The races for the shared bonuses, at the foot of the play card (Backlog item 30): cells left
-in column I and II for every player, and the rows where two or more players are one cell from
-the bonus. What to say comes from abaka/races.py, which the API sends to apps too; here it is
+in column I and II for every player, and, for one move, the row race that move started (someone
+caught up to one cell from a row's bonus). What to say comes from abaka/races.py, which the API sends to apps too; here it is
 only drawn. Names are typed by players, so everything is escaped.
 
 A player is a row of the table and a column of the board is a column, so a name has the width

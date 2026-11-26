@@ -28,6 +28,11 @@ REACTION_LOOKS: Dict[str, Tuple[str, str]] = {
     "gg": ("\U0001F91D", "GG"),
     "haha": ("\U0001F602", "Haha"),
     "fire": ("\U0001F525", "On fire!"),
+    # The teasing ones (a tester's friend: "all the reactions are positive, rude ones are missing").
+    "argh": ("\U0001F92C", "Damn!"),
+    "seriously": ("\U0001F644", "Seriously?"),
+    "unfair": ("\U0001F624", "Unfair!"),
+    "clown": ("\U0001F921", "Clown"),
 }
 COLUMNS = ("I", "II", "III")
 
@@ -60,7 +65,10 @@ def effect_words(event: dict, names: List[str], me: Optional[int]) -> Tuple[str,
         parts += [t("column {n} +{points}", n=COLUMNS[col] if 0 <= col < 3 else "?", points=int(points))
                   for col, points in event.get("columns", ())]
         return (t("Bonus!") if len(parts) == 1 else t("Bonuses!")), " · ".join([who] + parts)
-    if what == "ABAKA":
+    if event.get("effect") == "tears":
+        title = (t("Abaka, and nowhere to write it 😭") if what == "ABAKA"
+                 else t("Royal full house, and nowhere to write it 😭"))
+    elif what == "ABAKA":
         title = t("Abaka!")
     elif what == "ROYAL":
         title = t("Royal full house!")

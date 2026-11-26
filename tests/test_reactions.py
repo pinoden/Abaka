@@ -18,6 +18,7 @@ import code_version
 from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.models import Category, Die
 from abaka.repository import FileRepository
+from abaka.effects import effect_words
 from abaka.rooms import REACTIONS, RoomError, RoomStore, TooFast
 
 try:
@@ -187,6 +188,48 @@ class TestCelebrations(unittest.TestCase):
                              ([3, 3, 3, 5, 1], "KARE")):  # the wild joker makes four 3s (or a full house)
             event, token = self.first_roll(values)
             self.assertEqual((event["effect"], event["what"], event["first"]), (rooms.SPARKLES, what, True), values)
+            self.end_turn(token)
+
+    def fill_rows(self, *categories):
+        """Every player crosses out all three cells of each of `categories`, after a plain throw."""
+        players = len(self.tokens)
+        for category in categories:
+            for _ in range(3 * players):
+                event, token = self.first_roll([1, 2, 4, 5, 6])  # nothing special
+                self.assertIsNone(event)
+                engine = self.store.view(self.code).engine
+                table = engine.players[engine.current].table
+                self.store.cross(self.code, token, category, table[category][:3].index(None))
+
+    def test_a_great_throw_with_nowhere_to_write_it_brings_tears(self):
+        """A tester (2026-11-26): fireworks for an Abaka whose row is already full are out of place."""
+        self.fill_rows(Category.ABAKA, Category.FULL)
+        seat = self.store.view(self.code).engine.current
+        event, token = self.first_roll([6, 6, 6, 6, 6])
+        self.assertEqual((event["effect"], event["seat"], event["what"], event["first"]),
+                         (rooms.TEARS, seat, "ABAKA", True))
+        self.assertEqual(effect_words(event, ["Ann", "Bob"], seat),
+                         ("Abaka, and nowhere to write it 😭", "You · first roll"))
+        self.end_turn(token)
+        event, token = self.first_roll([1, 1, 1, 2, 6])
+        reroll(self.store, self.code, token, [4], [2])  # the royal full house, after a reroll
+        self.assertEqual((self.events()[-1]["effect"], self.events()[-1]["what"], self.events()[-1]["first"]),
+                         (rooms.TEARS, "ROYAL", False))
+
+    def test_abaka_with_its_own_row_free_still_brings_fireworks(self):
+        self.fill_rows(Category.FULL)  # the royal full house has no room, Abaka has
+        event, token = self.first_roll([5, 5, 5, 5, 5])
+        self.assertEqual((event["effect"], event["what"]), (rooms.GRAND_FIREWORKS, "ABAKA"))
+        self.end_turn(token)
+        event, token = self.first_roll([1, 1, 1, 2, 2])
+        self.assertEqual((event["effect"], event["what"]), (rooms.TEARS, "ROYAL"))
+
+    def test_sparkles_only_for_a_combination_with_room_for_it(self):
+        self.fill_rows(Category.KARE, Category.SMALL_STRAIGHT)
+        for values, what in (([1, 2, 3, 4, 5], None), ([4, 4, 4, 4, 2], None),
+                             ([3, 3, 3, 5, 1], "FULL")):  # four 3s with the wild joker, or a full house
+            event, token = self.first_roll(values)
+            self.assertEqual(event and event["what"], what, values)
             self.end_turn(token)
 
     def test_nothing_for_other_throws(self):
@@ -396,3 +439,20 @@ class TestOnTheScreens(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(AppTest is None, "Streamlit is not installed")
+class TestTearsOnThePage(unittest.TestCase):
+    def test_drops_and_the_banner_in_both_languages_with_names_escaped(self):
+        from abaka.i18n import set_language
+        from ui_components.effects import _effect_html
+        self.addCleanup(set_language, "en")
+        event = {"kind": "effect", "effect": rooms.TEARS, "seat": 0, "what": "ROYAL", "first": True}
+        html = _effect_html(event, ["<b>Ann</b>", "Bob"], 1)
+        self.assertTrue(html.startswith('<div class="ab-fx-tears">'))
+        self.assertEqual(html.count('class="ab-tear"'), 22)
+        self.assertNotIn("ab-burst", html)
+        self.assertIn("Royal full house, and nowhere to write it 😭", html)
+        self.assertIn("&lt;b&gt;Ann&lt;/b&gt; · first roll", html)
+        set_language("ru")
+        self.assertIn("Королевский фулл-хаус, а записать некуда 😭", _effect_html(event, ["Ann", "Bob"], 1))

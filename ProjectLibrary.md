@@ -305,6 +305,10 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
         bigger fireworks on the first roll, fireworks after a reroll.
       - A straight, a full house or four of a kind on the first roll:
         sparkles.
+      - Only a combination the thrower can still write counts: its row needs
+        a free cell (a tester, Backlog item 32). Abaka or the royal full house
+        with its row (Abaka, Full house) already full brings tears instead: a
+        grey-blue gloom, a rain of 💧 and "Abaka, and nowhere to write it 😭".
     - A move that earns its player a row or column bonus (a bonus cell that
       gets a number): sparkles.
     - The starting throw brings nothing.
@@ -630,9 +634,12 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     number of players (PR #71). The fewest are bold. A player whose bonus there is
     crossed out is grey, with ✕: completing the column first still closes it
     for the others;
-  - a gold line for the rows where two or more players are one cell from the
-    bonus and one of them can still earn it ("One cell to the bonus for you
-    and Bob: Sum.");
+  - a gold line for one move when that move caught up in a row: its player
+    came to one cell from the row's bonus where another player already was,
+    and one of them can still earn it ("Bob caught up in Sum: one cell to the
+    bonus for you and Bob."). It comes from `engine.last_move`, so every
+    screen shows it until the next move (Backlog item 32; until then every
+    such row stayed listed);
   - column III is each player's own (`bonus.py`), so it is no race.
 - Game buttons (Throw, Roll dice, the two Reroll buttons, the confirm button)
   make their move in an `on_click` callback (`ui_components/actions.py`), so a
@@ -718,7 +725,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in progress: the row warning, tears and teasing reactions in PR #73. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1470,7 +1477,59 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Still possible, as before: someone who has the link takes a seat by
       tapping its name (item 11's next layer, if the owner wants it).
 
-## Status (2026-11-25)
+32. **A tester's second round.** In progress: the row warning, tears and the
+    teasing reactions in PR #73; the board's row differences and the score
+    chart next.
+    > (a tester, through the owner) "Играл в абаку с Пашей, видел нововведения.
+    > По строчкам, мне кажется, немного не то, о чем я говорил. Я имел ввиду
+    > предупреждение, которое появляется на один ход, когда кто-то догоняет и
+    > подвешивает премию. А так получается очень много инфы, которая все время
+    > висит и замыливается. Ещё интересно, если бы справа были видны разницы
+    > сумм по строчкам, чтобы понимать, сколько проигрываешь в строчке (это уже
+    > капризы, конечно). Ещё можно сделать как в шахматах график набора очков
+    > по ходам - две (по количеству игроков) кривые. Интересно было бы. И Паша
+    > заметил, что все мемы позитивные, ругательных не хватает. И кстати, когда
+    > выкидываешь абаку или королевский фулл, а строчка уже вся занята,
+    > фейерверки неуместны, или их надо дополнять плачем)"
+    - [x] The row warning for one move (PR #73): it shows when a move catches
+      up, that is, its player comes to one cell from a row's bonus where
+      another player already was, and stays until the next move. Before, every
+      row two players were one cell from stayed under the dice all game. The
+      column table under the dice is unchanged.
+    - [x] Tears instead of fireworks (PR #73): Abaka or the royal full house
+      thrown when the thrower's row for it is already full. Sparkles too need
+      a free cell in their row.
+    - [x] Teasing reactions (PR #73): 🤬 Damn! / Блин!, 🙄 Seriously? /
+      Серьёзно?, 😤 Unfair! / Нечестно!, 🤡 Clown / Клоун, after the nine
+      there were.
+    - [ ] The board: each row's difference from the opponent, on the right.
+    - [ ] A chart of the scores by move, a line per player, as chess sites
+      show.
+
+## Status (2026-11-26)
+
+- **A tester's second round, first part (Backlog item 32):** PR #73.
+  - The row warning now comes for the one move that caught up, on the website
+    and in the app (the server sends it: the app needs no update). In random
+    whole games it was shown 65 times, each time for the move just made.
+  - Abaka or the royal full house with its row already full: tears instead of
+    fireworks, on every screen and in the app; sparkles only for a
+    combination its row has room for.
+  - Four teasing reactions: 13 buttons, five rows on a 390px phone, four on a
+    desktop, no sideways scrolling (English and Russian, headless Chromium).
+  - Checked:
+    - 7 new Python tests, 1 new app test; the row tests rewritten for the new
+      rule. With the free-row check switched off, three of them failed, and so
+      did the app's browser check.
+    - The app's browser check now throws Abaka with both players' Abaka rows
+      full (steered dice): tears on both phones, "Абака, а записать некуда 😭"
+      on the Russian one, no fireworks.
+    - The website's tears in headless Chromium at 390px and 1300px.
+    - Every Python test on 3.13 (332; the 8 database tests skipped, no
+      Postgres here), 3.9 (330) and 3.8 (330); the app's 47 tests, typecheck,
+      lint and all seven browser flows; 60 random games.
+  - Load-test row: no slowdown (29% CPU, 7.2 ms median poll).
+
 
 - **A game opens only with its key (owner: "one shouldn't be able to enter a
   game just knowing the code", Backlog item 31):** PR #72.
@@ -2133,19 +2192,19 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 325 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 330 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  325 run and 62 are skipped (9 need a database or psycopg; the others need
+  330 run and 63 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  327 run and none is skipped. 16 game-key tests (`test_game_keys.py`: a
+  332 run and none is skipped. 16 game-key tests (`test_game_keys.py`: a
   key per game, saved, made once for older saved games; the code alone or a
   wrong key refused as a missing game in the store and the API; the key typed
   any way, or as a pasted link; the pages for a code alone, a wrong key and
   the full link; the home page's full code; the waiting room's key). 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 46 tests (`node --test`),
+  scan reads both quotes). The phone app has its own 47 tests (`node --test`),
   1 of them of the full code (`mobile/tests/codes.test.ts`: typed, pasted as a
   link, or a code alone, read as the server reads them).
   8 against a real server (`mobile/tests/api.test.ts`: complete games on one
@@ -2155,9 +2214,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   unreachable server). 14 against a scripted server
   (`mobile/tests/connection.test.ts`: a server restart, states out of order,
   connections that die silently or never open, requests never answered,
-  screens closing late, each event handed over once, the chat gathered). 8 of
+  screens closing late, each event handed over once, the chat gathered). 9 of
   what plays over the screen (`mobile/tests/shows.test.ts`: bubbles, effects
-  that wait for the dice and for each other, old news skipped). 8 of clubs on
+  that wait for the dice and for each other, tears, old news skipped). 8 of clubs on
   the screen (`mobile/tests/clubs.test.ts`: the table's rows, numbers rounded
   as Python rounds them, the latest games, the names offered and tapped). 4 of
   the score table's size (`mobile/tests/board.test.ts`: two players' columns
@@ -2185,10 +2244,11 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   changed by drawing a state, club games, malformed requests, languages, and
   `docs/API.md` naming every operation and error). 7 PR tool tests (`test_pr_tool.py`:
   remote URLs, and `merge` with a fake GitHub: a required job not started
-  yet, a failing job, a branch behind `main`, a conflict). 24 reaction and
+  yet, a failing job, a branch behind `main`, a conflict). 28 reaction and
   celebration tests (`test_reactions.py`: a reaction is not a move, aimed
   reactions, the rate limit, never saved, which throws bring which effect
-  (wild jokers included), effects at the throw and not at the move, none for
+  (wild jokers included), tears for Abaka or the royal full house with its row
+  full and sparkles only with room for them, tears drawn on the page, effects at the throw and not at the move, none for
   the starting throw, row, School and column bonuses, a crossed-out bonus,
   rematch, and the screens through the app: bubbles, bigger fireworks shown
   once as the dice land, a bonus banner in Russian queued after the throw's,
@@ -2201,10 +2261,10 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   (`test_loadtest_baseline.py`: rows read back, a slowdown flagged, only
   comparable rows compared). 12 club tests
   (`test_clubs.py`: ratings, the running score, club tables, a member once
-  in an online club game, saving, the club pages through the app). 15 race
+  in an online club game, saving, the club pages through the app). 16 race
   tests (`test_races.py`: cells left in column I and II, a crossed-out
-  column, column III left out, decided races gone, rows one cell from the
-  bonus and who can still win them, three players, Russian, random whole
+  column, column III left out, decided races gone, the row warning for the
+  one move that caught up and who can still win it, three players, Russian, random whole
   games against the board and the bonus rules, the API, the page with
   hostile names, each player a row of the page's table). CI runs them on 3.13 with
   Streamlit 1.67 and a Postgres service, and on 3.8. The suites: 21 database
@@ -2379,6 +2439,47 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-26: a tester's second round, first part (Claude Code, PR #73)**
+
+- The tester said the row warning of PR #70 was not what he meant: he meant a
+  warning "for one move, when someone catches up and leaves the bonus
+  hanging". Shown all the time, it was "a lot of information that hangs there
+  and blurs".
+  - So the warning is about a move: the one that brought its player to one
+    cell from a row's bonus where someone already was. It is worked out from
+    `engine.last_move`, not remembered anywhere, so every screen, a reload and
+    the app all show it until the next move, and nothing is saved.
+  - A player who comes to one cell alone gets no warning (no race), as before.
+    Nor does a crossed-out cell that brings a player to one cell, unless
+    someone in the race can still win the bonus.
+  - `races.rows` in the API keeps its fields (one `by` added). What it lists
+    changed, from every such row to the one the last move started. No app is
+    released, and the app shows `text` as it comes, so it follows the server.
+    docs/API.md says so.
+  - The column table under the dice stays: the tester asked for it, and did
+    not mention it now.
+- Tears, not fireworks, for Abaka or the royal full house with no room for it.
+  The tester offered "out of place, or add crying"; crying instead of
+  fireworks answers both. Its row means the row the combination is written in
+  (Abaka; Full house for the royal full house). Abaka counts as a full house
+  too (item 20), but it still brings tears when the Abaka row is full: that is
+  the tester's case.
+  - The same reason applies to sparkles, so they now need a free cell in their
+    combination's row as well. A throw that makes two (four 3s with the wild
+    joker are also a full house) sparkles for the one with room.
+  - An app that does not know an effect plays sparkles under its banner
+    (docs/API.md), so an older app shows the right words.
+- The teasing reactions: "rude ones are missing". Mild ones only: the app will
+  be in the App Store and Google Play, and the game is played with family
+  too. They go after the nine there were. The app takes its buttons from the
+  server, so it shows them without an update.
+- The board's row differences and the chart of scores by move are next, in
+  their own pull request: both change the score table, which on a 360px phone
+  just fits two players.
+- The scratch Python 3.13 in the session's temporary folder lost files to
+  macOS's cleanup of old temporary files ("No module named 'encodings'").
+  `uv python install --reinstall 3.13` and a new venv brought it back.
 
 **2026-11-25: a game opens only with its key (Claude Code, PR #72)**
 

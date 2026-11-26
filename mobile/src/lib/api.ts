@@ -157,13 +157,13 @@ export type State = {
 
 /**
  * The races for the shared bonuses (docs/API.md, `races`): cells left in column I and II per
- * seat, and the rows where two or more players are one cell from the bonus. Words included.
+ * seat, and the row race the last move started, if it did (`by`: its mover). Words included.
  */
 export type Races = {
   title: string;
   heads: string[];
   columns: { column: number; label: string; left: number[]; open: boolean[] }[];
-  rows: { rows: string[]; seats: number[]; text: string }[];
+  rows: { rows: string[]; seats: number[]; by?: number; text: string }[];
   note: string | null;
 };
 

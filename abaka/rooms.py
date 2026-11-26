@@ -63,13 +63,15 @@ RESULTS_KEPT = 100                    # finished games a room remembers for its 
 
 # Reactions players send each other in an online game, and the effects everyone sees
 # after a great throw or a bonus. Both live in the room's memory only (never saved).
-REACTIONS = ("lucky", "mrlucky", "nice", "wow", "ouch", "hurry", "gg", "haha", "fire")
+REACTIONS = ("lucky", "mrlucky", "nice", "wow", "ouch", "hurry", "gg", "haha", "fire",
+             "argh", "seriously", "unfair", "clown")
 REACTION_EVERY_SECONDS = 2.0          # one reaction per seat this often
 EVENTS_KEPT = 20                      # recent reactions and effects a room keeps for the pages
 # Effects, shown on every screen as the dice land (owner, 2026-11-19; see _celebration).
 GRAND_FIREWORKS = "grand_fireworks"   # Abaka or the royal full house on the first roll
 FIREWORKS = "fireworks"               # Abaka or the royal full house after a reroll
 SPARKLES = "sparkles"                 # a straight, full house or four of a kind on the first roll; a bonus earned
+TEARS = "tears"                       # Abaka or the royal full house with its row already full (a tester, 2026-11-26)
 CHAT_KEPT = 50                        # chat messages a room keeps (memory only; deleted when the game ends)
 MAX_MESSAGE_LENGTH = 200
 MESSAGES_PER_WINDOW = 3               # a player may send this many messages...
@@ -975,6 +977,10 @@ def _celebration(before: GameEngine, after: GameEngine) -> Optional[dict]:
     - a throw shows what the dice make, as they land, whatever the player then writes:
       Abaka or the royal full house (1-1-1-2-2) bring fireworks, bigger on the first roll;
       a straight, a full house or four of a kind on the first roll bring sparkles;
+    - but only a combination the thrower can still write counts: Abaka needs a free cell in
+      the Abaka row, the royal full house one in Full house, and so on. Abaka or the royal
+      full house with its row already full brings tears instead (a tester, 2026-11-26:
+      "fireworks are out of place, or they need crying added");
     - a move that earns its player a row or column bonus brings sparkles.
 
     `before` is the game as it was before the move (installed engines never change). The
@@ -988,18 +994,26 @@ def _celebration(before: GameEngine, after: GameEngine) -> Optional[dict]:
 
 
 def _throw_effect(engine: GameEngine) -> Optional[dict]:
-    dice, first = engine.dice, engine.first_roll
-    if score_category(dice, Category.ABAKA):
-        what = "ABAKA"
-    elif is_royal_full(dice):
-        what = "ROYAL"
-    else:
-        hit = next((c for c in _SPARKLE_HITS if score_category(dice, c)), None) if first else None
-        if hit is None:
-            return None
-        return {"kind": "effect", "effect": SPARKLES, "seat": engine.current, "what": hit.name, "first": True}
-    return {"kind": "effect", "effect": GRAND_FIREWORKS if first else FIREWORKS, "seat": engine.current,
-            "what": what, "first": first}
+    dice, first, seat = engine.dice, engine.first_roll, engine.current
+    table = engine.players[seat].table
+
+    def room_for(category: Category) -> bool:
+        return any(value is None for value in table[category][:3])
+
+    big = [what for what, category, made in (("ABAKA", Category.ABAKA, score_category(dice, Category.ABAKA)),
+                                             ("ROYAL", Category.FULL, is_royal_full(dice)))
+           if made and room_for(category)]
+    if big:
+        return {"kind": "effect", "effect": GRAND_FIREWORKS if first else FIREWORKS, "seat": seat,
+                "what": big[0], "first": first}
+    if score_category(dice, Category.ABAKA) or is_royal_full(dice):
+        # Thrown, with nowhere to write it.
+        return {"kind": "effect", "effect": TEARS, "seat": seat,
+                "what": "ABAKA" if score_category(dice, Category.ABAKA) else "ROYAL", "first": first}
+    hit = next((c for c in _SPARKLE_HITS if room_for(c) and score_category(dice, c)), None) if first else None
+    if hit is None:
+        return None
+    return {"kind": "effect", "effect": SPARKLES, "seat": seat, "what": hit.name, "first": True}
 
 
 def _bonus_effect(before: GameEngine, after: GameEngine, seat: int) -> Optional[dict]:

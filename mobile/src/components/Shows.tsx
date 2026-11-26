@@ -1,6 +1,6 @@
 /**
  * What plays over the game: bubbles for reactions and chat messages at the top, and
- * effects (fireworks, sparkles) with a banner in the lower part of the screen, so the dice
+ * effects (fireworks, sparkles, tears) with a banner in the lower part of the screen, so the dice
  * stay in view. As on the web (ui_components/effects.py, style.py). Which ones play, and
  * when, is decided in lib/shows.ts.
  *
@@ -23,17 +23,19 @@ const BURST_MS = 1100;
 
 // Each effect's bursts: where on the screen (left %, top %) and when (s after its start).
 // Bigger fireworks come in three waves, with a flash and a rain of sparkles.
+// Tears (a great throw with nowhere to write it) are a rain of drops instead of bursts.
 const LOOKS = {
   grand_fireworks: {
-    spokes: 16, reach: 120, stars: 18,
+    spokes: 16, reach: 120, stars: 18, drops: 0,
     bursts: [[50, 40, 0], [20, 28, 0.15], [80, 26, 0.3], [32, 58, 1.0], [68, 55, 1.2], [50, 20, 1.4], [12, 50, 1.6],
       [88, 48, 1.6], [26, 34, 2.2], [74, 36, 2.4], [50, 62, 2.7], [40, 18, 3.0], [60, 30, 3.2]],
   },
   fireworks: {
-    spokes: 14, reach: 100, stars: 0,
+    spokes: 14, reach: 100, stars: 0, drops: 0,
     bursts: [[20, 30, 0], [78, 24, 0.35], [50, 18, 0.8], [30, 55, 1.3], [70, 52, 1.7], [50, 38, 2.2]],
   },
-  sparkles: { spokes: 10, reach: 56, stars: 0, bursts: [[35, 26, 0], [65, 22, 0.3]] },
+  sparkles: { spokes: 10, reach: 56, stars: 0, drops: 0, bursts: [[35, 26, 0], [65, 22, 0.3]] },
+  tears: { spokes: 0, reach: 0, stars: 0, drops: 16, bursts: [] as number[][] },
 };
 
 export function Shows({ shows, onDone }: { shows: Show[]; onDone: (id: string) => void }) {
@@ -93,6 +95,7 @@ function Effect({ show, calm, onDone }: { show: Show; calm: boolean; onDone: (id
   const { width, height } = useWindowDimensions();
   const look = LOOKS[show.effect ?? 'sparkles'];
   const grand = show.effect === 'grand_fireworks';
+  const tears = show.effect === 'tears';
   const part = (seconds: number) => Math.min(1, (seconds * 1000) / show.ms); // a moment as a share of the timeline
   const banner = timeline.interpolate({ inputRange: [0, part(0.25), 0.9, 1], outputRange: [0, 1, 1, 0] });
   const grow = timeline.interpolate({ inputRange: [0, part(0.25), 1], outputRange: [0.7, 1, 1] });
@@ -103,6 +106,30 @@ function Effect({ show, calm, onDone }: { show: Show; calm: boolean; onDone: (id
           opacity: timeline.interpolate({ inputRange: [0, part(0.12), part(0.7), 1], outputRange: [0, 0.4, 0, 0] }),
         }]} />
       ) : null}
+      {tears ? (
+        <Animated.View style={[StyleSheet.absoluteFill, styles.gloom, {
+          opacity: timeline.interpolate({ inputRange: [0, 0.15, 0.8, 1], outputRange: [0, 1, 1, 0] }),
+        }]} />
+      ) : null}
+      {calm ? null : Array.from({ length: look.drops }, (_, k) => {
+        const from = part(((k * 7) % 11) * 0.23);
+        const to = Math.min(1, from + part(1.9));
+        return (
+          <Animated.Text key={`drop-${k}`} style={[styles.star, {
+            left: `${(k * 41 + 7) % 100}%`,
+            fontSize: 14 + ((k * 5) % 14),
+            opacity: timeline.interpolate({
+              inputRange: [from, from + (to - from) * 0.12, from + (to - from) * 0.85, to],
+              outputRange: [0, 0.9, 0.9, 0], extrapolate: 'clamp',
+            }),
+            transform: [{
+              translateY: timeline.interpolate({
+                inputRange: [from, to], outputRange: [-20, height * 0.8], extrapolate: 'clamp',
+              }),
+            }],
+          }]}>💧</Animated.Text>
+        );
+      })}
       {calm ? null : look.bursts.map(([x, y, delay], b) => {
         const from = part(delay);
         const to = Math.min(1, from + BURST_MS / show.ms);
@@ -151,8 +178,8 @@ function Effect({ show, calm, onDone }: { show: Show; calm: boolean; onDone: (id
       })}
       <View style={styles.bannerPlace}>
         <Animated.View testID="effect-banner" accessibilityLiveRegion="polite"
-                       style={[styles.banner, grand && styles.bannerGrand, { opacity: banner, transform: [{ scale: grow }] }]}>
-          <Text style={[styles.bannerTitle, grand && styles.bannerTitleGrand]}>{show.title}</Text>
+                       style={[styles.banner, grand && styles.bannerGrand, tears && styles.bannerTears, { opacity: banner, transform: [{ scale: grow }] }]}>
+          <Text style={[styles.bannerTitle, grand && styles.bannerTitleGrand, tears && styles.bannerTitleTears]}>{show.title}</Text>
           {show.text ? <Text style={styles.bannerText}>{show.text}</Text> : null}
         </Animated.View>
       </View>
@@ -183,6 +210,9 @@ const styles = StyleSheet.create({
     shadowColor: '#1C2033', shadowOpacity: 0.2, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 8,
   },
   bannerGrand: { paddingVertical: 16, paddingHorizontal: 28, borderColor: colors.last },
+  gloom: { backgroundColor: 'rgba(90, 110, 150, 0.16)' },
+  bannerTears: { borderColor: '#A9BCE0' },
+  bannerTitleTears: { fontSize: 20, color: '#3B5E9C' },
   bannerTitle: { fontSize: 22, fontWeight: '800', color: colors.gold, textAlign: 'center' },
   bannerTitleGrand: { fontSize: 30 },
   bannerText: { fontSize: 15, color: colors.text, textAlign: 'center', marginTop: 2 },
