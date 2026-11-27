@@ -63,6 +63,18 @@ async function write(key: string, value: string | null): Promise<void> {
 
 const tokenKey = (code: string) => `abaka.token.${code}`;
 
+/**
+ * This device's secret (Backlog item 37): the server keeps a seat for the device that took
+ * it, so a lost token is no lost seat, and nobody else with the game's link can take it.
+ */
+export async function savedDevice(): Promise<string | null> {
+  return read('abaka.device');
+}
+
+export async function saveDevice(secret: string): Promise<void> {
+  await write('abaka.device', secret);
+}
+
 export async function savedGames(): Promise<SavedGame[]> {
   try {
     const games = JSON.parse((await read('abaka.games')) ?? '[]');

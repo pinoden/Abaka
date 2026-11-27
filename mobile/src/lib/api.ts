@@ -179,6 +179,10 @@ export type State = {
   table: { games: number; wins: number[]; draws: number };
   /** After a club game, once the club has it: how the ratings moved. */
   club_result: ClubResult | null;
+  /** Devices asking to be let in to a seat, which this player may answer (`answer`). Older servers leave it out. */
+  asks?: SeatRequest[];
+  /** Without a seat: the seat this device holds and may come back to (`rejoin`), or null. */
+  held?: number | null;
 };
 
 /**
@@ -217,6 +221,18 @@ export type RulesBlock = {
 };
 
 export type Rules = { title: string; blocks: RulesBlock[] };
+
+/**
+ * A device asking to be let in to a seat (Backlog item 37): a seat belongs to the device that
+ * took it. `yours`: it is this player's own seat. The words are the server's, in the player's language.
+ */
+export type SeatRequest = { seat: number; name: string; yours: boolean; title: string; text: string };
+
+/** What `asked` answers: what became of this device's request to be let in to a seat. */
+export type Asked = { status: 'waiting' | 'refused' | 'gone' } | ({ status: 'in' } & Seat);
+
+/** The operations that say which device is asking: the server keeps a seat for the device that took it. */
+const DEVICE_OPS = new Set(['create', 'join', 'rejoin', 'ask', 'asked']);
 
 /** A seat in a game: what create, create_local, join, rejoin and resume answer. */
 export type Seat = { code: string; token: string; state: State };
@@ -368,6 +384,8 @@ export class Connection {
   private heardAt = 0;
   private asking = false;
   private closed = false;
+  private deviceSource: (() => Promise<string>) | null = null;
+  private device: string | null = null;
 
   constructor(server: string, timings: Partial<Timings> = {}) {
     this.url = liveUrl(server);
@@ -390,8 +408,35 @@ export class Connection {
     return () => { this.listeners.delete(listener); };
   }
 
+  /**
+   * Where this device's secret comes from (the app: its storage, or the server the first
+   * time). It goes out as `device` with the requests that take a seat or ask for one, so the
+   * seat is this device's to come back to, and nobody else's (docs/API.md, `rejoin`).
+   */
+  useDevice(source: () => Promise<string>): void {
+    this.deviceSource = source;
+    this.device = null;
+  }
+
+  /** The device's secret, read once. Null while it cannot be had (offline on the first start). */
+  async loadDevice(): Promise<string | null> {
+    if (this.device || !this.deviceSource) return this.device;
+    try {
+      this.device = await this.deviceSource();
+    } catch {
+      return null; // asked for again with the next request that needs it
+    }
+    // An invite watched before the secret was read: ask again, to learn which seat is this device's.
+    if (this.watch && !this.watch.token) this.sendWatch();
+    return this.device;
+  }
+
   /** Send one request; resolves with its answer, rejects with an ApiError. */
-  request<T = any>(op: string, fields: Record<string, unknown> = {}): Promise<T> {
+  async request<T = any>(op: string, fields: Record<string, unknown> = {}): Promise<T> {
+    if (DEVICE_OPS.has(op) && fields.device === undefined) {
+      const device = await this.loadDevice();
+      if (device) fields = { ...fields, device };
+    }
     return this.ask<T>(op, fields, this.timings.requestMs);
   }
 
@@ -497,6 +542,7 @@ export class Connection {
     const fields: Record<string, unknown> = { code: watch.code };
     if (watch.token) fields.token = watch.token;
     if (watch.key) fields.key = watch.key;
+    if (!watch.token && this.device) fields.device = this.device; // the answer names this device's seat (`held`)
     this.ask<{ state: State }>('watch', fields, this.timings.requestMs, watch).then(
       () => { /* the state went to the watcher (receive) */ },
       (error: ApiError) => {

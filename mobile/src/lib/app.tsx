@@ -9,7 +9,7 @@ import { AppState } from 'react-native';
 
 import { Connection, type Info, type Lang } from './api';
 import { serverUrl } from './server';
-import { savedLanguage, saveLanguage } from './storage';
+import { savedDevice, savedLanguage, saveDevice, saveLanguage } from './storage';
 import { plural, translate } from './texts';
 
 type T = (text: string, values?: Record<string, string | number>) => string;
@@ -39,7 +39,18 @@ function deviceLanguage(): Lang {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [connection] = useState(() => new Connection(serverUrl()));
+  const [connection] = useState(() => {
+    const made = new Connection(serverUrl());
+    // This device's secret: from its storage, or from the server the first time.
+    made.useDevice(async () => {
+      const kept = await savedDevice();
+      if (kept) return kept;
+      const { device } = await made.request<{ device: string }>('device');
+      await saveDevice(device);
+      return device;
+    });
+    return made;
+  });
   const [lang, setLangState] = useState<Lang>(deviceLanguage);
   const [info, setInfo] = useState<Info | null>(null);
   const [online, setOnline] = useState(false);
@@ -69,6 +80,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const stopListening = connection.listen((up) => {
       setOnline(up);
       if (up && infoLang.current !== connection.language()) loadInfo();
+      if (up) connection.loadDevice(); // on the first start, the secret comes from the server
     });
     const listener = AppState.addEventListener('change', (status) => {
       if (status === 'active') connection.wake();

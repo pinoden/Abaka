@@ -18,7 +18,7 @@ import { Races } from '@/components/Races';
 import { ReactionBar } from '@/components/Reactions';
 import { Shows } from '@/components/Shows';
 import { Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
-import { type ApiError, type Club, type Game, type Move, type Seat, type State } from '@/lib/api';
+import { type ApiError, type Asked, type Club, type Game, type Move, type Seat, type State } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { memberKey, offered } from '@/lib/clubs';
 import { errorText } from '@/lib/errors';
@@ -204,7 +204,8 @@ export default function GameScreen() {
     body = <Muted>{t('Connecting…')}</Muted>;
   } else if (!state.seated) {
     // A seat this device held, taken back on another device.
-    body = <Invite state={state} busy={busy} takeSeat={takeSeat} lost={!!token && !state.local} />;
+    body = <Invite state={state} code={code} gameKey={key} busy={busy} takeSeat={takeSeat} keepSeat={keepSeat}
+                   lost={!!token && !state.local} />;
   } else if (state.phase === 'waiting') {
     body = <WaitingRoom state={state} act={act} busy={busy} onLeave={leave} />;
   } else if (state.game) {
@@ -232,20 +233,77 @@ export default function GameScreen() {
       </View>
       {!online && state ? <Notice tone="info" text={t('Connecting…')} /> : null}
       {error ? <Notice text={error} /> : null}
+      {/* Devices asking to be let in to a seat (Backlog item 37): this player's own, or an absent player's. */}
+      {state?.seated ? (state.asks ?? []).map((request) => (
+        <Card key={request.seat} testID={`ask-${request.seat}`}>
+          <Title>{request.title}</Title>
+          <Muted>{request.text}</Muted>
+          <Button testID={`ask-yes-${request.seat}`} label={t('Let in')} disabled={busy}
+                  onPress={() => act('answer', { seat: request.seat, let_in: true }, false)} />
+          <Button testID={`ask-no-${request.seat}`} kind="secondary" label={t('Refuse')} disabled={busy}
+                  onPress={() => act('answer', { seat: request.seat, let_in: false }, false)} />
+        </Card>
+      )) : null}
       {body}
     </Screen>
   );
 }
 
-/** No seat yet: join a waiting game, or take a seat back. */
-function Invite({ state, busy, takeSeat, lost }: {
+/** How often a device that asked to be let in to a seat asks about the answer (the server drops a request after 30 s of silence). */
+const ASKED_EVERY_MS = 2000;
+
+/**
+ * No seat yet: join a waiting game, come back to this device's seat, or ask to be let in to
+ * another (a seat belongs to the device that took it: Backlog item 37).
+ */
+function Invite({ state, code, gameKey, busy, takeSeat, keepSeat, lost }: {
   state: State;
+  code: string;
+  gameKey: string | null;
   busy: boolean;
   takeSeat: (op: string, fields: Record<string, unknown>) => void;
+  keepSeat: (seat: Seat) => Promise<void>;
   lost: boolean;
 }) {
   const { t, info, connection } = useApp();
   const [name, setName] = useState('');
+  const [asking, setAsking] = useState<{ seat: number; ticket: string } | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  const ask = async (seat: number) => {
+    setNote(null);
+    try {
+      const { ticket } = await connection.request<{ ticket: string }>('ask', { code, key: gameKey, seat });
+      setAsking({ seat, ticket });
+    } catch (e) {
+      setNote(errorText(e, t));
+    }
+  };
+
+  // While a request waits, ask about its answer; once let in, the seat is this device's.
+  useEffect(() => {
+    if (!asking) return;
+    let live = true;
+    const timer = setInterval(async () => {
+      let answer: Asked;
+      try {
+        answer = await connection.request<Asked>('asked', { code, key: gameKey, ...asking });
+      } catch (e) {
+        if ((e as ApiError).code === 'offline') return; // asked again in a moment
+        answer = { status: 'gone' };
+      }
+      if (!live || answer.status === 'waiting') return;
+      setAsking(null);
+      if (answer.status === 'in') await keepSeat(answer);
+      else setNote(answer.status === 'refused' ? t('The request was refused.') : t('The request is no longer there. Ask again.'));
+    }, ASKED_EVERY_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asking, code, gameKey, connection, keepSeat]);
+
   const [members, setMembers] = useState<string[]>([]); // a club game: the club's players
   const join = state.can.includes('join');
   const rejoin = state.can.includes('rejoin');
@@ -260,9 +318,22 @@ function Invite({ state, busy, takeSeat, lost }: {
     );
     return () => { asked = false; };
   }, [club, join, connection]);
+  if (asking) {
+    return (
+      <Card testID="asking">
+        <Title>{t('Asked to come back as {name}', { name: state.names[asking.seat] ?? '' })}</Title>
+        <Muted>
+          {t('Waiting to be let in. If the game is open on the device that holds this seat, confirm it there. Otherwise another player is asked in a few seconds.')}
+        </Muted>
+        <Button testID="ask-cancel" kind="secondary" label={t('Cancel')} onPress={() => setAsking(null)} />
+      </Card>
+    );
+  }
+  const held = state.held ?? null;
   return (
     <Card testID="invite">
       {lost ? <Notice text={t('This game was opened in another tab or device, so this tab no longer controls it.')} /> : null}
+      {note ? <Notice text={note} /> : null}
       {join ? (
         <>
           <Title>{t('{host} invited you to play', { host: state.names[0] ?? '' })}</Title>
@@ -285,11 +356,26 @@ function Invite({ state, busy, takeSeat, lost }: {
       {rejoin ? (
         <>
           {!join ? <Title>{t('This game is full and already playing.')}</Title> : null}
-          <Muted>{join ? t('Already joined and lost the page? Rejoin as:') : t('Are you one of the players? Rejoin as:')}</Muted>
-          {state.names.map((player, seat) => (
+          {held !== null ? (
+            <>
+              <Muted>{t('This device holds a seat in this game:')}</Muted>
+              <Button testID="come-back" label={t('Continue as {name}', { name: state.names[held] ?? '' })}
+                      disabled={busy} onPress={() => takeSeat('rejoin', { seat: held })} />
+            </>
+          ) : null}
+          {state.names.length > (held !== null ? 1 : 0) ? (
+            <Muted>
+              {join ? t('Already joined on another device? Ask to come back as:')
+                : t('Are you one of the players? Ask to come back as:')}
+            </Muted>
+          ) : null}
+          {state.names.map((player, seat) => (seat === held ? null : (
             <Button key={seat} kind="secondary" testID={`rejoin-${seat}`} label={player} disabled={busy}
-                    onPress={() => takeSeat('rejoin', { seat })} />
-          ))}
+                    onPress={() => ask(seat)} />
+          )))}
+          <Muted>
+            {t('A seat belongs to the device that took it. From another device you are let in by your own device, if the game is open there, and otherwise by another player.')}
+          </Muted>
         </>
       ) : null}
       {!join && !rejoin ? <Muted>{t('Connecting…')}</Muted> : null}
