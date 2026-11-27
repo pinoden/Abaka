@@ -139,6 +139,9 @@ _ERRORS_RU = {
     "One reaction every two seconds, please.": "Не больше одной реакции в две секунды.",
     "Slow down a little: about one message a second.": "Чуть помедленнее: примерно одно сообщение в секунду.",
     "Each player needs a different name.": "У каждого игрока должно быть своё имя.",
+    "At least one player must be a person.": "Хотя бы один игрок должен быть человеком.",
+    "Games against the computer do not count for a club.": "Игры с компьютером не идут в зачёт клуба.",
+    "It is the computer's turn.": "Сейчас ходит компьютер.",
 }
 _ERROR_PATTERNS_RU = [
     (re.compile(r"Not enough school balance to write this row \(need (\d+), have (-?\d+)\)"),
@@ -227,6 +230,16 @@ RU = {
     "Your games are saved after every move.": "Игры сохраняются после каждого хода.",
     "Same device": "Одно устройство",
     "Take turns on this screen.": "Ходите по очереди на этом экране.",
+    # ----- the computer player (Backlog item 33) -----
+    "Take turns on this screen, or play against the computer.":
+        "Ходите по очереди на этом экране или сыграйте с компьютером.",
+    "Computer players": "Компьютерных игроков",
+    "The computer plays the last seats and makes its moves by itself.":
+        "Компьютер играет за последних игроков и ходит сам.",
+    "Computer": "Компьютер",
+    "Computer {n}": "Компьютер {n}",
+    "computer": "компьютер",
+    "The computer is choosing its move.": "Компьютер выбирает ход.",
     "Players": "Игроки",
     "Start game": "Начать игру",
     "Online": "Онлайн",

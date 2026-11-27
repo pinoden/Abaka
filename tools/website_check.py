@@ -15,9 +15,12 @@ It checks, at a desktop and a phone width:
 - an online game between a desktop and a phone: created, joined, the starting throws on
   each player's screen, a roll seen on the other screen, the turn passing with the bonus
   race shown, a chat message and a reaction;
+- a game against the computer on a phone: one seat for the computer, the starting throw,
+  and the computer playing its turn by itself (its mark on the turn, then its move in the
+  "Last move" line), until the player's turn comes back;
 - on every page: no error box, no page error, and on the phone no sideways scrolling.
 
-Test games are played by "Test Ann" and "Test Bob". With --cleanup and $ABAKA_DATABASE_URL,
+Test games are played by "Test Ann" and "Test Bob" (or "Test Ann" and the computer). With --cleanup and $ABAKA_DATABASE_URL,
 the games this check made are marked deleted in that database afterwards (only games with
 exactly those players).
 
@@ -44,7 +47,8 @@ DESKTOP, PHONE = (1300, 900), (390, 844)
 NAMES = ("Test Ann", "Test Bob")  # the players of the check's games
 WAIT_MS = 30000    # for what a page shows after a click, or after another screen's move
 START_MS = 150000  # for a page's first view (the live app may be waking up)
-FLOWS = ("home", "one device", "online")
+COMPUTER = "Computer"  # the computer's seat in the check's game against it (English page)
+FLOWS = ("home", "one device", "online", "computer")
 
 
 class Problem(Exception):
@@ -213,6 +217,35 @@ def check_one_device(browser, url: str, size: Tuple[int, int], label: str, games
     s.close()
 
 
+def check_computer(browser, url: str, size: Tuple[int, int], label: str, games: List[str]) -> None:
+    """A game against the computer (Backlog item 33): it throws, rolls and writes by itself."""
+    s = Screen(browser, url + "?lang=en", size, f"a game against the computer ({label})")
+    s.see(s.app.locator(".st-key-local_computers_2 button", has_text="1"), 'the "Computer players" choice',
+          START_MS).click()
+    s.see(s.app.locator(".ab-computers", has_text=COMPUTER), "the computer's seat in the card")
+    s.until(lambda: s.app.get_by_label("Player 2").count() == 0, "the second name box giving way to the computer")
+    s.see(s.app.get_by_label("Player 1"), "the Player 1 box").fill(NAMES[0])
+    s.see(s.app.get_by_role("button", name="Start game"), 'the "Start game" button').click()
+    s.see(s.app.get_by_text("Who goes first?"), '"Who goes first?"')
+    games.append(s.room().split("-")[0])
+    roll, mark = s.key("roll"), s.app.locator(".ab-chip", has_text="computer")
+    for _ in range(60):  # the player throws; the computer throws by itself; a tie throws again
+        if roll.count() or (mark.count() and not s.app.get_by_text("Who goes first?").count()):
+            break
+        throw = s.key("start-throw")
+        if throw.count():
+            throw.first.click()
+        s.page.wait_for_timeout(1000)
+    if roll.count():  # the player goes first
+        roll.first.click()
+        write_best(s)
+    s.see(mark, "the computer's mark on its turn")
+    s.see(s.app.get_by_text(re.compile(f"Last move: {COMPUTER} ")), "the computer's move in the \"Last move\" line")
+    s.see(roll, "the player's Roll dice button after the computer's turn")
+    s.healthy()
+    s.close()
+
+
 def check_online(browser, url: str, games: List[str]) -> None:
     """An online game: the host on a desktop, the guest on a phone."""
     host = Screen(browser, url + "?lang=en", DESKTOP, "an online game, the host (desktop)")
@@ -294,6 +327,9 @@ def run(url: str, flows=FLOWS, report=print) -> Tuple[List[str], List[str]]:
                     step(f"a game on one device, {label}", lambda: check_one_device(browser, url, size, label, games))
             if "online" in flows:
                 step("an online game, desktop and phone", lambda: check_online(browser, url, games))
+            if "computer" in flows:
+                step("a game against the computer, phone",
+                     lambda: check_computer(browser, url, PHONE, "phone", games))
         finally:
             browser.close()
     return problems, [g for g in games if g]
@@ -356,7 +392,7 @@ def clean_up(codes: List[str]) -> str:
         for code in codes:
             row = db.execute("select data->'names' from abaka_rooms where code = %s and not deleted",
                              (code,)).fetchone()
-            if row is not None and row[0] == list(NAMES):
+            if row is not None and row[0] in (list(NAMES), [NAMES[0], COMPUTER]):
                 db.execute("update abaka_rooms set deleted = true, data = null where code = %s", (code,))
                 deleted.append(code)
     return f"marked deleted in the database: {', '.join(deleted) or 'none'}"

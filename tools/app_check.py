@@ -30,6 +30,9 @@ The checks:
   ratings on the results and the club's table; the next game's names tapped from the
   club's players; an online club game, where a player at the table cannot join again and
   the invite offers the others; and the same club's table on the website;
+- a game against the computer (Backlog item 33): one seat for it, its name box gone, and
+  the computer playing its turn by itself, its mark on the turn and then its move under
+  the board, until the player's turn comes back;
 - with dice the check chooses (Steered):
   - a tie for the first turn among three players: the player who is out of the next
     round keeps their throw on the screen;
@@ -65,7 +68,7 @@ NARROW = (360, 780)  # a common Android width
 NAMES = ("Test Ann", "Test Bob")
 LONG_NAME = "Александра"  # a long first name: it fits a player's row of the bonus race at 360px
 WAIT_MS = 20000
-FLOWS = ("home", "one device", "online", "website", "clubs", "a tie", "fireworks")
+FLOWS = ("home", "one device", "online", "website", "clubs", "a tie", "fireworks", "computer")
 
 
 class Problem(Exception):
@@ -669,6 +672,29 @@ def check_fireworks(browser, build_url: str) -> str:
         steered.stop()
 
 
+def check_computer(browser, url: str, games: List[str]) -> None:
+    phone = Phone(browser, url, "against the computer, phone")
+    try:
+        phone.see(phone.id("start-local"), "the home page")
+        phone.id("local-computers").get_by_role("radio", name="1").click()
+        phone.until(lambda: phone.id("local-name-1").count() == 0, "the second name box giving way to the computer")
+        phone.id("local-name-0").fill(NAMES[0])
+        phone.id("start-local").click()
+        phone.see(phone.id("start-throw"), "the starting throw")
+        games.append(phone.page.url.rstrip("/").split("/")[-1].split("?")[0])
+        phone.throw_until_decided()  # the computer throws by itself, and plays its turn if it goes first
+        if not phone.id("last-move").count():  # the player goes first
+            phone.id("roll").first.click()
+            write_best(phone)
+            phone.until(lambda: "computer" in phone.id("turn").first.inner_text(), "the computer's mark on its turn")
+        phone.until(lambda: phone.id("last-move").count() and "Computer" in phone.id("last-move").first.inner_text(),
+                    "the computer's move under the board")
+        phone.see(phone.id("roll"), "the player's turn after the computer's")
+        phone.healthy()
+    finally:
+        phone.close()
+
+
 def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[str], List[str]]:
     """Run the checks; returns (problems, codes of the games played)."""
     from playwright.sync_api import sync_playwright
@@ -689,7 +715,8 @@ def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[st
                       lambda: check_clubs(browser, url, server, games)),
                      ("a tie", "a tie for the first turn, steered dice", lambda: check_tie(browser, build_url)),
                      ("fireworks", "an Abaka on the first roll, steered dice",
-                      lambda: check_fireworks(browser, build_url))]
+                      lambda: check_fireworks(browser, build_url)),
+                     ("computer", "a game against the computer, phone", lambda: check_computer(browser, url, games))]
             for flow, label, step in steps:
                 if flow not in flows:
                     continue

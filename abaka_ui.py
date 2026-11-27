@@ -36,6 +36,7 @@ code_version.load_current()
 from abaka.rooms import (  # noqa: E402
     MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, full_code, normalize_code, split_code,
     within_limit)
+from abaka.bot import computer_names  # noqa: E402
 from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.chat import render_chat  # noqa: E402
@@ -51,6 +52,7 @@ from server import stores  # noqa: E402
 POLL_FAST = 1.0    # someone else is acting, or players are joining
 POLL_CALM = 3.0    # your own turn (nobody else can move), or the game is over
 POLL_IDLE = 10.0   # a same-device game (only a second device could change it)
+POLL_COMPUTER = 0.5  # the computer's turn: each check may make its next step (rooms.py)
 GAMES_PER_SESSION = 10              # a browser may start this many games...
 GAMES_PER_SESSION_WINDOW = 10 * 60  # ...in this many seconds (a guard against scripts)
 MY_GAMES_KEPT = 10   # games a browser remembers for "Continue a game"...
@@ -180,16 +182,25 @@ def _render_home(store: RoomStore) -> None:
     _, local_col, online_col, _ = st.columns([0.4, 5, 5, 0.4], gap="large")
     with local_col:
         with st.container(border=True, key="card-local"):
-            _card_header("\U0001F465", t("Same device"), t("Take turns on this screen."))
+            _card_header("\U0001F465", t("Same device"),
+                         t("Take turns on this screen, or play against the computer."))
             count = _player_count("local_count")
+            # The computer plays the last seats (abaka/bot.py, Backlog item 33).
+            computers = _computer_count(count)
+            people = count - computers
             with st.form("local_game", border=False):
                 typed = [st.text_input(t("Player {i}", i=i), placeholder=t("Name"), max_chars=20, key=f"local_p{i}")
-                         for i in range(1, count + 1)]
+                         for i in range(1, people + 1)]
+                seats = list(range(people, count))
+                names = computer_names([""] * count, seats)
+                if computers:
+                    st.html('<div class="ab-computers">' + "".join(
+                        f'<span>&#129302; {escape(names[i])}</span>' for i in seats) + "</div>")
                 if st.form_submit_button(t("Start game"), type="primary", icon=":material/play_arrow:",
                                          use_container_width=True):
                     # Saved like an online game: it gets a code and can be continued from its link.
-                    names = [name.strip() or t("Player {i}", i=i) for i, name in enumerate(typed, 1)]
-                    _start_game(lambda: store.create_local(names))
+                    names = [name.strip() or t("Player {i}", i=i) for i, name in enumerate(typed, 1)] + names[people:]
+                    _start_game(lambda: store.create_local(names, computers=seats))
 
     with online_col:
         with st.container(border=True, key="card-online"):
@@ -433,6 +444,14 @@ def _player_count(key: str) -> int:
     return value or ss.get(last_key, MIN_PLAYERS)
 
 
+def _computer_count(players: int) -> int:
+    """How many of a same-device game's seats the computer plays: none to all but one."""
+    key = f"local_computers_{players}"  # its options change with the number of players
+    value = st.segmented_control(t("Computer players"), list(range(players)), default=0, key=key,
+                                 help=t("The computer plays the last seats and makes its moves by itself."))
+    return value or 0
+
+
 def _show_lobby_notice() -> None:
     """Say once why this browser left its game (on the home or the invite page, wherever it lands)."""
     ss = st.session_state
@@ -505,7 +524,11 @@ def _render_online(store: RoomStore) -> None:
         st.query_params["room"] = full_code(code, view.key)  # a page drawn before games had keys
     if view.local:
         _render_local_game(store, view, token)
-        _watch_room(code, view.seen, POLL_IDLE)  # in step if the game is open on two devices
+        # In step if the game is open on two devices; often while the computer plays its turn (its
+        # steps are made by this page's checks, rooms.py: one every COMPUTER_PACE_SECONDS).
+        computer_plays = (view.engine is not None and not view.engine.is_game_over()
+                          and view.engine.current in view.computers)
+        _watch_room(code, view.seen, POLL_COMPUTER if computer_plays else POLL_IDLE)
         return
     status = chip(t("Online · {code}", code=code), "accent")
 
@@ -573,7 +596,8 @@ def _render_local_game(store: RoomStore, view, token: str) -> None:
         _leave_room(info=t("Game {code} is saved. To continue it, open it from this page or enter its full code "
                            "{full}.", code=code, full=full_code(code, view.key)) if unfinished else None)
 
-    render_game(RoomEngine(get_store, code, token, view.engine, view.version, view.picked, view.rerolled),
+    render_game(RoomEngine(get_store, code, token, view.engine, view.version, view.picked, view.rerolled,
+                           view.computers),
                 me=None,
                 status_html=chip(t("Same device · {code}", code=code)), on_play_again=rematch,
                 on_leave=leave, leave_label=t("Leave game"), board_note_html=_series_html(view),
@@ -635,7 +659,8 @@ def _watch_room(code: str, seen, every: float) -> None:
     Re-draw the page as soon as the shared room changes, or the player whose turn it is picks
     other dice (`seen` is RoomView.seen), checking every `every` seconds.
     """
-    {POLL_FAST: _watch_fast, POLL_CALM: _watch_calm, POLL_IDLE: _watch_idle}[every](code, tuple(seen))
+    {POLL_FAST: _watch_fast, POLL_CALM: _watch_calm, POLL_IDLE: _watch_idle,
+     POLL_COMPUTER: _watch_computer}[every](code, tuple(seen))
 
 
 def _check_room(code: str, seen) -> None:
@@ -655,6 +680,11 @@ def _watch_calm(code: str, seen) -> None:
 
 @st.fragment(run_every=POLL_IDLE)
 def _watch_idle(code: str, seen) -> None:
+    _check_room(code, seen)
+
+
+@st.fragment(run_every=POLL_COMPUTER)
+def _watch_computer(code: str, seen) -> None:
     _check_room(code, seen)
 
 

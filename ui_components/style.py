@@ -312,6 +312,10 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-seats span { padding: .3rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
   border: 1.5px dashed #D5D9E5; color: #9AA0B5; }
 .ab-seats span.in { border: 1.5px solid #C7CBF5; background: #EEF0FF; color: #4F46E5; }
+/* the computer's seats in the same-device card (Backlog item 33) */
+.ab-computers { display: flex; flex-wrap: wrap; gap: .4rem; margin: .1rem 0 .6rem; }
+.ab-computers span { padding: .3rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
+  border: 1.5px solid #C7CBF5; background: #EEF0FF; color: #4F46E5; }
 [class*="st-key-rejoin-row"] { flex-wrap: wrap !important; }
 .ab-wait { display: flex; align-items: center; gap: .6rem; justify-content: center; color: #6B7089; margin: 1rem 0 .4rem; }
 .ab-wait i { width: 10px; height: 10px; border-radius: 50%; background: #4F46E5; animation: ab-pulse 1.4s ease-in-out infinite; }

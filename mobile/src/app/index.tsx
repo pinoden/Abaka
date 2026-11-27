@@ -25,6 +25,9 @@ export default function Home() {
   const { t, connection, info, online } = useApp();
   const [games, setGames] = useState<SavedGame[]>([]);
   const [count, setCount] = useState(2);
+  // The computer plays the last seats (Backlog item 33): none to all but one.
+  const [computers, setComputers] = useState(0);
+  const people = count - Math.min(computers, count - 1);
   const [names, setNames] = useState(['', '', '', '', '']);
   const [myName, setMyName] = useState('');
   const [capacity, setCapacity] = useState(2);
@@ -147,7 +150,7 @@ export default function Home() {
 
       <Card testID="card-local">
         <Title>{t('Same device')}</Title>
-        <Muted>{t('Take turns on this screen.')}</Muted>
+        <Muted>{t('Take turns on this screen, or play against the computer.')}</Muted>
         <Text style={styles.label}>{t('Players')}</Text>
         <Choice
           testID="local-count"
@@ -155,7 +158,14 @@ export default function Home() {
           onChange={setCount}
           options={PLAYER_COUNTS.map((n) => ({ value: n, label: String(n) }))}
         />
-        {names.slice(0, count).map((name, i) => (
+        <Text style={styles.label}>{t('Computer players')}</Text>
+        <Choice
+          testID="local-computers"
+          value={count - people}
+          onChange={setComputers}
+          options={Array.from({ length: count }, (_, n) => ({ value: n, label: String(n) }))}
+        />
+        {names.slice(0, people).map((name, i) => (
           <Field
             key={i}
             testID={`local-name-${i}`}
@@ -169,7 +179,10 @@ export default function Home() {
           testID="start-local"
           label={t('Start game')}
           disabled={busy}
-          onPress={() => start('create_local', { names: names.slice(0, count) })}
+          onPress={() => start('create_local', {
+            names: [...names.slice(0, people), ...Array(count - people).fill('')],
+            computers: Array.from({ length: count - people }, (_, n) => people + n),
+          })}
         />
       </Card>
 
