@@ -371,6 +371,25 @@ class TestPages(unittest.TestCase):
         self.assertEqual(self.store.seat_of(code, reloaded.session_state["seat_token"]), 1)
         self.assertIsNone(self.store.seat_of(code, bob))
 
+    def test_a_sessions_first_moment_waits_for_the_browser_to_say_which_it_is(self):
+        from ui_components import device as browser
+        if browser._keeper is None:
+            self.skipTest("Streamlit 1.48 reads the browser's cookie, and knows at once")
+        code, ann, bob, link = self.game()
+        opened = self.page(room=link)                               # a reload: the browser has not answered yet
+        self.assertIn("Opening the game", self.html(opened))
+        self.assertFalse(self.keys(opened) & {"rejoin-0", "rejoin-1", "come-back"})
+        opened.session_state["device"] = BOB                        # its answer: the secret it keeps
+        self.go(opened)
+        self.assertEqual(opened.session_state["room_code"], code)
+        self.assertEqual(self.store.seat_of(code, opened.session_state["seat_token"]), 1)
+        # A browser that does not answer is taken for a new one after a few checks: it may ask.
+        silent = self.page(room=link)
+        self.go(silent)
+        self.go(silent)
+        self.assertIsNone(silent.session_state["room_code"])
+        self.assertEqual(self.keys(silent) & {"rejoin-0", "rejoin-1", "come-back"}, {"rejoin-0", "rejoin-1"})
+
     def test_a_tab_that_lost_its_seat_to_another_tab_does_not_take_it_back_by_itself(self):
         code, ann, bob, link = self.game()
         second = self.store.reclaim(code, 1, self.store.view(code).key, BOB)   # the same browser's other tab

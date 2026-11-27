@@ -344,6 +344,7 @@ RU = {
     "Already joined on another device? Ask to come back as:": "Уже в игре на другом устройстве? Попросить место:",
     "Are you one of the players? Ask to come back as:": "Вы один из игроков? Попросить место:",
     "This browser holds a seat in this game:": "В этом браузере уже есть место в этой игре:",
+    "Opening the game…": "Открываем игру…",
     "This device holds a seat in this game:": "На этом устройстве уже есть место в этой игре:",
     "Continue as {name}": "Продолжить как {name}",
     "A seat belongs to the device that took it. From another device you are let in by your own "

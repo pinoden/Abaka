@@ -201,8 +201,9 @@ class RoomView:
                  club: Optional[str] = None, results: Optional[List[dict]] = None,
                  picked: tuple = (), rerolled: tuple = (), picks: int = 0, events: tuple = (),
                  chat: tuple = (), last_event_id: int = 0, key: str = "", computers: tuple = (),
-                 computer_level: Optional[str] = None, asks: tuple = ()) -> None:
+                 computer_level: Optional[str] = None, asks: tuple = (), held: tuple = ()) -> None:
         self.code = code
+        self.held = held              # per seat: whether a device holds it (False: taken before devices were kept)
         # Devices asking to be let in to a seat: {"seat", "open"}. The seat's own page answers
         # at any time; the other players only once it is `open` (the seat's device is not here).
         self.asks = asks
@@ -762,7 +763,8 @@ class RoomStore:
                             room.last_event_id, room.key, tuple(room.computers),
                             room.computer_level if room.computers else None,
                             tuple({"seat": seat, "open": request["open"]}
-                                  for seat, request in sorted(room.asks.items()) if request["answer"] is None))
+                                  for seat, request in sorted(room.asks.items()) if request["answer"] is None),
+                            tuple(held is not None for held in room.devices))
 
     def seen(self, code: str, token: Optional[str] = None):
         """

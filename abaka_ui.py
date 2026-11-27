@@ -35,12 +35,13 @@ code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
     COMPUTER_LEVELS, MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, clean_name, full_code,
-    is_device, new_device, normalize_code, split_code, within_limit)
+    normalize_code, split_code, within_limit)
 from abaka.seats import requests_for  # noqa: E402
 from abaka.bot import SUGGESTED_LEVEL, computer_names, level_name  # noqa: E402
 from abaka.clubs import MAX_CLUB_NAME_LENGTH, ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.chat import render_chat  # noqa: E402
+from ui_components.device import device_to_keep, device_wait, keep_device, device as _device  # noqa: E402
 from ui_components.effects import render_events, render_reaction_bar  # noqa: E402
 from abaka.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
@@ -61,11 +62,6 @@ MY_GAMES_SHOWN = 4   # ...and how many unfinished ones it shows
 MY_CLUBS_KEPT = 6    # clubs a browser remembers for the home page
 CLUB_GAMES_SHOWN = 10  # recent games on a club's page
 POLL_ASK = 2.0       # a device waiting to be let in to a seat asks about the answer this often
-# A seat of an online game belongs to the browser that took it (Backlog item 37). The browser keeps
-# a secret in this cookie, and the room the secret's hash: after a reload the cookie brings the
-# browser back to its seat, and a browser without it has to be let in.
-DEVICE_COOKIE = "abaka_device"
-DEVICE_COOKIE_RUNS = 3  # a session writes the cookie on this many of its first runs (a run can be cut short)
 
 stores.log_to_stderr()  # the game's log to stderr (Streamlit Cloud: Manage app); where games are saved: server/stores.py
 
@@ -136,7 +132,7 @@ def main():
     ss.setdefault("my_games", [])      # codes of games this browser played, newest first
     ss.setdefault("my_clubs", [])      # codes of clubs this browser opened, newest first
     set_language(_pick_language())
-    _keep_device()
+    keep_device()  # which browser this is: it holds its seats (Backlog item 37, ui_components/device.py)
 
     store = get_store()
     # ?room= holds a game's full code (code and key): its code alone opens nothing (Backlog item 31).
@@ -219,7 +215,7 @@ def _render_home(store: RoomStore) -> None:
                 name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="create_name")
                 if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
                                          use_container_width=True):
-                    _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players, device=_device()))
+                    _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players, device=device_to_keep()))
             st.html(f'<div class="ab-or">{t("or open a game by its code")}</div>')
             with st.form("find_game", border=False):
                 typed = st.text_input(t("Game code"), placeholder=t("e.g. Q47CH-8XJ4PN2R"), max_chars=300,
@@ -363,7 +359,7 @@ def _render_club(store: RoomStore, clubs: ClubStore, code: str) -> None:
                         if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
                                                  use_container_width=True):
                             _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players,
-                                                             club=code, device=_device()))
+                                                             club=code, device=device_to_keep()))
             with st.container(border=True, key="card-club-share"):
                 st.html(f'<div class="ab-card-sub">{t("Invite friends to the club with this link:")}</div>')
                 link, _ = _invite_link(code, "club")
@@ -531,46 +527,11 @@ def _centered():
 
 # ------------------------------------------------------------------ online ----
 
-def _device() -> str:
-    """This browser's secret, which holds its seats: from its cookie, or a new one for it to keep."""
-    ss = st.session_state
-    if not ss.get("device"):
-        try:
-            kept = st.context.cookies.get(DEVICE_COOKIE, "")
-        except Exception:  # noqa: BLE001 - no browser behind this run
-            kept = ""
-        ss.device = kept if is_device(kept) else new_device()
-        ss.device_runs = 0 if kept == ss.device else DEVICE_COOKIE_RUNS
-    ss.setdefault("device_runs", DEVICE_COOKIE_RUNS)
-    return ss.device
-
-
-def _keep_device() -> None:
-    """
-    Have the browser keep its secret in a cookie, for a year. Streamlit has no way to set a
-    cookie from the server, so the page's own script writes it; the server reads it when the
-    next session starts (st.context.cookies). The value is made here or checked (is_device):
-    letters, digits, - and _ only.
-    """
-    ss = st.session_state
-    device = _device()
-    if ss.device_runs <= 0:
-        return
-    ss.device_runs -= 1
-    script = ("<script>document.cookie = '%s=%s; path=/; max-age=31536000; SameSite=Lax'"
-              " + (location.protocol === 'https:' ? '; Secure' : '');</script>" % (DEVICE_COOKIE, device))
-    with st.container(key="device-keeper"):  # takes no room on the page (style.py)
-        try:
-            st.html(script, unsafe_allow_javascript=True)  # Streamlit 1.67
-        except TypeError:
-            import streamlit.components.v1 as components  # Streamlit 1.48: a frame of the page's own origin
-            components.html(script, height=0)
-
-
 def _render_online(store: RoomStore) -> None:
     ss = st.session_state
     code, token = ss.room_code, ss.seat_token
-    store.own(code, token, _device())  # a seat taken before devices were remembered keeps this browser's secret
+    if _device():
+        store.own(code, token, _device())  # a seat taken before devices were remembered keeps this browser's secret
     seat = store.seat_of(code, token)
     if seat is None:
         if store.exists(code):
@@ -786,7 +747,7 @@ def _watch_request(code: str, key: str, seat: int, ticket: str) -> None:
     """A browser that asked to be let in to a seat: take the seat once someone let it in."""
     ss = st.session_state
     try:
-        status, token = get_store().asked(code, seat, key, ticket, _device())
+        status, token = get_store().asked(code, seat, key, ticket, device_to_keep())
     except RoomError:
         status, token = "gone", None
     if status == "waiting":
@@ -894,7 +855,14 @@ def _render_invite(store: RoomStore, code: str, key: str) -> None:
 
             view = store.view(code)
             ss = st.session_state
-            device = _device()
+            if _device() is None and view.started and any(view.held) and code not in ss.get("left_rooms", []):
+                # A session's first moment: the browser has not said which it is yet. If it holds a
+                # seat here, the game opens by itself, so the invite is not shown in between.
+                _card_header("\U0001F3B2", t(" vs ").join(view.names), t("Opening the game…"))
+                st.html(f'<div class="ab-wait"><i></i>{t("Waiting…")}</div>')
+                device_wait()
+                return
+            device = device_to_keep()
             mine = store.device_seat(code, key, device)  # the seat this browser holds, if any
 
             def come_back() -> None:

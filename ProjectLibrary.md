@@ -369,20 +369,29 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   - A game saved before keys gets one the first time it is loaded, saved at
     once (a version bump), so later loads keep it.
 - A seat of an online game belongs to the device that took it (owner, Backlog
-  item 37, PR #80). Before, anyone with the game's link took any seat by
+  item 37, PR #82). Before, anyone with the game's link took any seat by
   tapping its name.
   - Each device keeps a secret (`rooms.new_device`, 24 characters). The room
     keeps its hash per seat (`room.devices`, saved), set by `store.create`
     and `store.join` (`device=`). A game saved before has none; an open page
     of it gives its seat its browser's secret (`store.own`, on every run of a
     seated page; not a move, so no version change, saved with the next move).
-  - The website keeps the secret in a cookie, `abaka_device`, for a year
-    (`abaka_ui._device`, `_keep_device`). Streamlit cannot set a cookie from
-    the server, so the page's own script writes it (`st.html(...,
-    unsafe_allow_javascript=True)` on 1.67, a component frame on 1.48), on a
-    session's first three runs when the browser did not send it. The next
-    session reads it from `st.context.cookies`. The app keeps its secret in
-    the phone's secure storage and gets it from the server once (`device`).
+  - The website keeps the secret in the browser's local storage
+    (`abaka_device`), and a small component tells the server at the start of
+    every session (`ui_components/device.py`, `st.components.v2`): it reads
+    the stored secret, or stores the one the server offers, and sends it as
+    its value over the page's own connection. So the server knows the browser
+    from a session's second run, a moment after the first.
+    - Not a cookie: on Streamlit Cloud the app never receives a cookie the
+      page sets (found on the live app, PR #80; Decision log).
+    - A page that needs the answer waits for it (`device_wait`): the invite of
+      a started game some device holds a seat of shows "Opening the game…"
+      until the browser has said which it is, and after three checks without
+      an answer goes on as a new browser.
+    - Streamlit 1.48 (local runs) has no such components: there the secret is
+      a cookie, which a local server does receive.
+    - The app keeps its secret in the phone's secure storage and gets it from
+      the server once (`device`).
   - `store.reclaim(code, seat, key, device)` gives the seat a new token only
     to the device that holds it (`NotYours` otherwise; the API's `not_yours`).
     On the invite page a browser that holds a seat of a started game goes
@@ -846,7 +855,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #80. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #82 (first in PR #80, reverted by PR #81). Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1064,7 +1073,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       - The owner chose the first layer (2026-11-25, Backlog item 31,
         PR #72): a game's link and full code carry a secret key, and its
         code alone opens nothing.
-      - Done in PR #80 (Backlog item 37): a seat belongs to the device that
+      - Done in PR #82 (Backlog item 37): a seat belongs to the device that
         took it, and another device has to be let in. No PIN: nothing to
         remember or to type.
     - [ ] Presence (who is online), rate limits, and longer game codes for
@@ -1475,7 +1484,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
     - [ ] "Your turn!" notifications (Apple's and Google's push services):
       the server keeps each seat's device address.
-    - [x] Seat protection (Backlog item 37, PR #80): a seat belongs to the
+    - [x] Seat protection (Backlog item 37, PR #82): a seat belongs to the
       device that took it; another device is let in by the seat's own device
       or by another player.
     - [ ] Optional: games on one device without a network, by running the
@@ -1722,7 +1731,9 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       to screen readers; Streamlit's own weight (5 s and 3.5 MB for a first
       view of the live site).
 
-37. **A seat belongs to the device that took it.** Done in PR #80.
+37. **A seat belongs to the device that took it.** Done in PR #82. (PR #80 was
+    the first try: on the live site a reload did not bring a player back, so
+    it was reverted in PR #81 half an hour later. Status has the story.)
     > "Find a way to fix seat takeover. We can't go to google play having
     > that. How do other apps resolve it?"
     - Before, anyone with a game's link opened it and tapped a player's name:
@@ -1746,28 +1757,39 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       to its browser the next time it draws.
     - Not changed: a game on one device continues from its link on any
       device, as before. Its link is known only to whoever played it.
-    - What it costs: a private window, or a browser that deletes its cookies,
+    - What it costs: a private window, or a browser that keeps no site data,
       has to be let in again after every reload.
 
 ## Status (2026-11-27)
 
 - **A seat belongs to its device (owner: "We can't go to google play having
-  that", Backlog item 37):** PR #80.
+  that", Backlog item 37):** PR #82, after PR #80 and its revert, PR #81.
   - The room keeps, per seat, the hash of a secret its device keeps: the
-    website in a cookie, the app in the phone's secure storage. `reclaim`
-    needs it; any other device asks (`ask`, `asked`) and is let in by the
-    seat's own device, or by another player once that device is away
-    (`answer`). Architecture, "Online play", has the details; docs/API.md the
-    operations (`device`, `ask`, `asked`, `answer`, the state's `asks` and
-    `held`, the error `not_yours`).
+    website in the browser's local storage, the app in the phone's secure
+    storage. `reclaim` needs it; any other device asks (`ask`, `asked`) and
+    is let in by the seat's own device, or by another player once that device
+    is away (`answer`). Architecture, "Online play", has the details;
+    docs/API.md the operations (`device`, `ask`, `asked`, `answer`, the
+    state's `asks` and `held`, the error `not_yours`).
+  - **PR #80 broke coming back after a reload on the live site, and was
+    reverted (PR #81) about half an hour after its merge.**
+    - It kept the browser's secret in a cookie written by the page. On a
+      local server, and in CI, the server receives that cookie. On Streamlit
+      Cloud it does not: measured on the live site, the browser had the
+      cookie and the server made a new secret on every reload.
+    - So a player who reloaded was asked to be let in by another player. The
+      live website check failed on exactly that step (its new reload step).
+    - Nobody's game was lost: games and seats were untouched, and the revert
+      put the old pages back.
+    - PR #82 sends the secret over the page's own connection instead
+      (`ui_components/device.py`), which is how every widget's value already
+      reaches the server on Cloud.
   - Checked:
-    - 21 new tests (`tests/test_seats.py`). With the device check taken out
-      of `reclaim`, 13 tests failed (4 of the new ones, one of them for each
-      of 7 kinds of wrong secret, and the API's own).
+    - 22 new tests (`tests/test_seats.py`). With the device check taken out
+      of `reclaim`, 13 tests failed.
     - The website check now reloads the guest's page (the game is back
-      without a tap: the cookie works in a real browser on Streamlit 1.67)
-      and opens the game's link in a third browser, which asks for the
-      guest's seat and is refused from the guest's own page.
+      without a tap) and opens the game's link in a third browser, which
+      asks for the guest's seat and is refused from the guest's own page.
     - The app's browser check opens the game on a third phone, which gets
       Bob's seat only after Bob's own phone lets it in, and never shows the
       request to Ann while Bob is there. The app's client test does the same
@@ -1775,18 +1797,14 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - In Chromium on a local server (Streamlit 1.67), at 390px in Russian
       and 1300px in English: the invite, the wait, the card on the seat's own
       page, the card on another player's page 20 s after the seat's page was
-      closed, the new device let in, and its reload. No sideways scrolling;
-      the cookie's script takes no room on the page.
-    - Every Python test on 3.13 (410; the 8 database tests skipped, no
-      Postgres here), 3.9 (408, 20 skipped) and 3.8 (408, 75 skipped); the
-      app's 48 tests, typecheck, lint and all eight browser flows; the
-      website check on a local server.
+      closed, the new device let in, and its reload. No sideways scrolling.
+    - Every Python test on 3.13 (411; the 8 database tests skipped, no
+      Postgres here), 3.9 and 3.8; the app's 48 tests, typecheck, lint and
+      all eight browser flows; the website check on both local servers.
+    - After the merge, the live website check, with its reload step.
   - Load-test row: no slowdown (29% CPU, 7.3 ms median poll, page run 95 ms
     against 92).
-  - Not done: a real phone; the cookie on Safari and on Streamlit Cloud's own
-    page were not tried before the merge (the live check after it does the
-    reload there).
-
+  - Not done: a real phone; Safari.
 
 - **A full test of the site (owner: "from all the perspectives like coding,
   optimality, cybersecurity, user experience", Backlog item 36):** PR #79.
@@ -2715,13 +2733,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
   380 run and 67 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  410 run and none is skipped (PR #80 added 21, of whose seat is whose, in `test_seats.py`; PR #79 added 7: 4 of slow storage in `test_repository.py`,
-  2 of clubs, 1 of names; the counts before them are lower by as many). 21 seat tests (`test_seats.py`: the link alone
+  411 run and none is skipped (PR #82 added 22, of whose seat is whose, in `test_seats.py`; PR #79 added 7: 4 of slow storage in `test_repository.py`,
+  2 of clubs, 1 of names; the counts before them are lower by as many). 22 seat tests (`test_seats.py`: the link alone
   takes no seat, whatever is sent as the device; a device comes back to its own seat; devices saved as hashes; a game
   saved before; the seat's own device lets another in, and the seat changes hands only when the new one comes; the
   table decides once the seat's device is away, and not when it is back; a refusal; one request per seat and per
   device; a request that lapses; the API and the words in Russian; the pages: a visitor let in, refused, the same
-  browser straight back after a reload, two tabs not taking the seat in turns, the waiting room). 8 last-throw tests (`test_turns.py`: the dice of the latest
+  browser straight back after a reload, two tabs not taking the seat in turns, the waiting room, the wait for the browser to say which it is). 8 last-throw tests (`test_turns.py`: the dice of the latest
   move kept, saved and cloned; the computer's final dice shown until the next roll and at
   no other time, in both languages; the API; the next computer's rest; the page). 29 computer-player tests (`test_bot.py`: only
   offered moves, whole games for 2 to 5 players, better than a random and a greedy
@@ -2933,11 +2951,11 @@ From the architecture review (details and file:line in
 - (Fixed in PR #28: the global lock was held across deep copies and file
   writes, so every poll and render waited behind any room's save.)
 - **Security, "friends only":**
-  - (Fixed in PR #80: anyone with a game's link or full code could take any
+  - (Fixed in PR #82: anyone with a game's link or full code could take any
     seat by its name. A seat now belongs to its device.)
   - a same-device game still continues on any device that has its link;
-  - a browser that keeps no cookies (a private window) has to be let in again
-    after every reload;
+  - a browser that keeps no site data (a private window) has to be let in
+    again after every reload;
   - someone at the table can let a stranger in to an absent player's seat:
     the table decides, as at a real table;
   - (Fixed in PR #72: a game's 5-character code alone, which can be seen on a
@@ -3000,7 +3018,7 @@ Other ideas, not planned:
 
 ## Decision log
 
-**2026-11-27: a seat belongs to its device (Claude Code, PR #80)**
+**2026-11-27: a seat belongs to its device (Claude Code, PR #80, PR #81, PR #82)**
 
 - The owner: "Find a way to fix seat takeover. We can't go to google play
   having that. How do other apps resolve it?"
@@ -3041,12 +3059,24 @@ Other ideas, not planned:
   the asker has given up meanwhile, the old device still plays.
 - The room keeps a hash of the secret, so a copy of the database holds
   nothing to come back with. (It still holds the seat tokens, as before.)
-- The cookie is written by the page's script, since Streamlit sets none from
-  the server. It can be read by scripts on the page, like the app's storage
-  on the web; the pages show every name and message as text (checked in the
-  test round of PR #79). It is first-party and needed for the game to work,
-  the kind that needs no consent banner; a privacy policy for the stores (D1)
-  should name it.
+- Where the browser keeps its secret, and how the server learns it:
+  - PR #80 used a cookie written by the page's script, read by the next
+    session from `st.context.cookies`. It worked on a local server and in CI,
+    and not on Streamlit Cloud, where the app does not receive that cookie.
+    The live check's reload step failed, and PR #81 reverted it, by the rule
+    for a broken live app.
+  - PR #82 keeps it in the browser's local storage and sends it as a
+    component's value, over the connection every widget uses. The server
+    knows the browser one run later than with a cookie; the one page that
+    cannot wait a run (the invite of a started game) shows "Opening the
+    game…" for that moment.
+  - A rule from this: what depends on how the host passes requests on
+    (cookies, headers, addresses) is not proven by a local server or CI. Say
+    so before the merge, and let the live check test it at once, as it did.
+  - Scripts on the page can read the secret, as they can the app's storage
+    on the web; the pages show every name and message as text (checked in
+    the test round of PR #79). It is the site's own storage and needed for
+    the game to work; a privacy policy for the stores (D1) should name it.
 - A browser that holds a seat of a started game goes straight in. In the
   waiting room it gets a button instead: the page there also offers to join
   as someone new, and two friends trying the game in two tabs of one browser
