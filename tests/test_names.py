@@ -84,13 +84,14 @@ class TestNamesInTheApp(unittest.TestCase):
         self.page()
         store = self.stores[-1]
         code, host = store.create(IMAGE)
-        guest = store.join(code, LINK, store.view(code).key)
+        store.join(code, LINK, store.view(code).key)
 
-        # A visitor sees the buttons to ask for a seat with both names: escaped.
+        # A visitor sees "Rejoin as" buttons with both names: escaped.
         labels = [b.label for b in self.page(room=link(store, code)).button if b.key and b.key.startswith("rejoin-")]
         self.assertEqual(labels, [md(IMAGE), md(LINK)])
 
         # The guest waits while the host throws: the caption names the host, escaped.
+        guest = store.reclaim(code, 1, store.view(code).key)
         captions = [c.value for c in self.page(room=code, room_code=code, seat_token=guest).caption]
         self.assertTrue(any(md(IMAGE) in c for c in captions), captions)
         self.assertFalse(any(IMAGE in c for c in captions), captions)

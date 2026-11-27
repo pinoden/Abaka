@@ -249,14 +249,14 @@ class TestSlowStorage(unittest.TestCase):
 
     def test_a_game_closed_while_it_was_read_does_not_come_back(self):
         online = RoomStore(repository=self.repo, starting_throw=False)
-        code, host = online.create("Ann", device="anns-own-device-0001")
+        code, host = online.create("Ann")
         key = online.view(code).key
         saved = RoomStore(repository=self.repo, starting_throw=False)
         self.repo.slow.add(code)
         looking = self.in_background(saved.opens, code, key)
         self.assertTrue(self.repo.asked.wait(5))
         self.repo.slow.clear()
-        token = saved.reclaim(code, 0, key, "anns-own-device-0001")   # another page opens the game meanwhile...
+        token = saved.reclaim(code, 0, key)   # another page opens the game meanwhile...
         saved.leave(code, token)              # ...and its only player leaves: the game is closed
         self.repo.go.set()
         looking["thread"].join(5)

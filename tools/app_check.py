@@ -424,25 +424,6 @@ def check_online(browser, url: str, games: List[str]) -> None:
         bob.id("chat-send").click()
         ann.see(ann.id("chat-message").filter(has_text="Test hello"), "Bob's message, in Ann's chat")
         ann.see(ann.id("bubble").filter(has_text="Test hello"), "Bob's message, announced on Ann's phone")
-        # A seat belongs to its phone (Backlog item 37): a third phone with the game's full code has
-        # to ask for Bob's seat, and gets it only when Bob's own phone lets it in.
-        third = Phone(browser, url, "online, a third phone")
-        try:
-            third.see(third.id("open-code"), "the third phone's home page").fill(full)
-            third.id("open-game").click()
-            third.see(third.id("rejoin-1"), "the players' names to ask for a seat").click()
-            third.see(third.id("asking"), "the wait to be let in")
-            if third.id("chat-text").count():
-                raise Problem("a phone with only the game's full code got a seat")
-            bob.see(bob.id("ask-yes-1"), "the request on Bob's own phone")
-            if ann.id("ask-yes-1").count():
-                raise Problem("the request for Bob's seat was shown to Ann while Bob's phone was there")
-            bob.id("ask-yes-1").click()
-            third.see(third.id("chat-text"), "the game on the third phone, once let in")
-            bob.see(bob.id("invite"), "Bob's first phone told that it no longer holds the seat")
-            third.healthy()
-        finally:
-            third.close()
         for phone in (ann, bob):
             phone.healthy()
     finally:

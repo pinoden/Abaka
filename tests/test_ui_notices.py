@@ -63,8 +63,8 @@ class TestLostGameNotices(unittest.TestCase):
         # A tab whose seat was taken over from another tab (refresh + rejoin) keeps the link,
         # so it lands on the invite page. It must be told why it is no longer in the game.
         code, _ = store.create("Ann")
-        old_token = store.join(code, "Bob", store.view(code).key, "bobs-own-device-0001")
-        store.reclaim(code, 1, store.view(code).key, "bobs-own-device-0001")
+        old_token = store.join(code, "Bob", store.view(code).key)
+        store.reclaim(code, 1, store.view(code).key)
         old_tab = self.page(room=link(store, code), room_code=code, seat_token=old_token)
         warnings = [w.value for w in old_tab.warning]
         self.assertEqual(len(warnings), 1, warnings)

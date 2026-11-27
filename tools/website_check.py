@@ -310,24 +310,6 @@ def check_online(browser, url: str, games: List[str]) -> None:
     host.see(host.app.get_by_text("Test hello"), "the guest's chat message on the host's screen")
     host.see(host.key("react-lucky"), 'the "Lucky!" reaction').click()
     guest.see(guest.app.locator(".ab-bubble", has_text="Lucky!"), "the host's reaction on the guest's screen")
-    # A seat belongs to the browser that took it (Backlog item 37). The guest's browser kept its
-    # secret, so a reload brings it straight back to its seat...
-    guest.page.reload(timeout=START_MS)
-    guest.app = guest._app_frame()
-    guest.see(guest.app.locator(".st-key-chat-text input"),
-              "the game again after the guest's page was reloaded (the browser holds its seat)", START_MS)
-    # ...and another browser, with the game's link, has to ask: the seat's own page refuses it.
-    visitor = Screen(browser, f"{url}?room={full}&lang=en", PHONE, "an online game, a visitor with its link")
-    visitor.see(visitor.key("rejoin-1"), "the players' names to ask for a seat", START_MS).click()
-    visitor.see(visitor.app.get_by_text(f"Asked to come back as {NAMES[1]}"), "the wait to be let in")
-    if visitor.key("roll").count() or visitor.app.locator(".st-key-chat-text input").count():
-        raise Problem("a visitor with only the game's link got a seat")
-    guest.see(guest.app.get_by_text("Is this you on another device?"), "the request on the guest's own screen")
-    guest.see(guest.key("ask-no-1"), 'the "Refuse" button').click()
-    visitor.see(visitor.app.get_by_text("The request was refused."), "the refusal on the visitor's screen")
-    visitor.healthy()
-    visitor.close()
-    guest.see(guest.app.locator(".st-key-chat-text input"), "the guest still in the game after refusing")
     for screen in screens:
         screen.healthy()
         screen.close()
