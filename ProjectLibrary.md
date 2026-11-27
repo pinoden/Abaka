@@ -1802,8 +1802,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       Postgres here), 3.9 and 3.8; the app's 48 tests, typecheck, lint and
       all eight browser flows; the website check on both local servers.
     - After the merge, the live website check, with its reload step.
-  - Load-test row: no slowdown (29% CPU, 7.3 ms median poll, page run 95 ms
-    against 92).
+  - Load-test rows, one for each try: no slowdown (28% CPU, 7.1 ms median
+    poll, page run 93 ms against 92 before the change).
   - Not done: a real phone; Safari.
 
 - **A full test of the site (owner: "from all the perspectives like coding,
