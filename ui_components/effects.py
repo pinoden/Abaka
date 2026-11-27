@@ -29,7 +29,7 @@ import streamlit as st
 from abaka.effects import REACTION_LOOKS as REACTIONS  # reaction -> (emoji, label); a label goes through t()
 from abaka.effects import effect_words, reaction_words
 from abaka.rooms import FIREWORKS, GRAND_FIREWORKS, SPARKLES, TEARS, TooFast
-from abaka.i18n import t
+from abaka.i18n import md, t
 
 SECONDS = {"reaction": 3.5, GRAND_FIREWORKS: 6.0, FIREWORKS: 4.5, SPARKLES: 2.8, TEARS: 4.5}  # how long each is on screen
 LEAD_IN_SECONDS = 0.45  # a throw's effect waits for the dice to land (their spin in dice.py takes .45s)
@@ -52,7 +52,7 @@ def render_reaction_bar(names: List[str], me: int, react: Callable[[str, Optiona
         if len(others) >= 2:
             st.segmented_control(
                 t("Send to"), [EVERYONE] + others, default=EVERYONE, key="react-to",
-                format_func=lambda i: t("Everyone") if i == EVERYONE else names[i],
+                format_func=lambda i: t("Everyone") if i == EVERYONE else md(names[i]),  # labels are Markdown
                 label_visibility="collapsed")
         with st.container(horizontal=True, key="react-row"):
             for key, (emoji, label) in REACTIONS.items():

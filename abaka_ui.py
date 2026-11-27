@@ -34,10 +34,10 @@ if "server" not in code_version.PACKAGES:  # a code_version loaded before server
 code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
-    COMPUTER_LEVELS, MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, full_code, normalize_code,
-    split_code, within_limit)
+    COMPUTER_LEVELS, MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, clean_name, full_code,
+    normalize_code, split_code, within_limit)
 from abaka.bot import SUGGESTED_LEVEL, computer_names, level_name  # noqa: E402
-from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
+from abaka.clubs import MAX_CLUB_NAME_LENGTH, ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.chat import render_chat  # noqa: E402
 from ui_components.effects import render_events, render_reaction_bar  # noqa: E402
@@ -274,10 +274,17 @@ def _render_clubs_card(clubs: ClubStore) -> None:
                     name = st.text_input(t("Club name"), placeholder=t("e.g. Friday dice"), max_chars=30,
                                          key="club_name")
                     if st.form_submit_button(t("Create club"), icon=":material/add:", use_container_width=True):
-                        try:
-                            _open_club(clubs.create(name))
-                        except ClubError as e:
-                            st.error(error(str(e)))
+                        # Clubs count with new games in the per-browser limit, as the API counts them
+                        # per client (server/http.py): a club is kept for a year.
+                        if not clean_name(name, "", MAX_CLUB_NAME_LENGTH):
+                            st.error(error("Give the club a name."))
+                        elif not _may_start_a_game():
+                            st.error(t("You started a lot of games just now. Please wait a few minutes."))
+                        else:
+                            try:
+                                _open_club(clubs.create(name))
+                            except ClubError as e:
+                                st.error(error(str(e)))
             with open_col:
                 with st.form("find_club", border=False):
                     typed = st.text_input(t("Club code"), placeholder=t("e.g. K7PX2M"), max_chars=8,

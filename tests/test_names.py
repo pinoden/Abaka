@@ -101,6 +101,20 @@ class TestNamesInTheApp(unittest.TestCase):
         at = self.page(room=link(store, local))
         self.assertEqual(at.button(key="start-throw").label, "Throw for " + md(LINK))
 
+    def test_the_send_to_choice_of_a_bigger_table(self):
+        """With three or more players a reaction can be sent to one of them: the choice's labels
+        are Markdown, so "[x](http://e.vil)" showed as "x" there (the test round of 2026-11-27)."""
+        self.page()
+        store = self.stores[-1]
+        code, host = store.create("Ann", 3)
+        key = store.view(code).key
+        store.join(code, LINK, key)
+        store.join(code, IMAGE, key)
+        at = self.page(room=link(store, code), room_code=code, seat_token=host)
+        group = next(g for g in at.get("button_group") if g.key == "react-to")
+        labels = [getattr(option, "content", option) for option in group.options]
+        self.assertEqual(labels, ["Everyone", md(LINK), md(IMAGE)])
+
 
 if __name__ == "__main__":
     unittest.main()

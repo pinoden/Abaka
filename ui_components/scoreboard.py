@@ -83,7 +83,7 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
         dot = '<span class="ab-dot"></span>' if i == active else ""
         you = f'<span class="ab-you">{t("You")}</span>' if i == me else ""
         bal = p.school_balance
-        bal_txt = f'<span style="color:#E5484D">{bal}</span>' if bal < 0 else str(bal)
+        bal_txt = f'<span style="color:#CF2F36">{bal}</span>' if bal < 0 else str(bal)
         h.append(
             f'<th class="ab-gap"></th><th colspan="4" class="ab-player{acts[i]}">{dot}{escape(p.name)}{you}'
             f'<div class="ab-pmeta"><span class="ab-nw">{t("{score} pts", score=scores[i])}</span>'

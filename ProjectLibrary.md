@@ -410,9 +410,13 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     this server only, or on this server only because the database refused
     the password, cannot be reached, or is not connected yet. It names no
     address, so anyone can check the live app from a browser.
-  - Loads happen under the store's lock, so with a database the first look
-    at a game not in memory waits for a round trip (longer if Neon has to
-    wake up).
+  - A game that is not in memory is read with the store's lock released
+    (`_read_saved`, PR #79), and so is the question whether a new game's code
+    is free (`_new_code`). The page that asks waits for the round trip
+    (longer if Neon has to wake up); the other games go on. Afterwards the
+    room may be in memory already (another page read it: that one is the
+    game), and data read while a room was being closed is read again
+    (`_closed`).
   - The data is taken under the lock (`_snapshot`) and saved after it
     (`_write`), so storage never holds up other games.
   - Each file write uses its own temp file and an atomic replace.
@@ -796,7 +800,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1648,7 +1652,81 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Not for people's moves: on one screen everyone watched the move being
       made, and online the other player takes time to choose.
 
+36. **A full test of the site: its code, its speed, its security and how it is
+    to use.** Done in PR #79 (Status has what was run and found).
+    > "Perform the full testing of the site - from all the perspectives like
+    > coding, optimality, cybersecurity, user experience"
+    - Found and fixed:
+      - a look at a game that was not in memory held up every other game for
+        a database round trip (seconds when the database had to wake up), and
+        anyone could cause it with a code that names no game;
+      - the website made clubs without end (each is kept for a year);
+      - a name written as Markdown showed differently in the "Send to" choice
+        of a table of three or more ("[x](http://e.vil)" as "x");
+      - grey, red and gold text too pale to read easily (229 places on the
+        screens checked failed the usual contrast rule; none does now);
+      - on a phone, the small choices (players, level, Score / Cross out, the
+        options to write a roll, EN / RU) were 32px high; they are 40px;
+      - on a phone 360 wide, two players' board was 12px too wide for its
+        card.
+    - Found and left for the owner (Known issues): anyone with a game's link
+      can take a seat (item 11); a script that opens new browser sessions is
+      not limited in the games it starts; Russian pages say they are English
+      to screen readers; Streamlit's own weight (5 s and 3.5 MB for a first
+      view of the live site).
+
 ## Status (2026-11-27)
+
+- **A full test of the site (owner: "from all the perspectives like coding,
+  optimality, cybersecurity, user experience", Backlog item 36):** PR #79.
+  - Run, all passing on `main` before any change: every test on Python 3.13
+    (382; the 8 database tests skipped, no Postgres here) and 3.8 (380); 200
+    random games with rule checks; the standard load test (29% CPU, 95 of
+    100 polls answered, 7.3 ms median poll: as the rows before).
+  - Code read again: the pages, the rooms, the API, the server, the clubs,
+    storage.
+  - Security:
+    - No secret in the repository or its history (connection strings, keys,
+      tokens searched for). The pinned packages have no known
+      vulnerabilities (`pip-audit`).
+    - The live site serves none of its files (`.git`, `.env.local`,
+      `secrets.toml`, the code): each such address returns Streamlit's own
+      page. It does not serve the API. Streamlit's statistics
+      (`/_stcore/metrics`) are public: cache counters and the size of the
+      session state, no names or games.
+    - Hostile names and chat text in a three-player online game, in
+      Chromium at 1300px and 390px (`<img onerror>`, Markdown links and
+      images): no link, no image, no script, no request to the other
+      address. One place read a name as Markdown: the "Send to" choice
+      (fixed).
+    - Paths in `?room=` and `?club=` never reach the disk (codes are checked
+      first).
+  - Speed: the game's own code is about 3 ms of a page's 93 ms run with five
+    players (the move previews 0.5 ms, the board 0.4 ms, the chart 1.1 ms);
+    the rest is Streamlit. A first view sends 66 KB over the connection, a
+    click 16 KB, and a waiting same-device page 2 KB in 30 s. The live site
+    takes about 5 s to its first usable page (3.5 MB, nearly all
+    Streamlit's).
+  - How it is to use: every screen (home in both languages, a game for two
+    and for five, the results, the invite, the waiting room, a club, a code
+    alone) at 360, 390, 768 and 1300px in Chromium, measured (sideways
+    scrolling, the size of everything that can be tapped, text sizes) and
+    scanned with axe-core. No page error and no sideways scrolling anywhere.
+  - Fixed (Backlog item 36 lists them). Each has a test that fails without
+    it: 4 for slow storage (`tests/test_repository.py`: other games go on
+    while a game is read and while a new game asks for its code; two pages
+    reading one game get one game; a game closed while it was read does not
+    come back), 2 for clubs, 1 for the "Send to" names. The screens were
+    measured again afterwards: contrast failures 229 to 0, the board fits a
+    360px phone, the small choices are 40px high on phones.
+  - Every Python test on 3.13 (389; the 8 database tests skipped), 3.9 (387)
+    and 3.8 (387), with the website check on both local servers; 60 random
+    games.
+  - Load-test row: no slowdown (29% CPU, 7.3 ms median poll, page run 92 ms
+    against 107).
+  - Not done: the phone app was not part of this round ("the site"); a real
+    phone; the database tests ran in CI only.
+
 
 - **The chart of scores by move had no lines on the live app (owner's
   screenshot):** PR #78.
@@ -2526,7 +2604,8 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
   380 run and 67 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  382 run and none is skipped. 8 last-throw tests (`test_turns.py`: the dice of the latest
+  389 run and none is skipped (PR #79 added 7: 4 of slow storage in `test_repository.py`,
+  2 of clubs, 1 of names; the counts before it are 7 lower). 8 last-throw tests (`test_turns.py`: the dice of the latest
   move kept, saved and cloned; the computer's final dice shown until the next roll and at
   no other time, in both languages; the API; the next computer's rest; the page). 29 computer-player tests (`test_bot.py`: only
   offered moves, whole games for 2 to 5 players, better than a random and a greedy
@@ -2752,6 +2831,26 @@ From the architecture review (details and file:line in
     a chat message broke that game's page and connections for everyone.)
   - Not limited yet: how many requests one live connection may send, and how
     many connections one client may open.
+  - Clubs are open to anyone with their 6-character code (30 bits): the
+    table can be read and games added to it. A script could find a club by
+    trying codes only very slowly while there are few clubs (about a billion
+    codes).
+  - The site sends no Content-Security-Policy or Strict-Transport-Security
+    header of its own: Streamlit Cloud decides the headers. A host of our own
+    (Backlog item 25, B1) can set them.
+- From the test round of 2026-11-27 (Backlog item 36), left as they are:
+  - A Russian page still says `lang="en"` in its HTML (Streamlit writes it),
+    so a screen reader reads Russian with an English voice, and a browser may
+    offer to translate.
+  - The board's scrolling box cannot be reached with the keyboard, and its
+    empty corner cells have no text for screen readers (axe-core: one
+    serious, one minor).
+  - Help marks ("?") and the "Row differences" switch are 13 to 16px: they are
+    Streamlit's own.
+  - An online game waits for ever for a player who has gone: nobody else can
+    move for them or skip them.
+  - `FileRepository` remembers the latest version of every room it saved
+    since the server started (about 100 bytes each); a restart clears it.
 - The phone app has not run on a real phone yet, nor on an iPhone at all.
   It runs on Android's emulator here (Backlog item 27), where coming back from
   the background and a network switched off and on worked; a real phone's
@@ -2778,6 +2877,44 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-27: a full test of the site (Claude Code, PR #79)**
+
+- The owner asked for a full test of the site from every side: its code, its
+  speed, its security and how it is to use. Clear, small problems were fixed in
+  the same pull request, as in the earlier test rounds; what needs the owner's
+  decision is in Known issues.
+- Reading a saved game with the store's lock released, rather than a list of
+  codes known to be missing: guessed codes are all different, so such a list
+  would never be asked twice. `_room` is called first thing by every method
+  that names a game, so giving the lock up inside it changes nothing they had
+  read before.
+  - After the read the room may be there already: two pages opening one game
+    at once must get one game, or a move made in one copy would be lost.
+  - A room deleted while its data was on the way (the last player left the
+    waiting room) would have come back in memory, with saves the repository
+    refuses. The store counts deletions and reads again if one happened.
+  - Not done for clubs: their lock holds up club pages only, never a game.
+- New clubs count in the browser's limit of new games (10 in 10 minutes), as
+  the API counts them per address. A club with no name is refused before it is
+  counted.
+- Colours: the faint grey (#9AA0B5, 2.6:1 on white) became #666C88 (5.2:1),
+  the red of negative numbers #CF2F36, the gold of bonuses and chips #8A5B00,
+  the last move's number #A04A08: each at least 4.5:1 on the backgrounds it is
+  drawn on (WCAG AA). Crosses and the chart's lines keep their colours: they
+  are marks, not text. Streamlit fades its captions to 60%; they now use the
+  faint colour unfaded.
+- 40px for the small choices on phones, not Apple's 44: the options to write a
+  roll wrap onto more lines as they grow, and the move's button below them
+  should stay on the first screen.
+- Not changed, on purpose:
+  - seat protection, session limits and the page's `lang`: Known issues says
+    why each waits;
+  - Streamlit's public statistics: they hold nothing of the players', and
+    Cloud decides what is served.
+- Measured with scratch tools (a walk of every screen with axe-core, the
+  hostile-names probe, the traffic counts); they are not in the repository.
+  The contrast and tap-size numbers are from Chromium on this Mac.
 
 **2026-11-27: the chart's lines as an image (Claude Code, PR #78)**
 

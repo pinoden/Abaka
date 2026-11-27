@@ -72,7 +72,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   justify-content: center; font-size: 22px; background: #EEF0FF; margin-bottom: .6rem;
 }
 .ab-or {
-  display: flex; align-items: center; gap: .75rem; color: #9AA0B5; font-size: .8rem;
+  display: flex; align-items: center; gap: .75rem; color: #666C88; font-size: .8rem;
   text-transform: uppercase; letter-spacing: .08em; margin: .4rem 0 .2rem;
 }
 .ab-or::before, .ab-or::after { content: ""; flex: 1; height: 1px; background: #E6E8F0; }
@@ -85,7 +85,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-chip { display: inline-block; padding: .22rem .7rem; border-radius: 999px; font-size: .8rem; font-weight: 600;
   background: #ECEEF6; color: #4A4F68; white-space: nowrap; }
 .ab-chip.accent { background: #EEF0FF; color: #4F46E5; }
-.ab-chip.gold { background: #FFF4DB; color: #9A6700; }
+.ab-chip.gold { background: #FFF4DB; color: #8A5B00; }
 .ab-chip.green { background: #E6F6EC; color: #1F7A4A; }
 
 /* ---------- hero ---------- */
@@ -99,7 +99,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-turn-title.mine { color: #4F46E5; }
 .ab-turn-sub { margin-top: .35rem; color: #6B7089; font-size: .92rem; display: flex; gap: .5rem;
   align-items: center; flex-wrap: wrap; }
-.ab-section-label { font-size: .72rem; font-weight: 700; color: #9AA0B5; text-transform: uppercase;
+.ab-section-label { font-size: .72rem; font-weight: 700; color: #666C88; text-transform: uppercase;
   letter-spacing: .08em; margin: .3rem 0 -.2rem; }
 
 /* ---------- dice ---------- */
@@ -116,7 +116,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 [class*="st-key-die-"] button:hover:not(:disabled) { transform: translateY(-3px); }
 [class*="st-key-die-"] button:disabled { opacity: 1 !important; cursor: default; }
 [class*="st-key-die-"]::after { content: "\\00a0"; display: block; text-align: center; font-size: .66rem;
-  font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #B7791F; white-space: nowrap;
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #8A5B00; white-space: nowrap;
   margin: 6px -20px 0; /* wider than the die so the label never pushes neighbours apart */ }
 /* Dice are at most --ab-die wide and shrink so all five always fit the play card (cqw = card width). */
 [class*="st-key-card-play"] { --ab-die: 60px; --ab-die-gap: .6rem; container-type: inline-size; }
@@ -169,17 +169,17 @@ h1, h2, h3 { letter-spacing: -0.02em; }
    Gold unless picked. A picked pill is data-testid="stBaseButton-pillsActive" in Streamlit 1.48 and
    aria-checked="true" in 1.67 (where pills are role="radio" buttons with no data-testid). */
 [class*="st-key-pick-"] button:has(strong):not([data-testid="stBaseButton-pillsActive"]):not([aria-checked="true"]) {
-  background: #FFF4DB; border-color: #F2C14E; color: #9A6700; }
+  background: #FFF4DB; border-color: #F2C14E; color: #8A5B00; }
 [class*="st-key-pick-"] button:has(strong):not([data-testid="stBaseButton-pillsActive"]):not([aria-checked="true"]):hover {
   background: #FFEBC2; border-color: #E0A82E; color: #7A5200; }
 
 /* ---------- scoreboard ---------- */
 .ab-board-wrap { overflow-x: auto; }
 /* The difference row by row (a tester, 2026-11-26): the viewer's points minus the opponent's. */
-.ab-board .ab-diff { font-size: .8rem; font-weight: 700; color: #9AA0B5; text-align: right; padding: 6px 4px 6px 2px;
+.ab-board .ab-diff { font-size: .8rem; font-weight: 700; color: #666C88; text-align: right; padding: 6px 4px 6px 2px;
   width: 3em; min-width: 2.6em; white-space: nowrap; }
 .ab-board .ab-diff.up { color: #15803D; }
-.ab-board .ab-diff.down { color: #E5484D; }
+.ab-board .ab-diff.down { color: #CF2F36; }
 @media (max-width: 640px) { .ab-board.ab-diffs .ab-gap { width: 3px; }
   .ab-board.ab-diffs td, .ab-board.ab-diffs .ab-sub th { padding-left: 2px; padding-right: 2px; }
   .ab-board.ab-diffs:not(.ab-many) { font-size: .84rem; } .ab-board.ab-diffs .ab-row { padding-right: 6px; }
@@ -192,8 +192,8 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-chart-plot { position: relative; height: 150px; margin-left: 42px; }
 .ab-chart-plot img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
 .ab-chart-y { position: absolute; left: -42px; width: 36px; text-align: right; transform: translateY(-50%);
-  font-size: .72rem; color: #8A90A8; }
-.ab-chart-x { display: flex; justify-content: space-between; margin-left: 42px; font-size: .72rem; color: #8A90A8;
+  font-size: .72rem; color: #666C88; }
+.ab-chart-x { display: flex; justify-content: space-between; margin-left: 42px; font-size: .72rem; color: #666C88;
   margin-top: .15rem; }
 .ab-chart-keys { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .8rem; color: #3A3F55; margin-top: .3rem; }
 .ab-chart-keys span { display: inline-flex; align-items: center; gap: .35rem; min-width: 0; }
@@ -207,7 +207,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-board .ab-gap { width: 10px; padding: 0; border-bottom: none; }
 .ab-board .ab-player { font-size: 1rem; font-weight: 700; padding: 10px 4px 8px; border-bottom: none;
   border-radius: 12px 12px 0 0; }
-.ab-board .ab-pmeta { font-size: .75rem; font-weight: 500; color: #7A8099; margin-top: 2px; }
+.ab-board .ab-pmeta { font-size: .75rem; font-weight: 500; color: #666C88; margin-top: 2px; }
 .ab-board .ab-you { display: inline-block; font-size: .65rem; font-weight: 700; text-transform: uppercase;
   letter-spacing: .06em; background: #EEF0FF; color: #4F46E5; border-radius: 999px; padding: 1px 7px;
   margin-left: 6px; vertical-align: 2px; }
@@ -215,20 +215,20 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   margin-right: 6px; vertical-align: 1px; }
 .ab-board .ab-active { background: #F3F4FF; }
 .ab-board .ab-player.ab-active { color: #4F46E5; }
-.ab-board .ab-sub th { font-size: .68rem; font-weight: 700; color: #A0A6BA; text-transform: uppercase; letter-spacing: .06em; }
+.ab-board .ab-sub th { font-size: .68rem; font-weight: 700; color: #666C88; text-transform: uppercase; letter-spacing: .06em; }
 .ab-board .ab-section td { text-align: left; font-size: .68rem; font-weight: 700; letter-spacing: .09em;
-  text-transform: uppercase; color: #A0A6BA; padding: 16px 2px 4px; border-bottom: 1px solid #E6E8F0; }
+  text-transform: uppercase; color: #666C88; padding: 16px 2px 4px; border-bottom: 1px solid #E6E8F0; }
 .ab-board .ab-bonus { background: #FFF9EE; }
 .ab-board .ab-bonus.ab-active { background: #ECE9FA; }
 .ab-board .ab-num { font-weight: 600; }
-.ab-board .ab-neg { color: #E5484D; font-weight: 600; }
+.ab-board .ab-neg { color: #CF2F36; font-weight: 600; }
 .ab-board .ab-x { color: #E5484D; opacity: .7; font-weight: 700; }
 .ab-board .ab-ok { color: #30A46C; font-weight: 700; }
 .ab-board .ab-none { color: #CBCFDA; }
-.ab-board .ab-bval { color: #B7791F; font-weight: 700; }
+.ab-board .ab-bval { color: #8A5B00; font-weight: 700; }
 .ab-board td.ab-target { box-shadow: inset 0 0 0 2px #4F46E5; background: #E3E5FF !important; color: #4F46E5;
   font-weight: 800; border-radius: 8px; }
-.ab-board td.ab-last { background: #FFE8D1 !important; color: #B4540A !important; font-weight: 800;
+.ab-board td.ab-last { background: #FFE8D1 !important; color: #A04A08 !important; font-weight: 800;
   box-shadow: inset 0 0 0 2px #F59E0B; border-radius: 8px; opacity: 1; }
 .ab-legend { display: flex; align-items: center; gap: .5rem; margin-top: .8rem; font-size: .85rem; color: #6B7089; }
 .ab-swatch { width: 14px; height: 14px; border-radius: 4px; background: #FFE8D1; box-shadow: inset 0 0 0 2px #F59E0B;
@@ -250,9 +250,9 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 /* ---------- running score and clubs ---------- */
 .ab-series { margin-top: .7rem; padding: .55rem .8rem; border-radius: 12px; background: #F6F7FB; color: #4A4F68;
   font-size: .88rem; display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; }
-.ab-series-head { color: #9AA0B5; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.ab-series-head { color: #666C88; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .ab-series b { color: #1C2033; }
-.ab-series-club { margin-left: auto; color: #9A6700; font-weight: 600; font-size: .8rem; }
+.ab-series-club { margin-left: auto; color: #8A5B00; font-weight: 600; font-size: .8rem; }
 /* ---------- the races for shared bonuses (races.py), at the foot of the play card ---------- */
 .ab-race { margin-top: .8rem; padding: .55rem .7rem; border-radius: 12px; background: #F6F7FB; color: #4A4F68;
   font-size: .85rem; display: flex; flex-direction: column; gap: .4rem; }
@@ -261,25 +261,25 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   font-size: .85rem; line-height: 1.35; }
 .ab-race-table th:first-child { text-align: left; width: 40%; padding-left: 0; color: #4A4F68; font-weight: 600; }
 .ab-race-table thead th { font-size: .72rem; font-weight: 700; color: #6B7089; vertical-align: bottom; }
-.ab-race-table thead th.ab-race-title { color: #9AA0B5; text-transform: uppercase; letter-spacing: .06em; }
+.ab-race-table thead th.ab-race-title { color: #666C88; text-transform: uppercase; letter-spacing: .06em; }
 .ab-race-table tbody th.ab-race-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ab-race-table tbody th.me { color: #4F46E5; }
 .ab-race-table td { color: #1C2033; font-variant-numeric: tabular-nums; }
 .ab-race-table td.lead { font-weight: 800; }
-.ab-race-table td.off { color: #9AA0B5; }
+.ab-race-table td.off { color: #666C88; }
 .ab-race-x { margin-left: .2rem; font-size: .8em; }
 .ab-race-row { padding: .35rem .55rem; border-radius: 9px; background: #FFF4DB; color: #8A5A00; font-weight: 600; }
-.ab-race-note { font-size: .75rem; color: #9AA0B5; line-height: 1.35; }
+.ab-race-note { font-size: .75rem; color: #666C88; line-height: 1.35; }
 .ab-club-result { display: flex; flex-wrap: wrap; gap: .3rem .9rem; justify-content: center; margin: -.4rem 0 1rem;
   padding: .6rem .8rem; border-radius: 12px; background: #EEF0FF; color: #4A4F68; font-size: .9rem; }
 .ab-club-result > div { width: 100%; text-align: center; font-size: .75rem; font-weight: 700; color: #4F46E5;
   text-transform: uppercase; letter-spacing: .06em; }
 .ab-up { color: #1F7A4A; font-weight: 700; font-size: .8em; }
 .ab-down { color: #C2410C; font-weight: 700; font-size: .8em; }
-.ab-same { color: #9AA0B5; font-size: .8em; }
+.ab-same { color: #666C88; font-size: .8em; }
 .ab-club-head { margin: .2rem 0 1rem; }
 .ab-club-table { width: 100%; border-collapse: collapse; margin-top: .8rem; font-size: .95rem; }
-.ab-club-table th { text-align: left; font-size: .72rem; font-weight: 700; color: #9AA0B5; text-transform: uppercase;
+.ab-club-table th { text-align: left; font-size: .72rem; font-weight: 700; color: #666C88; text-transform: uppercase;
   letter-spacing: .06em; padding: 0 .5rem .4rem; border-bottom: 1px solid #E6E8F0; }
 .ab-club-table td { padding: .55rem .5rem; border-bottom: 1px solid #F0F1F6; color: #4A4F68; }
 .ab-club-table tbody tr:first-child td { background: #FFF8E6; }
@@ -290,7 +290,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-club-games li { display: flex; flex-wrap: wrap; gap: .2rem .6rem; font-size: .9rem; color: #6B7089;
   padding: .4rem 0; border-bottom: 1px solid #F0F1F6; }
 .ab-club-games .win { color: #1C2033; font-weight: 700; }
-.ab-club-games .ab-when { color: #9AA0B5; font-variant-numeric: tabular-nums; min-width: 2.8rem; }
+.ab-club-games .ab-when { color: #666C88; font-variant-numeric: tabular-nums; min-width: 2.8rem; }
 @media (max-width: 640px) {
   .ab-club-table { font-size: .88rem; }
   .ab-club-table .ab-wide, .ab-club-table th:nth-child(6), .ab-club-table th:nth-child(7) { display: none; }
@@ -314,7 +314,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-code-key span { width: 32px; height: 40px; border-radius: 9px; font-size: 1.2rem; font-weight: 700; color: #4F46E5; }
 .ab-seats { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: center; margin: .9rem 0 0; }
 .ab-seats span { padding: .3rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
-  border: 1.5px dashed #D5D9E5; color: #9AA0B5; }
+  border: 1.5px dashed #D5D9E5; color: #666C88; }
 .ab-seats span.in { border: 1.5px solid #C7CBF5; background: #EEF0FF; color: #4F46E5; }
 /* the computer's seats in the same-device card (Backlog item 33) */
 .ab-computers { display: flex; flex-wrap: wrap; gap: .4rem; margin: .1rem 0 .6rem; }
@@ -377,7 +377,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   animation: ab-banner 4.5s ease-out calc(var(--d) + .1s) both; }
 .ab-fx-small .ab-fx-banner { padding: .6rem 1.2rem; animation-name: ab-banner-small;
   animation-duration: 2.8s; }
-.ab-fx-title { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.03em; color: #B7791F; line-height: 1.1; }
+.ab-fx-title { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.03em; color: #8A5B00; line-height: 1.1; }
 .ab-fx-small .ab-fx-title { font-size: 1.5rem; color: #4F46E5; }
 .ab-fx-grand .ab-fx-banner { padding: 1.1rem 2.1rem; border: 2px solid #F6C453; animation-duration: 6s;
   box-shadow: 0 0 0 8px rgba(246, 196, 83, .22), 0 24px 60px rgba(20, 24, 40, .3); }
@@ -411,7 +411,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 /* ---------- chat (chat.py) ---------- */
 .st-key-card-chat { margin-top: .4rem; padding: 1rem 1.1rem .9rem !important; }
 .ab-chat-head { font-weight: 700; color: #1C2033; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
-.ab-chat-head span { font-weight: 400; font-size: .78rem; color: #9AA0B5; }
+.ab-chat-head span { font-weight: 400; font-size: .78rem; color: #666C88; }
 /* Listed newest first and shown bottom up, so the box opens scrolled to the latest message. */
 .ab-chat { display: flex; flex-direction: column-reverse; gap: .3rem; max-height: 190px; overflow-y: auto;
   margin-top: .5rem; padding-right: .2rem; overflow-wrap: anywhere; }
@@ -420,7 +420,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-msg b { display: block; font-size: .72rem; color: #6B7089; font-weight: 600; }
 .ab-msg.mine { align-self: flex-end; background: #EEF0FF; border-radius: 14px 14px 4px 14px; }
 .ab-msg.mine b { color: #4F46E5; }
-.ab-chat-empty { color: #9AA0B5; font-size: .88rem; margin-top: .4rem; }
+.ab-chat-empty { color: #666C88; font-size: .88rem; margin-top: .4rem; }
 [class*="st-key-chat-row"] { flex-wrap: nowrap !important; gap: .4rem !important; }
 .st-key-card-chat [data-testid="InputInstructions"] { display: none; }
 [class*="st-key-chat-row"] > *:first-child { flex: 1 1 auto !important; min-width: 0 !important; }
@@ -461,4 +461,19 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   .ab-topbar .ab-brand span { display: none; }
 }
 .ab-pmeta .ab-nw { white-space: nowrap; }
+/* Streamlit's captions are the text colour faded to 60% (#777985, 4.3:1 on white): the faint text's colour, not faded. */
+[data-testid="stCaptionContainer"] { color: #666C88 !important; opacity: 1 !important; }
+[data-testid="stCaptionContainer"] p { color: inherit !important; opacity: 1 !important; }
+/* Phones: the choices that are small buttons (players, level, Score / Cross out, the options to
+   write a roll, EN / RU, "Send to") are 32px high in Streamlit; 40px is easier to hit with a thumb. */
+@media (max-width: 640px) {
+  [data-testid="stButtonGroup"] button { min-height: 40px; }
+}
+/* A phone 360 wide: two players' columns fit the board without scrolling (they were 12px too wide). */
+@media (max-width: 380px) {
+  .ab-board th, .ab-board td { padding-left: 3px; padding-right: 3px; }
+  .ab-board .ab-row { padding-right: 4px; }
+  .ab-board .ab-row img { margin-right: 4px; }
+  .ab-board .ab-gap { width: 6px; }
+}
 """
