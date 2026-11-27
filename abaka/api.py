@@ -37,9 +37,11 @@ from .moves import ROW_ORDER, cross_options, free_slot, is_school, most_points, 
 from .races import bonus_races
 from .standings import row_differences, score_history
 from .turns import last_throw
-from .rooms import (COMPUTER_LEVELS, MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, REACTIONS, OutdatedPage,
-                    RoomError, RoomStore, RoomView, TooFast, normalize_code, split_code)
+from .rooms import (COMPUTER_LEVELS, MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, NotYours, REACTIONS,
+                    OutdatedPage, RoomError, RoomStore, RoomView, TooFast, is_device, new_device, normalize_code,
+                    split_code)
 from .rules import rules_blocks
+from .seats import requests_for
 
 # The version of the messages below. Adding an operation or a field keeps it; anything an
 # app already relies on (a field's meaning, an operation's arguments) changing makes it 2,
@@ -54,6 +56,7 @@ ERRORS = {
     "protocol": "the app and the server speak different versions: ask the player to update the app",
     "not_found": "no game or club with this code (any more): go back to the start",
     "not_seated": "the token holds no seat in this game (taken over on another device): offer to rejoin",
+    "not_yours": "the seat belongs to another device: offer to ask to be let in (`ask`)",
     "outdated": "the move was made on an old state: draw the new state; nothing to show",
     "too_fast": "too many reactions or messages: show the message",
     "retry": "the server is busy or was just updated: try again in a moment",
@@ -114,7 +117,8 @@ def handle(request: Any, store: RoomStore, clubs: Optional[ClubStore] = None,
         except OutdatedPage as e:
             raise ApiError("outdated", error(str(e))) from None
         except RoomError as e:
-            raise ApiError(_ROOM_ERRORS.get(str(e), "refused"), error(str(e))) from None
+            code = "not_yours" if isinstance(e, NotYours) else _ROOM_ERRORS.get(str(e), "refused")
+            raise ApiError(code, error(str(e))) from None
         except (ValueError, RuntimeError, IndexError) as e:  # the engine's rules, and ClubError
             raise ApiError("refused", error(str(e))) from None
 
@@ -175,6 +179,15 @@ class _Request:
     def token(self) -> str:
         return self.text("token")
 
+    def device(self, needed: bool = False) -> Optional[str]:
+        """The secret this device keeps (16 to 128 letters, digits, - and _), which holds its seats."""
+        value = self.get("device")
+        if value is None and not needed:
+            return None
+        if not is_device(value):
+            raise ApiError("bad_request", "'device' must be 16 to 128 letters, digits, '-' or '_'.")
+        return value
+
     def dice(self) -> List[int]:
         value = self._data.get("dice")
         if (not isinstance(value, list) or len(value) > DICE
@@ -220,7 +233,7 @@ def _create(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict
     """An online game; the creator takes seat 0 and shares the code."""
     name = req.text("name", "").strip() or t("Player {i}", i=1)
     players = req.number("players", MIN_PLAYERS, low=MIN_PLAYERS, high=MAX_PLAYERS)
-    code, token = store.create(name, players, club=_club_code(req, clubs))
+    code, token = store.create(name, players, club=_club_code(req, clubs), device=req.device())
     return _entered(store, clubs, code, token)
 
 
@@ -249,14 +262,45 @@ def _join(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
     code = req.code()
     _admit(req, store, code, seat_will_do=False)
     seated = len(store.view(code).names)
-    token = store.join(code, req.text("name", "").strip() or t("Player {i}", i=seated + 1), req.key())
+    token = store.join(code, req.text("name", "").strip() or t("Player {i}", i=seated + 1), req.key(),
+                       req.device())
     return _entered(store, clubs, code, token)
 
 
 def _rejoin(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
-    """Take a seat back (a new device, a lost token), with the game's key: the old token stops working."""
+    """
+    Come back to a seat on the device that holds it (a lost token), with the game's key and the
+    device's secret: the old token stops working. Another device is refused (`not_yours`) and
+    asks to be let in (`ask`).
+    """
     code = req.code()
-    return _entered(store, clubs, code, store.reclaim(code, req.number("seat", low=0), req.key()))
+    return _entered(store, clubs, code, store.reclaim(code, req.number("seat", low=0), req.key(), req.device()))
+
+
+def _new_device(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
+    """A secret for a device to keep and send as `device`: it holds the device's seats (rooms.py)."""
+    return {"device": new_device()}
+
+
+def _ask(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
+    """Ask to be let in to a seat another device holds. The answer comes through `asked`."""
+    code = req.code()
+    return {"ticket": store.ask(code, req.number("seat", low=0), req.key(), req.device(needed=True))}
+
+
+def _asked(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
+    """What became of a request: waiting, refused, gone, or in (then with the seat's token and state)."""
+    code = req.code()
+    status, token = store.asked(code, req.number("seat", low=0), req.key(), req.text("ticket"),
+                                req.device(needed=True))
+    return dict(_entered(store, clubs, code, token), status=status) if token else {"status": status}
+
+
+def _answer(req: _Request, store: RoomStore, code: str, token: str) -> None:
+    let_in = req.get("let_in")
+    if not isinstance(let_in, bool):
+        raise ApiError("bad_request", "'let_in' must be true or false.")
+    store.answer(code, token, req.number("seat", low=0), let_in)
 
 
 def _resume(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
@@ -287,14 +331,18 @@ def _get_state(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> d
     token = req.text("token") if req.get("token") is not None else None
     code = req.code()
     _admit(req, store, code)
-    return {"state": _state(store, clubs, code, token, req.number("since", 0, low=0))}
+    state = _state(store, clubs, code, token, req.number("since", 0, low=0))
+    if not state["seated"] and req.device() is not None and not state["local"]:
+        state["held"] = store.device_seat(code, state["key"], req.device())  # the seat this device may take back
+    return {"state": state}
 
 
 def _seen(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
     """A short text that changes whenever the state does: cheap to ask for every second."""
     code = req.code()
     _admit(req, store, code)
-    seen = store.seen(code)
+    token = req.get("token")
+    seen = store.seen(code, token if isinstance(token, str) else None)  # a seat's token: its device is here
     if seen[0] < 0:
         raise ApiError("not_found", error("Game not found. Check the code, or ask for a new invite."))
     return {"seen": _seen_text(seen)}
@@ -372,6 +420,10 @@ _OPS: Dict[str, Callable[[_Request, RoomStore, Optional[ClubStore]], dict]] = {
     "create_local": _create_local,
     "join": _join,
     "rejoin": _rejoin,
+    "device": _new_device,
+    "ask": _ask,
+    "asked": _asked,
+    "answer": _after(_answer, move=False),
     "resume": _resume,
     "state": _get_state,
     "seen": _seen,
@@ -436,10 +488,13 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
         "chat": [],
         "table": _table(view),
         "club_result": None,
+        # Devices asking to be let in to a seat, which this player may answer (`answer`): seats.py.
+        "asks": [] if view.local else requests_for(view.asks, view.names, seat),
+        "held": None,  # for a device without a seat that sends `device`: the seat it may take back (`rejoin`)
     }
     if seat is None:
         state["can"] = ["resume"] if view.local else (
-            (["join"] if engine is None and len(view.names) < view.capacity else []) + ["rejoin"])
+            (["join"] if engine is None and len(view.names) < view.capacity else []) + ["rejoin", "ask"])
         return state
 
     # The computer's seats are the store's to play (abaka/bot.py): nothing to offer on its turn.
@@ -464,6 +519,8 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
             can += (["score"] if score else []) + (["cross"] if cross else [])
     if engine is not None and not view.local:
         can += ["react"] if phase == "over" else ["react", "say"]
+    if state["asks"]:
+        can.append("answer")
 
     if engine is not None:
         state["game"] = _game(view)

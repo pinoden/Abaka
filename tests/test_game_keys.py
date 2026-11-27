@@ -68,9 +68,9 @@ class TestKeys(unittest.TestCase):
         for key in (self.key, self.key.lower(), " " + self.key[:4] + " " + self.key[4:]):
             with self.subTest(key=key):
                 self.assertTrue(self.store.opens(self.code, key))
-        bob = self.store.join(self.code.lower(), "Bob", self.key.lower())
+        bob = self.store.join(self.code.lower(), "Bob", self.key.lower(), "bobs-own-device-0001")
         self.assertEqual(self.store.seat_of(self.code, bob), 1)
-        new = self.store.reclaim(self.code, 1, self.key)
+        new = self.store.reclaim(self.code, 1, self.key, "bobs-own-device-0001")
         self.assertIsNone(self.store.seat_of(self.code, bob))  # the old token lost the seat
         self.assertEqual(self.store.seat_of(self.code, new), 1)
 
@@ -171,15 +171,15 @@ class TestApi(unittest.TestCase):
 
     def test_with_the_key_or_the_full_code(self):
         outsider = self.call(op="state", code=self.code, key=self.key)["state"]
-        self.assertEqual((outsider["seated"], outsider["can"]), (False, ["join", "rejoin"]))
+        self.assertEqual((outsider["seated"], outsider["can"]), (False, ["join", "rejoin", "ask"]))
         self.assertIn("seen", self.call(op="seen", code=self.code, key=self.key.lower()))
-        bob = self.call(op="join", code=full_code(self.code, self.key), name="Bob")
+        bob = self.call(op="join", code=full_code(self.code, self.key), name="Bob", device="bobs-own-device-0001")
         self.assertEqual(bob["state"]["you"], 1)
-        again = self.call(op="rejoin", code=full_code(self.code, self.key).lower(), seat=1)
+        again = self.call(op="rejoin", code=full_code(self.code, self.key).lower(), seat=1, device="bobs-own-device-0001")
         self.assertEqual(again["state"]["you"], 1)
         # A token that lost its seat still sees the invite, with the key: to offer taking it back.
         lost = self.call(op="state", code=self.code, token=bob["token"], key=self.key)["state"]
-        self.assertEqual((lost["seated"], lost["can"]), (False, ["join", "rejoin"]))
+        self.assertEqual((lost["seated"], lost["can"]), (False, ["join", "rejoin", "ask"]))
 
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
