@@ -150,6 +150,8 @@ export type State = {
   capacity: number;
   club: string | null;
   names: string[];
+  /** The seats the computer plays (Backlog item 33): the server makes their moves. Older servers leave it out. */
+  computers?: number[];
   seated: boolean;
   you: number | null;
   phase: Phase;

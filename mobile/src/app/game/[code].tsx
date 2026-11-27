@@ -351,7 +351,9 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
   openedAt: number;
 }) {
   const { t, rowName } = useApp();
-  const myTurn = state.local || game.current === state.you;
+  // The computer's seats are played by the server (Backlog item 33): nobody here moves for them.
+  const computer = (state.computers ?? []).includes(game.current);
+  const myTurn = (state.local || game.current === state.you) && !computer;
   // The move being chosen is kept only for this throw: a new roll or turn starts afresh.
   const turn = `${game.number}.${game.current}.${game.rolls_left}.${game.dice.map((d) => d.value).join('')}`;
   // The column of row differences (a tester, 2026-11-26): off until the player turns it on, as on the web.
@@ -370,6 +372,7 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
           <StarterSummary state={state} game={game} />
           <Text testID="turn" style={[styles.turn, myTurn && !state.local && styles.turnMine]}>
             {myTurn && !state.local ? t('Your turn') : t('{name}’s turn', { name: state.names[game.current] })}
+            {computer ? ` · 🤖 ${t('computer')}` : ''}
           </Text>
           <TurnLine state={state} game={game} myTurn={myTurn} />
           <DiceArea state={state} game={game} act={act} pick={pick} busy={busy} myTurn={myTurn}

@@ -28,6 +28,7 @@ import time
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional
 
+from .bot import computer_names
 from .clubs import MAX_CLUB_NAME_LENGTH, ClubStore, is_club_code, member_key
 from .effects import REACTION_LOOKS, effect_words, reaction_words
 from .i18n import LANGUAGES, error, get_language, set_language, t
@@ -224,11 +225,16 @@ def _create_local(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -
     names = req.get("names")
     if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
         raise ApiError("bad_request", "'names' must be a list of names.")
+    computers = req.get("computers", [])
+    if (not isinstance(computers, list)
+            or any(isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < len(names) for i in computers)):
+        raise ApiError("bad_request", "'computers' must be a list of seats, positions in 'names'.")
+    names = computer_names(names, computers)  # the computer's blank names: "Computer", "Computer 2"...
     names = [n.strip() or t("Player {i}", i=i) for i, n in enumerate(names, 1)]
     club = _club_code(req, clubs)
     if club is not None and len({member_key(n) for n in names}) < len(names):
         raise ApiError("refused", t("Each player needs a different name."))  # they would count as one member
-    code, token = store.create_local(names, club=club)
+    code, token = store.create_local(names, club=club, computers=computers)
     return _entered(store, clubs, code, token)
 
 
@@ -408,6 +414,7 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
         "capacity": view.capacity,
         "club": view.club,
         "names": list(view.names),
+        "computers": list(view.computers),
         "seated": seat is not None,
         "you": seat if seat is not None and not view.local else None,
         "phase": phase,
@@ -426,7 +433,9 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
             (["join"] if engine is None and len(view.names) < view.capacity else []) + ["rejoin"])
         return state
 
-    my_turn = phase in ("starting_throw", "playing") and (view.local or engine.current == seat)
+    # The computer's seats are the store's to play (abaka/bot.py): nothing to offer on its turn.
+    my_turn = (phase in ("starting_throw", "playing") and (view.local or engine.current == seat)
+               and engine.current not in view.computers)
     score, cross = ((score_options(engine), cross_options(engine)) if my_turn and engine.dice else ([], []))
     can = state["can"]
     if engine is None:

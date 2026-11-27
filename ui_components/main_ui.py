@@ -25,6 +25,9 @@ from ui_components.scoreboard import render_scoreboard
 from ui_components.style import brand_html, chip, die_uri
 
 
+ROBOT = "\U0001F916"  # marks the computer's turn (abaka/bot.py)
+
+
 def initialize_session_state() -> None:
     ss = st.session_state
     ss.setdefault("engine", None)        # local (same device) game, if any
@@ -141,10 +144,14 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
 
     player = engine.players[engine.current]
     name = escape(player.name)
-    can_act = me is None or engine.current == me
+    computer = _computer_plays(engine)
+    can_act = (me is None or engine.current == me) and not computer
 
     if me is not None and can_act:
         title = f'<div class="ab-turn-title mine">{t("Your turn")}</div>'
+    elif computer:
+        badge = chip(ROBOT + " " + t("computer"), "accent")
+        title = f'<div class="ab-turn-title">{t("{name}’s turn", name=name)} {badge}</div>'
     else:
         title = f'<div class="ab-turn-title">{t("{name}’s turn", name=name)}</div>'
     if engine.dice:
@@ -173,6 +180,8 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
             note = picked_dice_note(md(player.name), picked)
         elif rerolled:
             note = rerolled_dice_note(md(player.name), rerolled)
+        elif computer:
+            note = t("The computer is choosing its move.")
         else:
             note = t("{name} is choosing a move. You will see it here as it happens.", name=md(player.name))
         st.caption(note)
@@ -184,7 +193,7 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
 def _render_starting_throw(engine: GameEngine, me: Optional[int]) -> None:
     """Before the first round: everyone throws all five dice, and the lowest total goes first."""
     thrower = engine.players[engine.current]
-    can_act = me is None or engine.current == me
+    can_act = (me is None or engine.current == me) and not _computer_plays(engine)
     if engine.throw_round_no == 1:
         sub = t("Everyone throws all five dice. The lowest total goes first.")
     else:
@@ -198,6 +207,11 @@ def _render_starting_throw(engine: GameEngine, me: Optional[int]) -> None:
     label = t("Throw the dice") if me is not None else t("Throw for {name}", name=md(thrower.name))
     st.button(label, key="start-throw", type="primary", icon=":material/casino:", use_container_width=True,
               on_click=run_action, args=(engine.throw_for_start,))
+
+
+def _computer_plays(engine) -> bool:
+    """Whether the computer plays the current turn (abaka/bot.py): the store makes its moves."""
+    return engine.current in (getattr(engine, "computers", ()) or ())
 
 
 def _throws_html(engine: GameEngine, me: Optional[int]) -> str:

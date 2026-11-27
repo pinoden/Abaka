@@ -114,6 +114,39 @@ describe('the API client against a real server', { skip }, () => {
     assert.equal(again.table.games, 1);
   });
 
+  test('a game against the computer: the server plays its seat while the game is watched', async () => {
+    const connection = connect();
+    const seat = await connection.request<Seat>('create_local', { names: ['Test Ann', ''], computers: [1] });
+    assert.deepEqual(seat.state.names, ['Test Ann', 'Computer']);
+    assert.deepEqual(seat.state.computers, [1]);
+    let seen: State | null = null;
+    const stop = connection.startWatching(seat.code, seat.token, (s) => { seen = s; }, (e) => assert.fail(e.message));
+    const end = Date.now() + 60000;
+    let computerMoved = false;
+    while (!computerMoved) {
+      assert.ok(Date.now() < end, 'the computer made no move within a minute');
+      const state = (await connection.request<{ state: State }>('state', { code: seat.code, token: seat.token })).state;
+      const game = state.game!;
+      computerMoved = game.last_move?.seat === 1;
+      if (state.phase === 'playing' && game.current === 1) {
+        // The computer's turn: nothing to offer here.
+        assert.equal(state.moves, null);
+        assert.ok(!state.can.includes('roll') && !state.can.includes('score'));
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        continue;
+      }
+      const base = { code: seat.code, token: seat.token, version: state.version };
+      if (state.can.includes('throw')) await connection.act('throw', base);
+      else if (state.can.includes('roll')) await connection.act('roll', base);
+      else if (state.moves) {
+        const move = state.moves.score[0] ?? state.moves.cross[0];
+        await connection.act(state.moves.score.length ? 'score' : 'cross', { ...base, row: move.row, slot: move.slot });
+      } else await new Promise((resolve) => setTimeout(resolve, 200)); // the computer's starting throw
+    }
+    await until(() => seen !== null && seen.game!.last_move?.seat === 1, "the computer's move pushed to the watcher");
+    stop();
+  });
+
   test('an online game between two devices: each sees the other’s moves pushed', async () => {
     const ann = connect();
     const bob = connect('ru');

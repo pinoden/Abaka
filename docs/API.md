@@ -87,9 +87,17 @@ every seat is taken, or when the creator sends `start_now`.
 
 #### `create_local`
 A game on one device: `names` (2 to 5; blank names become "Player 2"...), `club`
-(optional). One token plays every seat. Answer: `{"code", "token", "state"}`.
+(optional), `computers` (optional). One token plays every seat. Answer:
+`{"code", "token", "state"}`.
 In a club game every name must be different, ignoring capitals and spaces;
 otherwise the request is `refused`.
+
+`computers` lists the seats the computer plays, as positions in `names`
+(`[1]`: the second seat). A blank name there becomes "Computer" ("Computer 1",
+"Computer 2"... with several), in the request's language. At least one seat must
+be a person's, and games against the computer do not count for a club: either is
+`refused`. The server plays the computer's turns by itself (see "The computer"
+below).
 
 #### `join`
 Take the next free seat of an online game: `code`, `key`, `name`. Names are made distinct
@@ -116,6 +124,16 @@ shows: the names, and in `can` how to take a seat.
 `code` and a seat's `token` or the game's `key` → `{"seen": "12.3.1795157785252"}`. The text changes whenever the state
 does (a move, a pick, a reaction, a chat message). It is cheap, so an app can ask
 every second and fetch `state` only when it changes.
+
+#### The computer
+In a game with `computers`, the server plays those seats: the starting throw, the
+roll, the dice it keeps (shown as picked dice, `game.picked`, about a second
+before it rolls the others), its rerolls and its move, one step about every
+second, so the player sees each one. A step is made when the game is looked at
+with `seen`, which `watch` on the live connection does four times a second: watch
+the game (or ask `seen` every half second) while it is the computer's turn. Its
+moves are ordinary moves: they change `version`, and bring effects like anyone's.
+On the computer's turn `can` offers no move and `moves` is null.
 
 ### Playing
 
@@ -212,6 +230,7 @@ them: ask for the rules again rather than keeping them in the app.
   "capacity": 3,
   "club": null,
   "names": ["Ann", "Bob", "Cy"],
+  "computers": [],
   "seated": true,
   "you": 1,
   "phase": "playing",
@@ -233,9 +252,10 @@ them: ask for the rules again rather than keeping them in the app.
 | `version` | Send it back with a move. |
 | `seen` | As the `seen` operation gives it. |
 | `now` | The server's clock, in seconds. Use it to tell how old an event is, whatever the device's clock says. |
-| `local` | A game on one device: `you` is null, and the token plays whoever's turn it is. |
+| `local` | A game on one device: `you` is null, and the token plays whoever's turn it is, except the computer's seats. |
 | `capacity` | How many players the game is for. |
 | `names` | The players in seat order. Seat 0 created the game. |
+| `computers` | The seats the computer plays (`create_local`'s `computers`), empty in other games. |
 | `seated`, `you` | Whether the token holds a seat, and which one (null on one device). |
 | `phase` | `waiting` (players joining), `starting_throw` (deciding who goes first), `playing`, `over`. |
 | `can` | What this player may do now: the operations to offer. |
