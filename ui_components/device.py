@@ -5,8 +5,8 @@ its hash per seat). The browser keeps it, and tells the server at the start of e
 Streamlit gives a page's script no cookie to set, and on Streamlit Cloud the app never receives
 a cookie the page sets itself (Cloud passes only its own; found on the live app, PR #80). So on
 Streamlit 1.67 a small component keeps the secret in the browser's local storage and sends it
-over the page's own connection, as a widget's value: the server knows it from the session's
-second run on, a moment after the first. Streamlit 1.48 (local runs) has no such components;
+over the page's own connection, as a widget's value: the server knows it a moment after the
+session's first run. Streamlit 1.48 (local runs) has no such components;
 there the secret is a cookie, which a local server does receive.
 """
 
@@ -57,12 +57,27 @@ def keep_device() -> None:
     if ss.get("device"):
         return
     ss.setdefault("device_offer", new_device())
+    _ask_the_browser()
+
+
+@st.fragment
+def _ask_the_browser() -> None:
+    """
+    In a fragment, so the browser's answer runs only this again. As a plain element its answer
+    would start a new run of the whole page, and Streamlit cuts short the run in progress for
+    that: if that run was handling a click (someone quick on "Start game" just after the page
+    appeared), the click was lost. A fragment's run waits for the page's run to end. Seen on
+    the live app, in the website check, after PR #82.
+    """
+    ss = st.session_state
     with st.container(key="device-keeper"):
         result = _keeper(key="device-secret", data={"offer": ss.device_offer, "name": STORAGE_NAME},
                          on_device_change=_nothing)
     kept = getattr(result, "device", None)
     if is_device(kept):
         ss.device = kept
+        if ss.pop("device_awaited", False):
+            st.rerun()  # a page is waiting to know which browser this is (device_wait)
 
 
 def _keep_in_a_cookie() -> None:
@@ -103,6 +118,7 @@ def device_wait() -> None:
     ss = st.session_state
     if ss.get("device"):
         st.rerun()
+    ss.device_awaited = True
     ss.device_waits = ss.get("device_waits", 0) + 1
     if ss.device_waits >= GIVE_UP_AFTER:
         ss.device = ss.setdefault("device_offer", new_device())
