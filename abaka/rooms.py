@@ -351,6 +351,7 @@ class RoomStore:
         self.computer_pace = computer_pace
         self._lock = threading.Lock()
         self._rooms: Dict[str, _Room] = {}
+        self._closed = 0  # counts rooms deleted for good (_unsave)
         self._retired = False
         self.starting_throw = starting_throw
         self.on_game_over = on_game_over
@@ -937,6 +938,19 @@ class RoomStore:
             room.last_seen = time.time()
         return room
 
+    def _read_saved(self, code: str) -> Optional[dict]:
+        """
+        A saved room's data, read with the store's lock released: a look at a game that is not
+        in memory (a mistyped or guessed code too) is a round trip to the database, longer when
+        it has to wake up, and every other game's moves and polls would wait for it. Call with
+        the lock held; it is held again on return, and the rooms may have changed meanwhile.
+        """
+        self._lock.release()
+        try:
+            return self._repository.load(code)
+        finally:
+            self._lock.acquire()
+
     @staticmethod
     def _seat(room: _Room, name: str) -> str:
         token = secrets.token_urlsafe(16)
@@ -945,9 +959,19 @@ class RoomStore:
         return token
 
     def _new_code(self) -> str:
+        """A code no room has, in memory or saved. Asks the repository with the lock released, like _read_saved."""
         while True:
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH))
-            if code not in self._rooms and (self._repository is None or self._repository.claim(code)):
+            if code in self._rooms:
+                continue
+            if self._repository is None:
+                return code
+            self._lock.release()
+            try:
+                free = self._repository.claim(code)
+            finally:
+                self._lock.acquire()
+            if free and code not in self._rooms:  # not taken by another new game meanwhile
                 return code
 
     def _make_room_for_one_more(self) -> None:
@@ -1022,6 +1046,7 @@ class RoomStore:
 
     def _unsave(self, code: str) -> None:
         """Delete a room for good: a late save of it is refused."""
+        self._closed += 1  # data of it read a moment ago must not bring it back (_load_room)
         if self._repository is not None:
             self._repository.delete(code)
 
@@ -1033,8 +1058,21 @@ class RoomStore:
         self._repository.prune(time.time() - ROOM_TTL_SECONDS)
 
     def _load_room(self, code: str) -> Optional[_Room]:
-        """Load a saved room into memory. Data the store cannot use is quarantined."""
-        data = self._repository.load(code)
+        """
+        Load a saved room into memory. Data the store cannot use is quarantined. The data is
+        read without the lock (_read_saved), so afterwards the room may be in memory already
+        (another page loaded it: that one is the game), and if a room was closed meanwhile the
+        data may be of that room, so it is read again.
+        """
+        while True:
+            closed = self._closed
+            data = self._read_saved(code)
+            if self._retired:
+                return None
+            if code in self._rooms:
+                return self._rooms[code]
+            if closed == self._closed:
+                break
         if data is None:
             return None
         try:

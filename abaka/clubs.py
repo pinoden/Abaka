@@ -87,7 +87,7 @@ class ClubStore:
             code = self._new_code()
             club = {"code": code, "name": name, "version": 1, "created_at": now, "updated_at": now,
                     "members": {}, "games": []}
-            self._clubs[code] = club
+            self._keep(code, club)
             self._save(club)
         return code
 
@@ -186,9 +186,14 @@ class ClubStore:
                 if not _valid(data, code):
                     self._repository.quarantine(code, "not a club")
                     return None
-                if len(self._clubs) >= CLUBS_IN_MEMORY:
-                    self._clubs.pop(next(iter(self._clubs)))  # the one opened longest ago
-                club = self._clubs[code] = data
+                club = self._keep(code, data)
+        return club
+
+    def _keep(self, code: str, club: dict) -> dict:
+        """Hold a club in memory. With a repository, at most CLUBS_IN_MEMORY: the others are read again when opened."""
+        if self._repository is not None and len(self._clubs) >= CLUBS_IN_MEMORY:
+            self._clubs.pop(next(iter(self._clubs)))  # the one opened longest ago
+        self._clubs[code] = club
         return club
 
     def _new_code(self) -> str:

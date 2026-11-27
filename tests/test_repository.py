@@ -6,6 +6,7 @@ runs on another repository (an in-memory one here; a database in stage 2) the sa
 import json
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -150,6 +151,117 @@ class TestAnotherRepository(unittest.TestCase):
         store = RoomStore(repository=repo)
         self.assertFalse(store.exists("AB2CD"))
         self.assertIn("AB2CD", repo.quarantined)
+
+
+class SlowRepository(MemoryRepository):
+    """Storage that answers when told to, like a database waking up: load() and claim() wait."""
+
+    def __init__(self):
+        super().__init__()
+        self.asked, self.go = threading.Event(), threading.Event()
+        self.slow, self.loads = set(), 0
+
+    def _wait(self, code):
+        if code in self.slow or "*" in self.slow:
+            self.asked.set()
+            self.go.wait(10)
+
+    def load(self, code):
+        self.loads += 1
+        data = super().load(code)  # read, then slow to arrive: it may be out of date by then
+        self._wait(code)
+        return data
+
+    def claim(self, code):
+        self._wait("*" if "*" in self.slow else None)
+        return super().claim(code)
+
+
+class TestSlowStorage(unittest.TestCase):
+    """
+    A game that is not in memory is read from storage with the store's lock released (the site's
+    test round of 2026-11-27): the look took a database round trip, seconds if the database had
+    to wake up, and every other game's moves and polls waited for it. Anyone could cause it
+    with a code that names no game.
+    """
+
+    def setUp(self):
+        self.repo = SlowRepository()
+        self.store = RoomStore(repository=self.repo, starting_throw=False)
+        self.code, self.token = self.store.create_local(["Ann", "Bob"])
+
+    def in_background(self, call, *args):
+        result = {}
+
+        def run():
+            try:
+                result["value"] = call(*args)
+            except Exception as e:  # noqa: BLE001 - handed to the test
+                result["error"] = e
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        result["thread"] = thread
+        return result
+
+    def test_other_games_go_on_while_a_game_is_read(self):
+        self.repo.slow.add("ZZZZZ")
+        looking = self.in_background(self.store.opens, "ZZZZZ", "AAAAAAAA")
+        self.assertTrue(self.repo.asked.wait(5))
+        playing = self.in_background(self.store.roll, self.code, self.token)
+        playing["thread"].join(3)
+        self.assertFalse(playing["thread"].is_alive(), "a move waited for another game's read")
+        self.assertNotIn("error", playing)
+        self.assertEqual(self.store.seen(self.code)[0], self.store.view(self.code).version)
+        self.repo.go.set()
+        looking["thread"].join(5)
+        self.assertIs(looking["value"], False)
+
+    def test_other_games_go_on_while_a_new_game_asks_for_its_code(self):
+        self.repo.slow.add("*")
+        making = self.in_background(self.store.create, "Cid")
+        self.assertTrue(self.repo.asked.wait(5))
+        polling = self.in_background(self.store.seen, self.code)
+        polling["thread"].join(3)
+        self.assertFalse(polling["thread"].is_alive(), "a poll waited for a new game's code")
+        self.repo.go.set()
+        making["thread"].join(5)
+        code, token = making["value"]
+        self.assertEqual(self.store.seat_of(code, token), 0)
+
+    def test_two_pages_reading_one_game_get_the_same_game(self):
+        saved = RoomStore(repository=self.repo, starting_throw=False)  # after a restart: nothing in memory
+        key = self.store.view(self.code).key
+        self.repo.slow.add(self.code)
+        first = self.in_background(saved.opens, self.code, key)
+        self.assertTrue(self.repo.asked.wait(5))
+        second = self.in_background(saved.opens, self.code, key)
+        deadline = time.time() + 5
+        while self.repo.loads < 2 and time.time() < deadline:
+            time.sleep(0.01)
+        self.repo.go.set()
+        for look in (first, second):
+            look["thread"].join(5)
+            self.assertIs(look["value"], True)
+        token = saved.resume_local(self.code, key)
+        saved.roll(self.code, token)
+        self.assertEqual(len(saved._rooms), 1)
+        self.assertTrue(saved.view(self.code).engine.dice)  # one room: the move is in the game every page sees
+
+    def test_a_game_closed_while_it_was_read_does_not_come_back(self):
+        online = RoomStore(repository=self.repo, starting_throw=False)
+        code, host = online.create("Ann")
+        key = online.view(code).key
+        saved = RoomStore(repository=self.repo, starting_throw=False)
+        self.repo.slow.add(code)
+        looking = self.in_background(saved.opens, code, key)
+        self.assertTrue(self.repo.asked.wait(5))
+        self.repo.slow.clear()
+        token = saved.reclaim(code, 0, key)   # another page opens the game meanwhile...
+        saved.leave(code, token)              # ...and its only player leaves: the game is closed
+        self.repo.go.set()
+        looking["thread"].join(5)
+        self.assertIs(looking["value"], False)
+        self.assertFalse(saved.exists(code))
 
 
 if __name__ == "__main__":

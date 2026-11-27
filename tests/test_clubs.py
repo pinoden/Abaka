@@ -188,6 +188,16 @@ class TestClubs(unittest.TestCase):
         copy["members"]["x"] = {}
         self.assertNotIn("x", self.clubs.get(self.club)["members"])  # get() hands out a copy
 
+    def test_only_so_many_clubs_stay_in_memory(self):
+        """New clubs too: with storage, the ones opened longest ago leave memory and are read again."""
+        import abaka.clubs as club_module
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(club_module, "CLUBS_IN_MEMORY", 3):
+            clubs = ClubStore(repository=FileRepository(folder))
+            codes = [clubs.create(f"Club {i}") for i in range(5)]
+            self.assertEqual(len(clubs._clubs), 3)
+            self.assertEqual([clubs.name(code) for code in codes], [f"Club {i}" for i in range(5)])
+            self.assertEqual(len(clubs._clubs), 3)
+
     def test_clubs_are_saved(self):
         with tempfile.TemporaryDirectory() as folder:
             clubs = ClubStore(repository=FileRepository(Path(folder) / "clubs"))
@@ -276,6 +286,33 @@ class TestClubPages(unittest.TestCase):
         self.assertIn("Games at this table: 1", html)
         self.assertTrue(any(b.label == "Club table" for b in results.button))
 
+
+    def test_one_browser_makes_only_so_many_clubs(self):
+        """New clubs count with new games in a browser's limit (the test round of 2026-11-27: the
+        page made clubs without end, each kept for a year). A club without a name is not counted."""
+        import abaka_ui
+        made, started, errors = set(), [], []
+        for i in range(abaka_ui.GAMES_PER_SESSION + 2):
+            # Each club from the home page again, in the same browser session (its count of new
+            # games carried over: AppTest 1.48 cannot go back to a page with button groups).
+            at = AppTest.from_file(APP, default_timeout=30)
+            at.session_state["games_started"] = list(started)
+            at.run()
+            if i == 3:
+                at.text_input(key="club_name").input("   ")
+                next(b for b in at.button if b.label == "Create club").click().run()
+                self.assertEqual([e.value for e in at.error], ["Give the club a name."])
+            at.text_input(key="club_name").input(f"Club {i}")
+            next(b for b in at.button if b.label == "Create club").click().run()
+            self.assertFalse(at.exception, [e.value for e in at.exception])
+            started = list(at.session_state["games_started"])
+            club = at.query_params.get("club")
+            if club:
+                made.add(club[0] if isinstance(club, list) else club)
+            else:
+                errors.append([e.value for e in at.error])
+        self.assertEqual(len(made), abaka_ui.GAMES_PER_SESSION)
+        self.assertEqual(errors, [["You started a lot of games just now. Please wait a few minutes."]] * 2)
 
     def test_club_players_are_offered_by_name(self):
         """Owner (2026-11-19): in a club with games, pick a player or type a new name."""
