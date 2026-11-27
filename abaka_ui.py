@@ -36,10 +36,12 @@ code_version.load_current()
 from abaka.rooms import (  # noqa: E402
     COMPUTER_LEVELS, MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, clean_name, full_code,
     normalize_code, split_code, within_limit)
+from abaka.seats import requests_for  # noqa: E402
 from abaka.bot import SUGGESTED_LEVEL, computer_names, level_name  # noqa: E402
 from abaka.clubs import MAX_CLUB_NAME_LENGTH, ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.chat import render_chat  # noqa: E402
+from ui_components.device import device_to_keep, device_wait, keep_device, device as _device  # noqa: E402
 from ui_components.effects import render_events, render_reaction_bar  # noqa: E402
 from abaka.i18n import LANGUAGES, error, md, players_count, set_language, t  # noqa: E402
 from ui_components.main_ui import (  # noqa: E402
@@ -59,6 +61,7 @@ MY_GAMES_KEPT = 10   # games a browser remembers for "Continue a game"...
 MY_GAMES_SHOWN = 4   # ...and how many unfinished ones it shows
 MY_CLUBS_KEPT = 6    # clubs a browser remembers for the home page
 CLUB_GAMES_SHOWN = 10  # recent games on a club's page
+POLL_ASK = 2.0       # a device waiting to be let in to a seat asks about the answer this often
 
 stores.log_to_stderr()  # the game's log to stderr (Streamlit Cloud: Manage app); where games are saved: server/stores.py
 
@@ -129,6 +132,7 @@ def main():
     ss.setdefault("my_games", [])      # codes of games this browser played, newest first
     ss.setdefault("my_clubs", [])      # codes of clubs this browser opened, newest first
     set_language(_pick_language())
+    keep_device()  # which browser this is: it holds its seats (Backlog item 37, ui_components/device.py)
 
     store = get_store()
     # ?room= holds a game's full code (code and key): its code alone opens nothing (Backlog item 31).
@@ -211,7 +215,7 @@ def _render_home(store: RoomStore) -> None:
                 name = st.text_input(t("Your name"), placeholder=t("Name"), max_chars=20, key="create_name")
                 if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
                                          use_container_width=True):
-                    _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players))
+                    _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players, device=device_to_keep()))
             st.html(f'<div class="ab-or">{t("or open a game by its code")}</div>')
             with st.form("find_game", border=False):
                 typed = st.text_input(t("Game code"), placeholder=t("e.g. Q47CH-8XJ4PN2R"), max_chars=300,
@@ -355,7 +359,7 @@ def _render_club(store: RoomStore, clubs: ClubStore, code: str) -> None:
                         if st.form_submit_button(t("Create game"), type="primary", icon=":material/add_link:",
                                                  use_container_width=True):
                             _start_game(lambda: store.create(name.strip() or t("Player {i}", i=1), players,
-                                                             club=code))
+                                                             club=code, device=device_to_keep()))
             with st.container(border=True, key="card-club-share"):
                 st.html(f'<div class="ab-card-sub">{t("Invite friends to the club with this link:")}</div>')
                 link, _ = _invite_link(code, "club")
@@ -526,6 +530,8 @@ def _centered():
 def _render_online(store: RoomStore) -> None:
     ss = st.session_state
     code, token = ss.room_code, ss.seat_token
+    if _device():
+        store.own(code, token, _device())  # a seat taken before devices were remembered keeps this browser's secret
     seat = store.seat_of(code, token)
     if seat is None:
         if store.exists(code):
@@ -547,6 +553,7 @@ def _render_online(store: RoomStore) -> None:
         _watch_room(code, view.seen, POLL_COMPUTER if computer_plays else POLL_IDLE)
         return
     status = chip(t("Online · {code}", code=code), "accent")
+    _render_requests(view, seat, token)
 
     if not view.started:
         def leave_waiting_room() -> None:
@@ -594,7 +601,37 @@ def _render_online(store: RoomStore) -> None:
     # Check often only while someone else can change the room: players joining, or another
     # player's turn. On your own turn, or once the game is over, nobody else moves.
     others_can_act = not view.started or not (my_turn or view.engine.is_game_over())
-    _watch_room(code, view.seen, POLL_FAST if others_can_act else POLL_CALM)
+    _watch_room(code, view.seen, POLL_FAST if others_can_act else POLL_CALM, token)
+
+
+def _render_requests(view, seat: int, token: str) -> None:
+    """
+    Devices asking to be let in to a seat (Backlog item 37), at the top of the page: one for this
+    player's own seat always, one for another player's once that player's device is not here.
+    """
+    ss = st.session_state
+    code = view.code
+    requests = requests_for(view.asks, view.names, seat)
+    told = ss.get("requests_told") or []
+    for request in requests:
+        if request["seat"] not in told:
+            st.toast(md(request["title"]), icon=":material/person_alert:")
+    ss.requests_told = [r["seat"] for r in requests]
+
+    def answer(asked_seat: int, let_in: bool) -> None:
+        try:
+            get_store().answer(code, token, asked_seat, let_in)
+        except RoomError:
+            pass  # answered meanwhile, or the request lapsed: the page shows what is
+
+    for request in requests:
+        with st.container(border=True, key=f"card-ask-{request['seat']}"):
+            st.html(f'<div class="ab-ask"><b>{escape(request["title"])}</b>{escape(request["text"])}</div>')
+            with st.container(horizontal=True):
+                st.button(t("Let in"), key=f"ask-yes-{request['seat']}", type="primary", icon=":material/check:",
+                          on_click=answer, args=(request["seat"], True))
+                st.button(t("Refuse"), key=f"ask-no-{request['seat']}", icon=":material/block:",
+                          on_click=answer, args=(request["seat"], False))
 
 
 def _render_local_game(store: RoomStore, view, token: str) -> None:
@@ -670,38 +707,58 @@ def _change_html(change: float) -> str:
     return '<span class="ab-same">=</span>'
 
 
-def _watch_room(code: str, seen, every: float) -> None:
+def _watch_room(code: str, seen, every: float, token: Optional[str] = None) -> None:
     """
     Re-draw the page as soon as the shared room changes, or the player whose turn it is picks
-    other dice (`seen` is RoomView.seen), checking every `every` seconds.
+    other dice (`seen` is RoomView.seen), checking every `every` seconds. With an online
+    seat's `token`, each check also tells the room that this seat's device is here.
     """
     {POLL_FAST: _watch_fast, POLL_CALM: _watch_calm, POLL_IDLE: _watch_idle,
-     POLL_COMPUTER: _watch_computer}[every](code, tuple(seen))
+     POLL_COMPUTER: _watch_computer}[every](code, tuple(seen), token)
 
 
-def _check_room(code: str, seen) -> None:
-    if get_store().seen(code) != seen:
+def _check_room(code: str, seen, token: Optional[str] = None) -> None:
+    if get_store().seen(code, token) != seen:
         st.rerun()
 
 
 @st.fragment(run_every=POLL_FAST)
-def _watch_fast(code: str, seen) -> None:
-    _check_room(code, seen)
+def _watch_fast(code: str, seen, token: Optional[str] = None) -> None:
+    _check_room(code, seen, token)
 
 
 @st.fragment(run_every=POLL_CALM)
-def _watch_calm(code: str, seen) -> None:
-    _check_room(code, seen)
+def _watch_calm(code: str, seen, token: Optional[str] = None) -> None:
+    _check_room(code, seen, token)
 
 
 @st.fragment(run_every=POLL_IDLE)
-def _watch_idle(code: str, seen) -> None:
-    _check_room(code, seen)
+def _watch_idle(code: str, seen, token: Optional[str] = None) -> None:
+    _check_room(code, seen, token)
 
 
 @st.fragment(run_every=POLL_COMPUTER)
-def _watch_computer(code: str, seen) -> None:
-    _check_room(code, seen)
+def _watch_computer(code: str, seen, token: Optional[str] = None) -> None:
+    _check_room(code, seen, token)
+
+
+@st.fragment(run_every=POLL_ASK)
+def _watch_request(code: str, key: str, seat: int, ticket: str) -> None:
+    """A browser that asked to be let in to a seat: take the seat once someone let it in."""
+    ss = st.session_state
+    try:
+        status, token = get_store().asked(code, seat, key, ticket, device_to_keep())
+    except RoomError:
+        status, token = "gone", None
+    if status == "waiting":
+        return
+    ss.asking = None
+    if status == "in":
+        _enter_room(code, token)
+    else:
+        ss.lobby_notice = (t("The request was refused.") if status == "refused" else
+                           t("The request is no longer there. Ask again."))
+    st.rerun()
 
 
 def _announce_departures(view, seat: int) -> None:
@@ -797,6 +854,45 @@ def _render_invite(store: RoomStore, code: str, key: str) -> None:
                 st.rerun()
 
             view = store.view(code)
+            ss = st.session_state
+            if _device() is None and view.started and any(view.held) and code not in ss.get("left_rooms", []):
+                # A session's first moment: the browser has not said which it is yet. If it holds a
+                # seat here, the game opens by itself, so the invite is not shown in between.
+                _card_header("\U0001F3B2", t(" vs ").join(view.names), t("Opening the game…"))
+                st.html(f'<div class="ab-wait"><i></i>{t("Waiting…")}</div>')
+                device_wait()
+                return
+            device = device_to_keep()
+            mine = store.device_seat(code, key, device)  # the seat this browser holds, if any
+
+            def come_back() -> None:
+                try:
+                    token = store.reclaim(code, mine, key, device)
+                except RoomError as e:
+                    st.error(error(str(e)))
+                else:
+                    _enter_room(code, token)
+                    st.rerun()
+
+            if mine is not None and view.started and code not in ss.get("left_rooms", []):
+                # After a reload or a dropped session: straight back to the seat. Not for a tab that
+                # was just told its seat went to another tab, or the two would take it in turns.
+                come_back()
+            asking = ss.get("asking")
+            if asking and (asking["code"] != code or asking["seat"] >= len(view.names)):
+                asking = ss.asking = None
+            if asking:
+                name = view.names[asking["seat"]]
+                _card_header("\u23F3", t("Asked to come back as {name}", name=name),
+                             t("Waiting to be let in. If the game is open on the device that holds this seat, "
+                               "confirm it there. Otherwise another player is asked in a few seconds."))
+                st.html(f'<div class="ab-wait"><i></i>{t("Waiting…")}</div>')
+                if st.button(t("Cancel"), key="ask-cancel", type="tertiary", icon=":material/close:",
+                             use_container_width=True):
+                    ss.asking = None
+                    st.rerun()
+                _watch_request(code, key, asking["seat"], asking["ticket"])
+                return
             if not view.started:
                 if view.capacity == 2:
                     sub = t("Enter your name to join. The game starts right away.")
@@ -813,28 +909,39 @@ def _render_invite(store: RoomStore, code: str, key: str) -> None:
                     if st.form_submit_button(t("Join game"), type="primary", icon=":material/login:",
                                              use_container_width=True):
                         try:
-                            token = store.join(code, name.strip() or t("Player {i}", i=len(view.names) + 1), key)
+                            token = store.join(code, name.strip() or t("Player {i}", i=len(view.names) + 1), key,
+                                               device)
                         except RoomError as e:
                             st.error(error(str(e)))
                         else:
                             _enter_room(code, token)
                             st.rerun()
-                rejoin_text = t("Already joined and lost the page? Rejoin as:")
+                rejoin_text = t("Already joined on another device? Ask to come back as:")
             else:
                 _card_header("\U0001F3B2", t(" vs ").join(view.names), t("This game is full and already playing."))
-                rejoin_text = t("Are you one of the players? Rejoin as:")
+                rejoin_text = t("Are you one of the players? Ask to come back as:")
 
-            st.caption(rejoin_text)
-            with st.container(horizontal=True, key="rejoin-row"):
-                for i, name in enumerate(view.names):
-                    if st.button(md(name), key=f"rejoin-{i}", icon=":material/person:"):
-                        try:
-                            token = store.reclaim(code, i, key)
-                        except RoomError as e:
-                            st.error(error(str(e)))
-                        else:
-                            _enter_room(code, token)
-                            st.rerun()
+            if mine is not None:
+                st.caption(t("This browser holds a seat in this game:"))
+                if st.button(t("Continue as {name}", name=md(view.names[mine])), key="come-back", type="primary",
+                             icon=":material/login:", use_container_width=True):
+                    come_back()
+            others = [i for i in range(len(view.names)) if i != mine]
+            if others:
+                # A seat belongs to the device that took it (Backlog item 37): any other asks to be let in.
+                st.caption(rejoin_text, help=t(
+                    "A seat belongs to the device that took it. From another device you are let in by your own "
+                    "device, if the game is open there, and otherwise by another player."))
+                with st.container(horizontal=True, key="rejoin-row"):
+                    for i in others:
+                        if st.button(md(view.names[i]), key=f"rejoin-{i}", icon=":material/person:"):
+                            try:
+                                ticket = store.ask(code, i, key, device)
+                            except RoomError as e:
+                                st.error(error(str(e)))
+                            else:
+                                ss.asking = {"code": code, "seat": i, "ticket": ticket}
+                                st.rerun()
             _home_button(t("Start your own game instead"))
 
 
@@ -853,6 +960,8 @@ def _enter_room(code: str, token: str) -> None:
     ss.was_my_turn = None
     ss.was_waiting = False
     ss.waiting_names = None
+    ss.asking = None
+    ss.left_rooms = [c for c in ss.get("left_rooms", []) if c != code]
     reset_turn_selection()
     forget_action_error()
     # The game's full code goes in the URL (never the seat's token): the link to share with the
@@ -863,6 +972,8 @@ def _enter_room(code: str, token: str) -> None:
 
 def _leave_room(notice: str = None, keep_link: bool = False, info: str = None) -> None:
     ss = st.session_state
+    if ss.room_code:  # no going straight back to a seat this session left or lost (_render_invite)
+        ss.left_rooms = ([ss.room_code] + [c for c in ss.get("left_rooms", []) if c != ss.room_code])[:20]
     ss.room_code = None
     ss.seat_token = None
     ss.lobby_notice = notice

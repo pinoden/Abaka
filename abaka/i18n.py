@@ -143,6 +143,13 @@ _ERRORS_RU = {
     "That level does not exist.": "Такого уровня нет.",
     "Games against the computer do not count for a club.": "Игры с компьютером не идут в зачёт клуба.",
     "It is the computer's turn.": "Сейчас ходит компьютер.",
+    "This seat is held on another device. Ask to be let in.":
+        "Это место закреплено за другим устройством. Попросите, чтобы вас впустили.",
+    "This seat was just refused. Try again in a minute.": "На это место только что отказали. Попробуйте через минуту.",
+    "Someone has just asked for this seat. Try again in a moment.":
+        "На это место только что попросился кто-то ещё. Попробуйте чуть позже.",
+    "Nobody is asking for that seat any more.": "На это место уже никто не просится.",
+    "That player is here and decides.": "Этот игрок на месте и решает сам.",
 }
 _ERROR_PATTERNS_RU = [
     (re.compile(r"Not enough school balance to write this row \(need (\d+), have (-?\d+)\)"),
@@ -333,10 +340,38 @@ RU = {
     "A game for {n} players; {k} joined so far: {names}. Enter your name to join.":
         "Игра для {n} игроков; уже в игре ({k}): {names}. Введите имя, чтобы присоединиться.",
     "Join game": "Присоединиться",
-    "Already joined and lost the page? Rejoin as:": "Уже были в игре и потеряли страницу? Вернуться как:",
+    # ----- a seat belongs to its device (Backlog item 37) -----
+    "Already joined on another device? Ask to come back as:": "Уже в игре на другом устройстве? Попросить место:",
+    "Are you one of the players? Ask to come back as:": "Вы один из игроков? Попросить место:",
+    "This browser holds a seat in this game:": "В этом браузере уже есть место в этой игре:",
+    "Opening the game…": "Открываем игру…",
+    "This device holds a seat in this game:": "На этом устройстве уже есть место в этой игре:",
+    "Continue as {name}": "Продолжить как {name}",
+    "A seat belongs to the device that took it. From another device you are let in by your own "
+    "device, if the game is open there, and otherwise by another player.":
+        "Место закреплено за устройством, с которого его заняли. С другого устройства вас впускает ваше "
+        "прежнее устройство, если игра на нём открыта, а иначе — другой игрок.",
+    "Asked to come back as {name}": "Запрос отправлен: место игрока {name}",
+    "Waiting to be let in. If the game is open on the device that holds this seat, "
+    "confirm it there. Otherwise another player is asked in a few seconds.":
+        "Ждём, когда вас впустят. Если игра открыта на устройстве, за которым это место, подтвердите там. "
+        "Иначе через несколько секунд спросят другого игрока.",
+    "The request was refused.": "В запросе отказано.",
+    "The request is no longer there. Ask again.": "Запрос устарел. Попросите ещё раз.",
+    "Let in": "Впустить",
+    "Refuse": "Отказать",
+    "Is this you on another device?": "Это вы на другом устройстве?",
+    "Someone opened this game on another device and asks to play as you. Let them in only "
+    "if it is you: this device will then stop playing.":
+        "Кто-то открыл эту игру на другом устройстве и просит играть за вас. Впускайте, только если это вы: "
+        "это устройство тогда выйдет из игры.",
+    "{name} asks to come back": "{name}: просьба вернуться в игру",
+    "Someone on another device asks to play as {name}. Let them in only if you know it "
+    "is {name}.":
+        "Кто-то на другом устройстве просит играть за игрока {name}. Впускайте, только если точно знаете, "
+        "что это {name}.",
     " vs ": " против ",
     "This game is full and already playing.": "Игра уже идёт, свободных мест нет.",
-    "Are you one of the players? Rejoin as:": "Вы один из игроков? Вернуться как:",
     "Start your own game instead": "Начать свою игру",
     # ----- game: top bar, turn -----
     "Menu": "Меню",

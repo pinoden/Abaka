@@ -37,7 +37,15 @@ accepted) and a seat by `token`. The token is a secret: the app keeps it on the
 device and never shows it.
 - It comes from `create`, `create_local`, `join`, `rejoin` or `resume`, and it never
   appears in a state.
-- A token stops working when the seat is taken back on another device (`rejoin`).
+- A token stops working when the seat is taken back (`rejoin`) or another device is
+  let in to it (`ask`).
+
+A seat belongs to the device that took it (Backlog item 37). The app gets a secret
+once (`device`, or its own: 16 to 128 letters, digits, `-` and `_`, from a secure
+random source), keeps it on the device like a token, and sends it as `device` with
+`create`, `join`, `rejoin`, `ask` and `asked`. The server keeps only its hash. Knowing a game's link is not
+enough to play as one of its players: a device that does not hold a seat has to be
+let in ("Seats and devices", below).
 
 Every game also has a `key`, 8 characters of the same alphabet as codes (Backlog
 item 31). A game's code alone opens nothing: `join`, `rejoin` and `resume` need
@@ -85,7 +93,8 @@ ids), `reaction_list`, `rows`, `computer_levels` and `computer_level_suggested`.
 
 #### `create`
 An online game. `name` (blank: "Player 1"), `players` (2 to 5, default 2), `club`
-(optional: the game counts for that club's table).
+(optional: the game counts for that club's table), `device` (this device's secret:
+without it the seat can only be come back to by asking).
 Answer: `{"code", "token", "state"}`. The creator is seat 0. The game starts when
 every seat is taken, or when the creator sends `start_now`.
 
@@ -110,15 +119,48 @@ were levels. An app offers `info`'s `computer_level_suggested` first. One level
 serves every computer seat of the game, and "Play again" keeps it.
 
 #### `join`
-Take the next free seat of an online game: `code`, `key`, `name`. Names are made distinct
+Take the next free seat of an online game: `code`, `key`, `name`, `device` (as for `create`). Names are made distinct
 ("Ann (2)"). Answer: `{"code", "token", "state"}`.
 In a club game a name already at the table, ignoring capitals and spaces, is
 `refused`: the club would count both as one member.
 
 #### `rejoin`
-Take a seat back: `code`, `key`, `seat`. The seat gets a new token, and the device
-that held it before loses it (its requests are refused with `not_seated`). Anyone
-with the game's key (its link or full code) may do this.
+Come back to a seat on the device that holds it (the token was lost): `code`,
+`key`, `seat`, `device`. The seat gets a new token, and the old one stops working
+(its requests are refused with `not_seated`). Answer: `{"code", "token", "state"}`.
+A device that does not hold the seat, or a request without `device`, is refused
+with `not_yours`: ask to be let in.
+
+#### `device`
+No fields → `{"device": "..."}`: a new secret for the device to keep. Ask once, on
+the app's first start.
+
+#### `ask`
+A device that does not hold a seat (a new phone, an app installed again, a browser
+without its cookie) gets it only when someone lets it in. `code`, `key`, `seat`,
+`device` → `{"ticket"}`. One request per seat at a time; a second device asking
+meanwhile, or anyone asking within a minute of a refusal, is `too_fast`.
+
+Who may answer:
+- the seat's own holder, at any time: the request is in their state's `asks` with
+  `yours` true (it is their other device, or it is not them);
+- another player, only while the seat's device is not here: it has not looked at
+  the game for 20 seconds (`seen` with its token, which `watch` sends four times a
+  second). Until then the request is not in their `asks`, and their `answer` is
+  `refused`.
+
+#### `asked`
+What became of a request: `code`, `key`, `seat`, `ticket`, `device` → `{"status"}`:
+`waiting`, `refused`, `gone` (the request lapsed, or the seats changed), or `in`.
+With `in` the answer also has `token` and `state`, as `rejoin`'s: the seat changes
+hands at that moment, and its old token stops working. Ask every 2 seconds or so;
+a request nobody asks about for 30 seconds lapses.
+
+#### `answer`
+A seated player answers a request in their state's `asks`: `code`, `token`, `seat`,
+`let_in` (true or false) → the state. Not a move: no `version`. The words to show
+with the two buttons come with each request (`title`, `text`), in the player's
+language; show them as plain text.
 
 #### `resume`
 Carry on with a game played on one device from its `code` and `key`: answers with
@@ -128,10 +170,13 @@ its token. An online game is `refused`.
 The game as the holder of `token` sees it: `code`, `token` (optional), `key`
 (needed without a seat), `since` (optional). Answer: `{"state": ...}`. Without a
 seat (no token, or one that was taken over), the state shows only what an invite
-shows: the names, and in `can` how to take a seat.
+shows: the names, and in `can` how to take a seat. With `device`, such a state also
+says which seat this device holds (`held`), to offer `rejoin` for it and `ask` for
+the others.
 
 #### `seen`
-`code` and a seat's `token` or the game's `key` → `{"seen": "12.3.1795157785252"}`. The text changes whenever the state
+`code` and a seat's `token` or the game's `key` → `{"seen": "12.3.1795157785252"}`. With a seat's token it
+also tells the server that this seat's device is here (see "Seats and devices"). The text changes whenever the state
 does (a move, a pick, a reaction, a chat message). It is cheap, so an app can ask
 every second and fetch `state` only when it changes.
 
@@ -260,7 +305,10 @@ them: ask for the rules again rather than keeping them in the app.
   "events": [ ... ],
   "chat": [ ... ],
   "table": {"games": 2, "wins": [1, 1, 0], "draws": 0},
-  "club_result": null
+  "club_result": null,
+  "asks": [{"seat": 0, "name": "Ann", "yours": false, "title": "Ann asks to come back",
+            "text": "Someone on another device asks to play as Ann. Let them in only if you know it is Ann."}],
+  "held": null
 }
 ```
 
@@ -287,12 +335,15 @@ them: ask for the rules again rather than keeping them in the app.
 | `chat` | The game's messages, newer than `since`: `id`, `seat`, `text`, `at`. Show `text` as plain text, never as HTML or Markdown. |
 | `table` | The running score at this table: games finished here, wins per seat, draws. |
 | `club_result` | After a club game: `club` (its name) and `players` (`name`, `score`, `change`, `rating`). |
+| `asks` | Devices asking to be let in to a seat, which this player may answer now (`answer`): `seat`, `name`, `yours`, `title`, `text`. Empty for anyone without a seat. |
+| `held` | Without a seat, when the request had `device`: the seat this device holds and may `rejoin`, or null. |
 
 ### `can`
 
 | Value | When |
 |---|---|
-| `join`, `rejoin`, `resume` | No seat yet: join a waiting game, take a seat back, or carry on a game on one device. |
+| `join`, `rejoin`, `ask`, `resume` | No seat yet: join a waiting game, come back to this device's seat, ask to be let in to another, or carry on a game on one device. |
+| `answer` | A device asks to be let in, and this player may answer (`asks`). |
 | `leave`, `start_now` | The waiting room (`start_now`: the creator, with at least two players). |
 | `throw` | This player's starting throw. |
 | `roll` | This player's turn, before the first roll. |
@@ -456,6 +507,7 @@ what the app should do:
 | `protocol` | The app and the server speak different versions: ask the player to update the app. |
 | `not_found` | No game or club with this code (any more), or a game's code without its key: go back to the start. |
 | `not_seated` | The token holds no seat here; it was taken back on another device. Offer to rejoin. |
+| `not_yours` | The seat belongs to another device: offer to ask to be let in (`ask`). |
 | `outdated` | The move was made on an old state: draw the new state. Nothing to show. |
 | `too_fast` | Too many reactions or messages: show the message. |
 | `retry` | The server is busy or was just updated: try again in a moment. |
@@ -551,3 +603,6 @@ The server sends:
   seat, need `key`, within protocol 1. No app was installed anywhere but on test
   devices, and a game's code alone had to stop opening it for every client. From the
   first release on, the rule above holds.
+- A second one, for the same reason (Backlog item 37, 2026-11-27): `rejoin` now
+  needs the `device` that holds the seat. Until then anyone with a game's link took
+  any seat by its number.
