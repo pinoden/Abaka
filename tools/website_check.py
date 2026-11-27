@@ -212,6 +212,10 @@ def check_one_device(browser, url: str, size: Tuple[int, int], label: str, games
     confirm.click()
     s.see(s.app.get_by_text(re.compile(r"Last move:.*crossed out")), 'the crossed-out row in the "Last move" line')
     s.see(s.app.locator(".ab-chart"), "the chart of scores by move under the board")
+    # Its lines are an image, and the browser must have drawn it (an <svg> element is removed from the page).
+    s.until(lambda: s.app.locator(".ab-chart-plot img").count() == 1 and s.app.locator(".ab-chart-plot img").first
+            .evaluate("e => e.complete && e.naturalWidth > 0 && e.getBoundingClientRect().height > 50"),
+            "the chart's lines being drawn")
     s.see(s.app.locator(".st-key-diffs-switch label"), 'the "Row differences" switch').click()
     s.see(s.app.locator("table.ab-board.ab-diffs"), "the column of row differences, switched on")
     s.healthy()
