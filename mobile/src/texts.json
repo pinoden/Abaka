@@ -258,6 +258,7 @@
   "{name} → you": "{name} → вам",
   "{name}'s points in each row minus the best of the others'": "Очки игрока {name} в каждой строке минус лучший результат остальных",
   "{name}'s points in each row minus {other}'s": "Очки игрока {name} в каждой строке минус очки игрока {other}",
+  "{name}’s last throw: {what}": "Последний бросок — {name}: {what}",
   "{name}’s turn": "Ходит {name}",
   "{row} row +{points}": "строка «{row}» +{points}",
   "{score} pts": "{score} очк.",

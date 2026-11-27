@@ -32,7 +32,8 @@ The checks:
   the invite offers the others; and the same club's table on the website;
 - a game against the computer (Backlog item 33): one seat for it, its name box gone, and
   the computer playing its turn by itself, its mark on the turn and then its move under
-  the board, until the player's turn comes back;
+  the board, until the player's turn comes back, with the computer's final dice left on
+  the table until the player rolls;
 - with dice the check chooses (Steered):
   - a tie for the first turn among three players: the player who is out of the next
     round keeps their throw on the screen;
@@ -694,8 +695,14 @@ def check_computer(browser, url: str, games: List[str]) -> None:
         phone.until(lambda: phone.id("last-move").count() and "Computer" in phone.id("last-move").first.inner_text(),
                     "the computer's move under the board")
         phone.see(phone.id("roll"), "the player's turn after the computer's")
+        # Its final dice stay on the table, with what it wrote, until the player rolls (Backlog item 35).
+        phone.until(lambda: phone.id("last-throw").count() and "Computer’s last throw" in
+                    phone.id("last-throw").first.inner_text(), "the computer's final dice left on the table")
+        phone.until(lambda: phone.page.locator('[data-testid^="last-die-"]').count() == 5, "the computer's five dice")
+        phone.id("roll").first.click()
+        phone.until(lambda: phone.id("last-throw").count() == 0 and phone.id("die-0").count() > 0,
+                    "the computer's dice giving way to the player's roll")
         if not player_first:  # the computer went first: its mark shows on its next turn
-            phone.id("roll").first.click()
             write_best(phone)
             phone.until(marked, "the computer's mark and level on its turn")
         phone.healthy()

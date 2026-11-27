@@ -133,6 +133,17 @@ describe('the API client against a real server', { skip }, () => {
       const state = (await connection.request<{ state: State }>('state', { code: seat.code, token: seat.token })).state;
       const game = state.game!;
       computerMoved = game.last_move?.seat === 1;
+      if (computerMoved) {
+        // Its final dice stay on the table, with what it wrote, until the player rolls (Backlog item 35).
+        assert.equal(game.dice.length, 0);
+        assert.equal(state.last_throw?.seat, 1);
+        assert.equal(state.last_throw?.dice.length, 5);
+        assert.match(state.last_throw?.text ?? '', /^Computer’s last throw: /);
+        assert.ok(state.can.includes('roll'));
+        const rolled = (await connection.act('roll', { code: seat.code, token: seat.token, version: state.version }));
+        assert.equal(rolled.last_throw, null);
+        break;
+      }
       if (state.phase === 'playing' && game.current === 1) {
         // The computer's turn: nothing to offer here.
         assert.equal(state.moves, null);
