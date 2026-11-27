@@ -13,8 +13,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 
 import {
-  ApiError, type Club, Connection, gamesToContinue, type GameEvent, type Info, type Move, type Rules, type Seat,
-  type State,
+  ApiError, type Club, Connection, gamesToContinue, type GameEvent, type Info, type Move, type Rules, type Seat, type State, type Asked,
 } from '../src/lib/api.ts';
 import { offered, tableRows } from '../src/lib/clubs.ts';
 
@@ -266,18 +265,40 @@ describe('the API client against a real server', { skip }, () => {
     bob.stopWatching();
   });
 
-  test('a seat taken back on another device', async () => {
+  test('a seat belongs to its device: it comes back by itself, another device is let in', async () => {
     const ann = connect();
     const other = connect();
+    const annsPhone = (await ann.request<{ device: string }>('device')).device;
+    ann.useDevice(async () => annsPhone);
+    other.useDevice(async () => 'another-phone-0000001');
     const created = await ann.request<Seat>('create', { name: 'Test Ann', players: 2 });
     const key = created.state.key;
-    await other.request<Seat>('join', { code: created.code, key, name: 'Test Bob' });
-    const taken = await other.request<Seat>('rejoin', { code: created.code, key, seat: 0 });
-    assert.equal(taken.state.you, 0);
-    // The old token holds no seat any more: with the game's key, its state is the invite's.
+    await other.request<Seat>('join', { code: created.code, key, name: 'Test Bob', device: 'bobs-own-phone-000001' });
+    // The game's link is not enough to play as Ann (Backlog item 37).
+    await assert.rejects(other.request<Seat>('rejoin', { code: created.code, key, seat: 0 }),
+                         (e: ApiError) => e.code === 'not_yours');
+    // Ann's own device comes back to her seat with a new token, and the old one stops working.
+    const back = await ann.request<Seat>('rejoin', { code: created.code, key, seat: 0 });
+    assert.equal(back.state.you, 0);
     const old = (await ann.request<{ state: State }>('state', { code: created.code, token: created.token, key })).state;
     assert.equal(old.seated, false);
-    assert.ok(old.can.includes('rejoin'));
+    assert.ok(old.can.includes('rejoin') && old.can.includes('ask'));
+    // Another device asks; Ann's device is here (it watches the game), so the request is hers to answer.
+    let annSees: State | null = null;
+    ann.startWatching(created.code, back.token, (state) => { annSees = state; }, () => {});
+    await until(() => annSees !== null, "Ann's screen");
+    const { ticket } = await other.request<{ ticket: string }>('ask', { code: created.code, key, seat: 0 });
+    const asked = () => other.request<Asked>('asked', { code: created.code, key, seat: 0, ticket });
+    assert.equal((await asked()).status, 'waiting');
+    await until(() => (annSees!.asks ?? []).length === 1, "the request on Ann's screen");
+    assert.deepEqual([annSees!.asks![0].seat, annSees!.asks![0].yours], [0, true]);
+    await ann.act('answer', { code: created.code, token: back.token, seat: 0, let_in: true });
+    const came = await asked();
+    assert.equal(came.status, 'in');
+    assert.equal(came.status === 'in' && came.state.you, 0);
+    // Ann's first phone is told at once that it no longer holds the seat.
+    await until(() => annSees!.seated === false, "the lost seat on Ann's first phone");
+    ann.stopWatching();
   });
 
   test('the games to continue: not the finished ones, nor the ones that are gone', async () => {

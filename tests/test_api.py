@@ -202,7 +202,7 @@ class TestOnline(unittest.TestCase):
         guest = server(op="join", code=f"{code}-{first['state']['key']}", name="Ann")  # names are made distinct
         self.assertEqual(guest["state"]["names"], ["Ann", "Ann (2)"])
         self.assertEqual(server(op="state", code=code, token=first["token"])["state"]["can"], ["leave", "start_now"])
-        self.assertEqual(server(op="state", code=code, key=first["state"]["key"])["state"]["can"], ["join", "rejoin"])
+        self.assertEqual(server(op="state", code=code, key=first["state"]["key"])["state"]["can"], ["join", "rejoin", "ask"])
         self.assertEqual(server.refused(op="start_now", code=code, token=guest["token"])[0], "refused")
         state = server(op="start_now", code=code, token=first["token"])["state"]
         self.assertEqual((state["phase"], state["capacity"]), ("starting_throw", 2))
@@ -223,7 +223,7 @@ class TestOnline(unittest.TestCase):
         self.assertNotIn("throw", self.state((thrower + 1) % 3)["can"])
         # Someone with the link (the code and the key) sees what the invite page shows, and how to take a seat.
         outsider = self.state()
-        self.assertEqual((outsider["seated"], outsider["game"], outsider["can"]), (False, None, ["rejoin"]))
+        self.assertEqual((outsider["seated"], outsider["game"], outsider["can"]), (False, None, ["rejoin", "ask"]))
         self.assertEqual(outsider["names"], ["Ann", "Bob", "Cy"])
 
     def test_moves_need_the_turn_and_the_latest_version(self):
@@ -242,8 +242,28 @@ class TestOnline(unittest.TestCase):
 
     def test_a_seat_taken_back_on_another_device(self):
         key = key_of(self.server, self.code)
-        token = self.server(op="rejoin", code=self.code, key=key, seat=1)["token"]
+        # Knowing the game's link is not enough (Backlog item 37): the seat's own device lets the new one in.
+        device = "a-new-phone-0000001"
+        self.assertEqual(self.server.refused(op="rejoin", code=self.code, key=key, seat=1, device=device)[0], "not_yours")
+        self.server(op="seen", code=self.code, token=self.tokens[1])  # seat 1's own device is here
+        ticket = self.server(op="ask", code=self.code, key=key, seat=1, device=device)["ticket"]
+        asked = dict(op="asked", code=self.code, key=key, seat=1, ticket=ticket, device=device)
+        self.assertEqual(self.server(**asked), {"status": "waiting"})
+        mine = self.state(1)
+        self.assertEqual([(a["seat"], a["yours"]) for a in mine["asks"]], [(1, True)])
+        self.assertIn("answer", mine["can"])
+        self.assertEqual(self.state(0)["asks"], [])  # seat 1 is here (it just looked): it decides
+        self.assertEqual(self.server.refused(op="answer", code=self.code, token=self.tokens[0], seat=1,
+                                             let_in=True)[0], "refused")
+        self.server(op="answer", code=self.code, token=self.tokens[1], seat=1, let_in=True)
+        came = self.server(**asked)
+        self.assertEqual((came["status"], came["state"]["you"]), ("in", 1))
+        token = came["token"]
         self.assertNotEqual(token, self.tokens[1])
+        # That device holds the seat now, and comes back to it by itself.
+        held = self.server(op="state", code=self.code, key=key, device=device)["state"]
+        self.assertEqual(held["held"], 1)
+        token = self.server(op="rejoin", code=self.code, key=key, seat=1, device=device)["token"]
         old = self.server(op="state", code=self.code, token=self.tokens[1], key=key)["state"]
         self.assertFalse(old["seated"])
         self.assertEqual(self.server.refused(op="say", code=self.code, token=self.tokens[1], text="hi")[0],

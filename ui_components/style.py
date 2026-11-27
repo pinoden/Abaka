@@ -321,6 +321,11 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-computers span { padding: .3rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600;
   border: 1.5px solid #C7CBF5; background: #EEF0FF; color: #4F46E5; }
 [class*="st-key-rejoin-row"] { flex-wrap: wrap !important; }
+/* A device asking to be let in to a seat (abaka_ui._render_requests), and the script that keeps the browser's secret. */
+[class*="st-key-card-ask-"] { border-color: #D97706 !important; background: #FFFBEB; margin-bottom: .6rem; }
+.ab-ask { color: #1F2333; line-height: 1.45; }
+.ab-ask b { display: block; margin-bottom: .2rem; }
+.st-key-device-keeper, [data-testid="stElementContainer"]:has(> .st-key-device-keeper) { display: none !important; }
 .ab-wait { display: flex; align-items: center; gap: .6rem; justify-content: center; color: #6B7089; margin: 1rem 0 .4rem; }
 .ab-wait i { width: 10px; height: 10px; border-radius: 50%; background: #4F46E5; animation: ab-pulse 1.4s ease-in-out infinite; }
 @keyframes ab-pulse { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
