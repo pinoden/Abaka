@@ -17,7 +17,8 @@ It checks, at a desktop and a phone width:
   race shown, a chat message and a reaction;
 - a game against the computer on a phone: one seat for the computer, the starting throw,
   and the computer playing its turn by itself (its mark on the turn, then its move in the
-  "Last move" line), until the player's turn comes back;
+  "Last move" line), until the player's turn comes back, with the computer's final dice
+  left on the table until the player rolls;
 - on every page: no error box, no page error, and on the phone no sideways scrolling.
 
 Test games are played by "Test Ann" and "Test Bob" (or "Test Ann" and the computer). With --cleanup and $ABAKA_DATABASE_URL,
@@ -245,6 +246,13 @@ def check_computer(browser, url: str, size: Tuple[int, int], label: str, games: 
     s.see(mark, "the computer's mark and level on its turn")
     s.see(s.app.get_by_text(re.compile(f"Last move: {COMPUTER} ")), "the computer's move in the \"Last move\" line")
     s.see(roll, "the player's Roll dice button after the computer's turn")
+    # Its final dice stay on the table, with what it wrote, until the player rolls (Backlog item 35).
+    left = s.app.locator(".ab-last-throw", has_text=f"{COMPUTER}’s last throw")
+    s.see(left, "the computer's final dice left on the table")
+    s.until(lambda: s.app.locator(".st-key-last-throw button").count() == 5, "the computer's five dice")
+    roll.first.click()
+    s.until(lambda: left.count() == 0 and s.app.locator(".st-key-last-throw").count() == 0,
+            "the computer's dice giving way to the player's roll")
     s.healthy()
     s.close()
 

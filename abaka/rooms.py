@@ -87,6 +87,9 @@ _UNCHECKED = object()  # RoomStore._get: the caller already holds a seat, no key
 # throw, the dice it keeps, its rerolls and its move. Pages and apps poll the room (seen()),
 # and a poll makes the computer's next step once it is due.
 COMPUTER_PACE_SECONDS = 1.0
+# After a computer's move the next computer waits this many paces before it rolls, so a person
+# reads what the first one threw and wrote (its dice stay on the table: abaka/turns.py).
+COMPUTER_REST_PACES = 2.5
 COMPUTER_BUSY_SECONDS = 10.0          # a step being worked out; another poll may take over after this
 _COMPUTER = object()                  # the "token" the store plays a computer seat with (never a string)
 # How well the computer plays (owner, Backlog item 34); abaka/bot.py says how each level thinks.
@@ -616,7 +619,10 @@ class RoomStore:
         if engine is None or engine.is_game_over() or engine.current not in room.computers:
             return None
         now = time.time()
-        if now - max(room.updated_at, room.computer_at) < self.computer_pace:
+        after_a_computer = (not engine.dice and not engine.choosing_first_player
+                            and engine.last_move is not None and engine.last_move[0] in room.computers)
+        pace = self.computer_pace * (COMPUTER_REST_PACES if after_a_computer else 1)
+        if now - max(room.updated_at, room.computer_at) < pace:
             return None
         if now - room.computer_busy < COMPUTER_BUSY_SECONDS:
             return None

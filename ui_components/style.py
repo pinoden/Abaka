@@ -131,6 +131,10 @@ h1, h2, h3 { letter-spacing: -0.02em; }
   display: flex; align-items: center; justify-content: center; color: #B8BDCC; font-size: 1.4rem; font-weight: 700; }
 @keyframes ab-roll-a { 0% { transform: rotate(-25deg) scale(.6); opacity: .2; } 70% { transform: rotate(6deg) scale(1.05); } 100% { transform: none; opacity: 1; } }
 @keyframes ab-roll-b { 0% { transform: rotate(25deg) scale(.6); opacity: .2; } 70% { transform: rotate(-6deg) scale(1.05); } 100% { transform: none; opacity: 1; } }
+/* the computer's final dice, left on the table until the next player rolls (Backlog item 35) */
+.ab-last-throw { margin-top: .7rem; font-size: .88rem; font-weight: 600; color: #4B5069; line-height: 1.35; }
+.st-key-last-throw [class*="st-key-die-"] button, .st-key-last-throw [class*="st-key-die-"] button:disabled {
+  opacity: .5 !important; box-shadow: none !important; }
 .ab-rolls { display: inline-flex; gap: 5px; align-items: center; }
 .ab-rolls i { width: 9px; height: 9px; border-radius: 50%; background: #4F46E5; display: inline-block; }
 .ab-rolls i.used { background: #D5D9E5; }

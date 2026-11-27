@@ -181,6 +181,7 @@ Python + Streamlit.
 | `abaka/rules.py` | The rules players read, in English and Russian: Markdown for the web page, blocks for apps (`rules_blocks`). No Streamlit |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
 | `abaka/standings.py`, `ui_components/chart.py` | How the players stand, for one viewer: each row's difference from the opponent (the board's column behind the "Row differences" switch) and every total after each move (`engine.score_history`, the chart under the board). For the web page and apps |
+| `abaka/turns.py` | The turn just played, for the web page and apps: the latest move in words (`what_was_written`), and the computer's final dice left on the table until the next player rolls (`last_throw`). No Streamlit |
 | `abaka/bot.py` | The computer player: what it does next in its turn (`next_step`), choosing among the moves the rules offer, at one of three levels (`SKILL`). No Streamlit |
 | `tools/bot_match.py` | The computer player against a random, a greedy and a careful player, and its levels against each other, over many simulated games |
 | `abaka/races.py`, `ui_components/races.py` | The races for the shared bonuses (cells left in column I and II, rows two players are one cell from), for the web page and apps; and their box under the dice |
@@ -207,7 +208,9 @@ which clears the dice and moves `current` to the next player. The UI reads the
 turn phase from the engine; there are no per-browser turn flags.
 `engine.last_move` is `(player index, category, slot)` of the cell written by
 the most recent move (None before the first move); the scoreboard highlights
-it. A game has 2 to 5 players; turns go round in seat order.
+it. `engine.last_dice` is the dice that move was written from, as `(value, is
+joker)` pairs (empty before the first move), saved with the game. A game has
+2 to 5 players; turns go round in seat order.
 
 Every game in the app (same device, online, CLI) opens with the starting
 throw: `GameEngine(names, starting_throw=True)`. While
@@ -491,6 +494,18 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   race), and the School balance's expected end (a negative one costs 100 a point). Which
   dice to keep is an exact expectation over every outcome of the rolls left (756 hands:
   four normal dice and the joker). See the Decision log, 2026-11-26.
+- The computer's final dice stay on the table (Backlog item 35). It writes a second after
+  its last roll, so its dice were gone before a person had read them.
+  - `turns.last_throw(engine, computers)` gives the dice (`engine.last_dice`) and the words
+    ("Computer’s last throw: scored 54 in Full house") while the computer's move is the
+    latest one and the next player has not rolled; None at any other time, and once the
+    game is over.
+  - The page draws them where the turn's dice go, in place of the empty dice
+    (`dice.render_last_throw`): the same five dice, faded, nothing to pick, the words above
+    them. The next player's "Roll dice" is the only button, so one press moves on and
+    rolls. The API sends the same (`state.last_throw`), and the app draws it the same way.
+  - With several computers, the next one waits `COMPUTER_REST_PACES` (2.5) paces after a
+    computer's move before it rolls, so the first one's dice can be read.
 - Three levels (Backlog item 34): `create_local(..., level=)`, one of
   `rooms.COMPUTER_LEVELS` ("easy", "medium", "hard"), saved with the room
   (`room.computer_level`) and kept across "Play again". One level serves every computer
@@ -781,7 +796,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1616,7 +1631,62 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - One level for every computer seat of a game. Games started before
       levels play on as Hard, which is what they were playing.
 
+35. **The computer's final dice stay on the table.** Done in PR #77.
+    > "When you play against computer, you should see his final combination
+    > first and have an option "move to my turn" or something like that.
+    > Otherwise you can't see it on time. But at the same time it's stupid to
+    > press it and then "throw a dice" twice in a row so figure something out"
+    - After the computer writes its move, its five dice stay where the dice
+      are, faded, under a line that says what it wrote from them ("🤖
+      Computer’s last throw: scored 54 in Full house").
+    - They stay until the player presses "Roll dice", the only button there:
+      one press moves on to the player's turn and rolls. However long the
+      player looks, nothing moves.
+    - On the website and in the app.
+    - With two or more computers, the next one waits about 2.5 s before it
+      rolls, with the first one's dice still shown.
+    - Not for people's moves: on one screen everyone watched the move being
+      made, and online the other player takes time to choose.
+
 ## Status (2026-11-27)
+
+- **The computer's final dice stay on the table (owner: "you should see his
+  final combination first", Backlog item 35):** PR #77.
+  - The engine keeps the dice the latest move was written from
+    (`last_dice`, saved with the game). `abaka/turns.py` says when they are
+    shown and with what words; the page draws them in place of the empty
+    dice until the next player rolls; the API sends them (`last_throw`;
+    protocol 1, a field added) and the app draws the same.
+  - "Roll dice" is the one button: no "continue" to press first.
+  - With several computers, the next one rests 2.5 s after a computer's move.
+  - Checked:
+    - 8 new tests (`tests/test_turns.py`): the dice kept by a score and by a
+      cross, saved, shared by a clone, absent in a game saved before; shown
+      after the computer's move only, until the next roll, never after a
+      person's move, during the starting throw or after the game; the words
+      in English and Russian; the API until the player rolls; the next
+      computer's rest; the page (five dice nobody can pick, a name as text,
+      gone after "Roll dice").
+    - The website check and the app's browser check look for the computer's
+      dice and words after its move, and for them giving way to the player's
+      roll; the app's client test checks the state. With `last_throw`
+      switched off, both checks and 5 of the new tests failed.
+    - Headless Chromium, the website at 1300px (English) and 390px
+      (Russian), the app at 360px (Russian): the dice on one row, no sideways
+      scrolling.
+    - Every Python test on 3.13 (382; the 8 database tests skipped, no
+      Postgres here), 3.9 (380) and 3.8 (380); the app's 48 tests, typecheck,
+      lint and all eight browser flows; the website check on both local
+      servers.
+  - No load-test row: another project's server and browser tests kept this
+    Mac busy (load average 10 to 14; 42 to 93 of 100 polls answered). Main
+    and the branch measured in turn, five rounds each, gave the same: median
+    poll 11 to 40 ms on main and 11 to 16 on the branch; page run 113 to 205
+    ms on main (median 159) and 97 to 192 on the branch (median 158). Polls
+    do not touch the change, and a page run adds one look at the last move.
+    The next pull request that changes the app's code on a quiet machine
+    records a row.
+
 
 - **The computer's three levels (owner: "Easy, medium and hard", Backlog
   item 34):** PR #76.
@@ -2432,13 +2502,15 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 372 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 380 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  372 run and 66 are skipped (9 need a database or psycopg; the others need
+  380 run and 67 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  374 run and none is skipped. 29 computer-player tests (`test_bot.py`: only
+  382 run and none is skipped. 8 last-throw tests (`test_turns.py`: the dice of the latest
+  move kept, saved and cloned; the computer's final dice shown until the next roll and at
+  no other time, in both languages; the API; the next computer's rest; the page). 29 computer-player tests (`test_bot.py`: only
   offered moves, whole games for 2 to 5 players, better than a random and a greedy
   player, decision time, the pace, one step however many pages poll, people refused on
   its turn, saved and loaded, clubs refused, a bot fault, the API, the page; and its three
@@ -2688,6 +2760,35 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-27: the computer's final dice stay on the table (Claude Code, PR #77)**
+
+- The owner: the computer's final combination cannot be seen in time; a button to move on
+  would do, but then the player presses it and "Roll dice", twice in a row. "Figure
+  something out."
+- The dice stay on the table, as real dice do until the next player picks them up. So the
+  player's own "Roll dice" is the button that moves on: one press, and no time limit on
+  looking.
+  - Not a longer pause before the computer writes: any fixed time is too short for one
+    player and a wait for another.
+  - Not a "Continue" button: the owner's own objection.
+- The same dice in the same place, faded, with a line above them, rather than a small
+  copy elsewhere: the eye is already there, having watched them roll. Faded and
+  untappable says they are not the player's.
+- What it wrote goes with the dice ("scored 54 in Full house"): the combination and the
+  cell it went to are the two halves of the move. The words were the scoreboard's "Last
+  move" line; they moved to `abaka/turns.py` so both use them and the API can send them.
+- The engine keeps the dice (`last_dice`), saved with the game like `last_move`, so a
+  reload, another device and the app all show them, and nothing is kept per browser.
+- The server says when they are shown (`last_throw` is null otherwise), so the website
+  and the app cannot disagree, and an app need not know which seats are computers.
+- Only after the computer's move. On one screen people watch each other's moves being
+  made; online the other player's dice are on the screen all the while they choose. It
+  can be widened to online games if the owner wants: the engine keeps the dice of every
+  move.
+- With several computers the next one would roll a second later and replace the dice. It
+  now waits 2.5 paces after a computer's move. A person's own roll is never delayed.
+
 
 **2026-11-27: the computer's three levels (Claude Code, PR #76)**
 

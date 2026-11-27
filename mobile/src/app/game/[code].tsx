@@ -443,9 +443,25 @@ function DiceArea({ state, game, act, pick, busy, myTurn, openedAt, turn }: {
   const spins = game.rolls_left === 2 ? game.dice.map((_, i) => i) : game.rerolled;
 
   if (game.dice.length === 0) {
-    return state.can.includes('roll')
+    // The computer's final dice stay on the table, with what it wrote, until the next player
+    // rolls (Backlog item 35): "Roll dice" is the one button that moves on. The server says when.
+    const left = state.last_throw;
+    const roll = state.can.includes('roll')
       ? <Button testID="roll" label={t('Roll dice')} disabled={busy} onPress={() => act('roll')} />
       : null;
+    if (!left) return roll;
+    return (
+      <View style={styles.diceArea}>
+        <Text testID="last-throw" style={styles.lastThrowText}>🤖 {left.text}</Text>
+        <View style={[styles.dice, styles.lastDice]}>
+          {left.dice.map((die, i) => (
+            <DieFace key={i} testID={`last-die-${i}`} die={die} size={56}
+                     label={die.joker ? t('{value} (joker)', { value: die.value }) : String(die.value)} />
+          ))}
+        </View>
+        {roll}
+      </View>
+    );
   }
 
   const toggle = (i: number) => {
@@ -707,6 +723,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 2, overflow: 'hidden',
   },
   diceArea: { gap: 12 },
+  lastThrowText: { fontSize: 13, fontWeight: '600', color: colors.muted, marginTop: 4 },
+  lastDice: { opacity: 0.5 },
   dice: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 8, maxWidth: 340 },
   buttons: { flexDirection: 'row', gap: 10 },
   moves: { gap: 12, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12 },

@@ -15,9 +15,11 @@ import streamlit as st
 from abaka.bot import level_name
 from abaka.engine import GameEngine
 from abaka.standings import row_differences
+from abaka.turns import last_throw
 from ui_components.actions import run_action, show_action_error
 from ui_components.chart import render_score_chart
-from ui_components.dice import render_dice, render_dice_placeholder, render_reroll, rolls_html
+from ui_components.dice import (render_dice, render_dice_placeholder, render_last_throw, render_reroll,
+                                rolls_html)
 from abaka.i18n import LANGUAGES, and_join, md, picked_dice_note, rerolled_dice_note, t
 from ui_components.move_selection import render_move_picker
 from ui_components.races import render_races
@@ -167,7 +169,13 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
     st.html(f'{title}<div class="ab-turn-sub">{sub}</div>{_starter_summary(engine, me)}')
 
     if not engine.dice:
-        render_dice_placeholder()
+        # The computer's final dice stay on the table, with what it wrote, until the next
+        # player rolls (owner, Backlog item 35): "Roll dice" is the one button that moves on.
+        throw = last_throw(engine, getattr(engine, "computers", ()))
+        if throw:
+            render_last_throw(throw)
+        else:
+            render_dice_placeholder()
         if can_act:
             st.button(t("Roll dice"), key="roll", type="primary", icon=":material/casino:",
                       use_container_width=True, on_click=run_action, args=(engine.start_turn,))

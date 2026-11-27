@@ -16,6 +16,7 @@ from abaka.constants import COMBO_CATS, SCHOOL_CATS
 from abaka.engine import GameEngine
 from abaka.i18n import t
 from abaka.moves import Move, is_school, row_hint, row_name, school_number
+from abaka.turns import what_was_written
 from ui_components.style import die_uri
 
 CROSS = "✕"
@@ -168,15 +169,5 @@ def build_scoreboard_html(engine: GameEngine, me: Optional[int] = None, target: 
 
 def describe_move(engine: GameEngine, move, me: Optional[int] = None) -> str:
     """'Last move: Bob scored 23 in Full house' and similar."""
-    player, cat, slot = move
-    who = t("You") if player == me else engine.players[player].name
-    value = engine.players[player].table[cat][slot]
-    name = row_name(cat)
-    if is_school(cat):
-        what = (t("wrote {name} (exactly three)", name=name) if value == "X"
-                else t("wrote {name} (balance now {value})", name=name, value=value))
-    elif value == "X":
-        what = t("crossed out {name}", name=name)
-    else:
-        what = t("scored {value} in {name}", value=value, name=name)
-    return t("Last move: {who} {what}", who=who, what=what)
+    who = t("You") if move[0] == me else engine.players[move[0]].name
+    return t("Last move: {who} {what}", who=who, what=what_was_written(engine, move))

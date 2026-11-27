@@ -8,6 +8,8 @@ Online, the other players see the picked dice too (RoomStore.pick, polled about 
 a second), and after a reroll exactly the dice that were rolled again spin.
 """
 
+from html import escape
+
 import streamlit as st
 
 from abaka.engine import GameEngine
@@ -94,6 +96,24 @@ def _roll_animation(engine, dice) -> list:
     # Alternate between two identical animations so a die that changes twice in a row spins again.
     ss.roll_anim = "b" if ss.get("roll_anim") == "a" else "a"
     return [f".st-key-die-{i} button {{ animation: ab-roll-{ss.roll_anim} .45s ease-out; }}" for i in changed]
+
+
+def render_last_throw(throw: dict) -> None:
+    """
+    The dice of the computer's move, left on the table until the next player rolls
+    (abaka/turns.py): the same dice in the same place, faded, with what was written from them.
+    """
+    st.session_state.shown_dice = None  # the next roll spins all five
+    css = [f'.st-key-last-throw .st-key-die-{i} button {{ background-image: url("{die_uri(v, joker)}") !important; }}'
+           for i, (v, joker) in enumerate(throw["dice"])]
+    css += [f'.st-key-last-throw .st-key-die-{i}::after {{ content: "{t("wild joker") if v == 1 else t("joker")}"; }}'
+            for i, (v, joker) in enumerate(throw["dice"]) if joker]
+    st.html("<style>" + "\n".join(css) + "</style>")
+    st.html(f'<div class="ab-last-throw">&#129302; {escape(throw["text"])}</div>')
+    with st.container(key="last-throw"):
+        with st.container(horizontal=True, key="dice-row"):
+            for i, (v, joker) in enumerate(throw["dice"]):
+                st.button(t("{value} (joker)", value=v) if joker else str(v), key=f"die-{i}", disabled=True)
 
 
 def render_dice_placeholder() -> None:

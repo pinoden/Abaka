@@ -443,6 +443,8 @@ RU = {
     "Complete a column with no crossed-out combinations": "Заполните столбец без зачёркнутых комбинаций",
     "Last move: {who} {what}": "Последний ход — {who}: {what}",
     "scored {value} in {name}": "{value} в «{name}»",
+    # the computer's dice, left on the table until the next player rolls (Backlog item 35)
+    "{name}’s last throw: {what}": "Последний бросок — {name}: {what}",
     "crossed out {name}": "зачёркнуто «{name}»",
     "wrote {name} (exactly three)": "«{name}», ровно три",
     "wrote {name} (balance now {value})": "«{name}», баланс теперь {value}",

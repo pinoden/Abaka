@@ -154,6 +154,11 @@ export type State = {
   computers?: number[];
   /** How well the computer plays in this game (Backlog item 34): an id of `info.computer_levels`. Null without computers. */
   computer_level?: string | null;
+  /**
+   * The computer's final dice, still on the table until the next player rolls (Backlog item 35),
+   * with what it wrote from them, in the player's language. Null otherwise.
+   */
+  last_throw?: { seat: number; dice: Die[]; text: string } | null;
   seated: boolean;
   you: number | null;
   phase: Phase;

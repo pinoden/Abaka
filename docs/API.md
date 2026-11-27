@@ -256,6 +256,7 @@ them: ask for the rules again rather than keeping them in the app.
   "moves": null,
   "races": { ... },
   "differences": { ... },
+  "last_throw": null,
   "events": [ ... ],
   "chat": [ ... ],
   "table": {"games": 2, "wins": [1, 1, 0], "draws": 0},
@@ -281,6 +282,7 @@ them: ask for the rules again rather than keeping them in the app.
 | `moves` | The moves to offer, when it is this player's turn and the dice are on the table. |
 | `races` | The races for the shared bonuses (below), while the game is played, or null when there is none. |
 | `differences` | The difference row by row (below), for this seat; on one device for the player whose turn it is. Null in the waiting room, during the starting throw, and on one device once the game is over. |
+| `last_throw` | The computer's final dice, still on the table (below), or null. |
 | `events` | Recent reactions and effects (below), newer than `since`. |
 | `chat` | The game's messages, newer than `since`: `id`, `seat`, `text`, `at`. Show `text` as plain text, never as HTML or Markdown. |
 | `table` | The running score at this table: games finished here, wins per seat, draws. |
@@ -348,6 +350,22 @@ them: ask for the rules again rather than keeping them in the app.
 | `balance_change` | School rows: the balance change (negative: paid from the balance). |
 | `bonus_lost`, `column_bonus_lost` | The move gives up the row bonus or the column bonus: show their cells crossed out in the preview. |
 | `label`, `action`, `preview` | Texts in the request's language: the option, its confirm button, and the cell's text on the board. |
+
+### `last_throw`
+The computer writes a second after its last roll, too soon to read its dice. So
+while its move is the latest one and the next player has not rolled, the state
+carries the dice that move was written from:
+
+```json
+{"seat": 1, "dice": [{"value": 6, "joker": false}, ...],
+ "text": "Computer’s last throw: scored 54 in Full house"}
+```
+
+Show the dice where the turn's dice go, as dice nobody can pick, with `text` (in
+the player's language), next to the player's own `roll`: that one button moves
+on. Null at any other time: after a person's move, once the next player has
+rolled, and when the game is over. With several computers, the next one waits
+about 2.5 s before it rolls.
 
 ### `differences`
 

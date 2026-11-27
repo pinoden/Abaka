@@ -48,6 +48,10 @@ class GameEngine:
         # 2026-11-26): (moves made so far, (total of each seat)). A tuple, never changed in
         # place, so clone() shares it. Games saved before it start theirs where they are.
         self.score_history: Tuple[Tuple[int, Tuple[int, ...]], ...] = ()
+        # The dice the most recent move was written from, as (value, is joker): they stay on
+        # the table after the computer's move until the next player rolls (abaka/turns.py). A
+        # tuple, shared by clone(). Empty before the first move, and in games saved before it.
+        self.last_dice: Tuple[Tuple[int, bool], ...] = ()
 
         # Starting throw. `throw_round` lists the players throwing in the current round, in
         # order; `current` is the one whose throw is next. It is empty once the first player
@@ -127,6 +131,7 @@ class GameEngine:
         """Pass the turn. Dice are cleared, so `not self.dice` means "not rolled yet"."""
         moves = sum(v is not None for p in self.players for cells in p.table.values() for v in cells[:3])
         self.score_history += ((moves, tuple(p.calculate_score() for p in self.players)),)
+        self.last_dice = tuple((d.value, d.is_joker) for d in self.dice)
         self.dice = []
         self.rolls_left = 0
         self.first_roll = True

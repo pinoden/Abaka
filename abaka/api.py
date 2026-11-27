@@ -36,6 +36,7 @@ from .models import Category
 from .moves import ROW_ORDER, cross_options, free_slot, is_school, most_points, row_hint, row_name, score_options
 from .races import bonus_races
 from .standings import row_differences, score_history
+from .turns import last_throw
 from .rooms import (COMPUTER_LEVELS, MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, REACTIONS, OutdatedPage,
                     RoomError, RoomStore, RoomView, TooFast, normalize_code, split_code)
 from .rules import rules_blocks
@@ -430,6 +431,7 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
         "moves": None,
         "races": None,
         "differences": None,
+        "last_throw": None,
         "events": [],
         "chat": [],
         "table": _table(view),
@@ -471,6 +473,9 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
                           "cross": [_move(m, False) for m in cross]}
     if phase == "playing":
         state["races"] = bonus_races(engine, state["you"])
+        # The computer's final dice, still on the table until the next player rolls (abaka/turns.py).
+        throw = last_throw(engine, view.computers)
+        state["last_throw"] = throw and dict(throw, dice=[{"value": v, "joker": j} for v, j in throw["dice"]])
     if phase in ("playing", "over"):
         state["differences"] = row_differences(engine, state["you"])
     state["events"] = [_event(e, view.names, state["you"]) for e in view.events if e["id"] > since]
