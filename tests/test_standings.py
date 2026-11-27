@@ -10,6 +10,7 @@ import random
 import re
 import unittest
 from unittest import mock
+from urllib.parse import unquote
 
 import abaka.rooms as rooms
 import code_version
@@ -190,7 +191,11 @@ class TestPage(unittest.TestCase):
                   for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html)}
         self.assertEqual(widths, {1 + 5 * 2 + 2})
         chart = score_chart_html(g, 0)
-        self.assertEqual(chart.count("<polyline"), 2)
+        # The lines are an image: Streamlit 1.67 removes an <svg> element from the page's HTML.
+        self.assertNotIn("<svg", chart)
+        drawing = unquote(re.search(r'<img src="data:image/svg\+xml,([^"]+)"', chart).group(1))
+        self.assertTrue(drawing.startswith('<svg xmlns="http://www.w3.org/2000/svg"'))
+        self.assertEqual(drawing.count("<polyline"), 2)
         self.assertIn("You <b>32</b>", chart)
         self.assertNotIn("<b>Ann</b>", chart)
         self.assertEqual(score_chart_html(GameEngine(["Ann", "Bob"]), 0), "")

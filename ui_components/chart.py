@@ -1,12 +1,17 @@
 """
 The scores by move, under the score table (a tester, 2026-11-26: "like the chart of a chess
 game, a curve per player"). The points come from abaka/standings.py, which the API sends to
-apps too; here they are drawn as an inline SVG, so nothing is loaded and it costs a page run
-about as much as the table's last row. Names are typed by players, so they are escaped.
+apps too; here they are drawn as an SVG, so nothing is loaded and it costs a page run about
+as much as the table's last row. Names are typed by players, so they are escaped.
+
+The SVG is an image (a data URI), as the dice are (style.die_uri): Streamlit 1.67 removes an
+<svg> element from st.html, so an inline one left the chart with its labels and no lines on
+the live app (the owner's screenshot, 2026-11-27).
 """
 
 from html import escape
 from typing import List, Optional
+from urllib.parse import quote
 
 import streamlit as st
 
@@ -63,8 +68,10 @@ def score_chart_html(engine, me: Optional[int]) -> str:
         keys.append(f'<span><i style="--c:{COLORS[seat % len(COLORS)]}"></i>{escape(name)} '
                     f'<b>{history[-1]["totals"][seat]}</b></span>')
     title = escape(t("Scores by move"))
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" preserveAspectRatio="none">'
+           f'{"".join(lines)}</svg>')
     return (f'<div class="ab-chart"><div class="ab-chart-title">{title}</div>'
-            f'<div class="ab-chart-plot"><svg viewBox="0 0 {WIDTH} {HEIGHT}" preserveAspectRatio="none" '
-            f'role="img" aria-label="{title}">{"".join(lines)}</svg>{"".join(labels)}</div>'
+            f'<div class="ab-chart-plot"><img src="data:image/svg+xml,{quote(svg)}" alt="{title}">'
+            f'{"".join(labels)}</div>'
             f'<div class="ab-chart-x"><span>{first}</span><span>{escape(t("move {n}", n=last))}</span></div>'
             f'<div class="ab-chart-keys">{"".join(keys)}</div></div>')

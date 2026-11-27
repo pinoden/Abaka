@@ -1650,6 +1650,24 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 
 ## Status (2026-11-27)
 
+- **The chart of scores by move had no lines on the live app (owner's
+  screenshot):** PR #78.
+  - Since PR #74 the chart showed its title, its numbers and the players'
+    totals, and no lines. Streamlit 1.67 removes an `<svg>` element from
+    `st.html`, and the lines were an inline SVG.
+  - The lines are now an image (the SVG as a data URI), as the dice are.
+  - PR #74 said the chart was checked in headless Chromium. It was, on a
+    scratch page built from the chart's HTML, not in the app; and the
+    website check only looked for the chart's box. The check now waits for
+    the image to be drawn (loaded, wider than nothing, 50px or taller); on
+    the chart as it was, it failed on both widths.
+  - Checked in the app itself, on a local server with Streamlit 1.67, in
+    Chromium and in WebKit (Safari's engine): both lines, 2 and 3 px wide at
+    any width.
+  - Load-test row: no slowdown (24% CPU, 6.9 ms median poll, page run 107 ms
+    against 98). The machine was not quite idle (87 of 100 polls answered).
+
+
 - **The computer's final dice stay on the table (owner: "you should see his
   final combination first", Backlog item 35):** PR #77.
   - The engine keeps the dice the latest move was written from
@@ -2760,6 +2778,21 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-27: the chart's lines as an image (Claude Code, PR #78)**
+
+- The owner sent the chart from the live app: a title, "1257", "0", the totals, and
+  nothing between them, and asked what it is.
+- Streamlit 1.67's `st.html` cleans its HTML and drops `<svg>` elements whole (seen in
+  the page's DOM, in Chromium and WebKit). Images with an SVG data URI pass: the dice have
+  always been drawn that way (`style.die_uri`). So the chart's SVG became an `<img>`.
+  Stretched with `preserveAspectRatio="none"`, the strokes keep their width
+  (`vector-effect`) in an image too.
+- A rule for browser checks from this: a thing drawn with `st.html` is checked in the
+  app, not on a page made from its HTML, and the check looks at what was drawn (a size,
+  an image that loaded), not only for its container.
+- The app's chart was never affected: it is drawn with plain views.
+
 
 **2026-11-27: the computer's final dice stay on the table (Claude Code, PR #77)**
 

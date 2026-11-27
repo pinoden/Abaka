@@ -190,7 +190,7 @@ h1, h2, h3 { letter-spacing: -0.02em; }
 .ab-chart-title { font-size: .8rem; font-weight: 700; color: #6B7089; text-transform: uppercase;
   letter-spacing: .04em; margin-bottom: .3rem; }
 .ab-chart-plot { position: relative; height: 150px; margin-left: 42px; }
-.ab-chart-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ab-chart-plot img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
 .ab-chart-y { position: absolute; left: -42px; width: 36px; text-align: right; transform: translateY(-50%);
   font-size: .72rem; color: #8A90A8; }
 .ab-chart-x { display: flex; justify-content: space-between; margin-left: 42px; font-size: .72rem; color: #8A90A8;
