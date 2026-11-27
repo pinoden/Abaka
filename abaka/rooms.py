@@ -89,6 +89,10 @@ _UNCHECKED = object()  # RoomStore._get: the caller already holds a seat, no key
 COMPUTER_PACE_SECONDS = 1.0
 COMPUTER_BUSY_SECONDS = 10.0          # a step being worked out; another poll may take over after this
 _COMPUTER = object()                  # the "token" the store plays a computer seat with (never a string)
+# How well the computer plays (owner, Backlog item 34); abaka/bot.py says how each level thinks.
+# A game made without a level, or saved before there were levels, plays the last one.
+COMPUTER_LEVELS = ("easy", "medium", "hard")
+COMPUTER_LEVEL = "hard"
 
 log = logging.getLogger("abaka")
 
@@ -182,9 +186,11 @@ class RoomView:
                  version: int, games_played: int, capacity: int, local: bool = False,
                  club: Optional[str] = None, results: Optional[List[dict]] = None,
                  picked: tuple = (), rerolled: tuple = (), picks: int = 0, events: tuple = (),
-                 chat: tuple = (), last_event_id: int = 0, key: str = "", computers: tuple = ()) -> None:
+                 chat: tuple = (), last_event_id: int = 0, key: str = "", computers: tuple = (),
+                 computer_level: Optional[str] = None) -> None:
         self.code = code
         self.computers = computers    # seats the computer plays (abaka/bot.py)
+        self.computer_level = computer_level  # how well it plays (bot.LEVELS); None without computers
         self.key = key                # the game's secret key: show it only to its players (full_code)
         self.names = names            # seated players, in seat order (seat 0 created the game)
         self.engine = engine
@@ -259,6 +265,7 @@ class _Room:
         # did something that is not a move (showing the dice it keeps), the reroll it showed
         # (room version, dice), and when a poll started working out its next step.
         self.computers: List[int] = []
+        self.computer_level = COMPUTER_LEVEL   # how well it plays: one of bot.LEVELS (saved)
         self.computer_at = 0.0
         self.computer_plan: Optional[tuple] = None
         self.computer_busy = 0.0
@@ -287,7 +294,7 @@ class _Room:
             "engine": engine_to_data(self.engine) if self.engine is not None else None,
             "version": self.version, "games_played": self.games_played, "updated_at": self.updated_at,
             "club": self.club, "results": [dict(r, scores=list(r["scores"])) for r in self.results],
-            "computers": list(self.computers),
+            "computers": list(self.computers), "computer_level": self.computer_level,
         }
 
     @classmethod
@@ -305,6 +312,9 @@ class _Room:
         room.results = [{"game": int(r["game"]), "scores": [int(x) for x in r["scores"]]}
                         for r in d.get("results") or []]
         room.computers = sorted({int(x) for x in d.get("computers") or [] if 0 <= int(x) < len(room.names)})
+        # A game saved before the computer had levels goes on as it played: at its best.
+        level = d.get("computer_level")
+        room.computer_level = level if level in COMPUTER_LEVELS else COMPUTER_LEVEL
         room.last_seen = time.time()
         return room
 
@@ -410,12 +420,13 @@ class RoomStore:
         return code, token
 
     def create_local(self, names: List[str], club: Optional[str] = None,
-                     computers: Sequence[int] = ()) -> "tuple[str, str]":
+                     computers: Sequence[int] = (), level: Optional[str] = None) -> "tuple[str, str]":
         """
         A same-device game: every seat is played from one browser, and the game starts at once.
         It gets a code like an online game, so it can be continued later from its link or code.
         `computers`: the seats (positions in `names`) the computer plays. At least one seat is
         a person's, and games against the computer do not count for a club's table.
+        `level`: how well the computer plays, one of COMPUTER_LEVELS (None: COMPUTER_LEVEL).
         """
         if not MIN_PLAYERS <= len(names) <= MAX_PLAYERS:
             raise RoomError(f"A game is for {MIN_PLAYERS} to {MAX_PLAYERS} players.")
@@ -426,6 +437,8 @@ class RoomStore:
             raise RoomError("At least one player must be a person.")
         if computers and club is not None:
             raise RoomError("Games against the computer do not count for a club.")
+        if level is not None and level not in COMPUTER_LEVELS:
+            raise RoomError("That level does not exist.")
         with self._lock:
             self._make_room_for_one_more()
             code = self._new_code()
@@ -435,6 +448,7 @@ class RoomStore:
             room.names = [clean_name(n, f"Player {i}") for i, n in enumerate(names, 1)]
             room.tokens = [token] * len(names)  # one browser holds every seat
             room.computers = computers
+            room.computer_level = level or COMPUTER_LEVEL
             room.engine = _new_engine(room, self.starting_throw)
             self._rooms[code] = room
             self._count("created")
@@ -570,7 +584,8 @@ class RoomStore:
             return RoomView(room.code, list(room.names), room.engine, room.version, room.games_played,
                             room.capacity, room.local, room.club, list(room.results),
                             room.picked, room.rerolled, room.picks, tuple(room.events), tuple(room.chat),
-                            room.last_event_id, room.key, tuple(room.computers))
+                            room.last_event_id, room.key, tuple(room.computers),
+                            room.computer_level if room.computers else None)
 
     def seen(self, code: str):
         """
@@ -593,7 +608,7 @@ class RoomStore:
     # ----- the computer player -----
     def _computer_due(self, room: _Room):
         """
-        (engine, version, plan) if the computer's next step in this room is due: it is a
+        (engine, version, plan, level) if the computer's next step in this room is due: it is a
         computer seat's turn, the latest change is COMPUTER_PACE_SECONDS old, and no other poll
         is working it out. Marks the room as busy. Call with the lock held.
         """
@@ -607,9 +622,9 @@ class RoomStore:
             return None
         room.computer_busy = now
         plan = room.computer_plan if room.computer_plan and room.computer_plan[0] == room.version else None
-        return engine, room.version, plan
+        return engine, room.version, plan, room.computer_level
 
-    def _play_computer(self, code: str, engine: GameEngine, version: int, plan) -> bool:
+    def _play_computer(self, code: str, engine: GameEngine, version: int, plan, level: str) -> bool:
         """
         The computer's next step in this room, worked out without the lock (the engine is an
         installed one, never changed) and made through the store's own moves with the version
@@ -624,7 +639,7 @@ class RoomStore:
                 step = ("reroll", plan[1])
             else:
                 try:
-                    step = bot.next_step(engine)
+                    step = bot.next_step(engine, level)
                 except Exception as e:  # noqa: BLE001 - a fault in the bot must never stop the game
                     log.warning("the computer could not choose a step in game %s: %s", code, e)
                     step = bot.fallback_step(engine)
@@ -1171,7 +1186,8 @@ class RoomEngine:
     """
 
     def __init__(self, store, code: str, token: str, engine: GameEngine, version: Optional[int] = None,
-                 picked: tuple = (), rerolled: tuple = (), computers: tuple = ()) -> None:
+                 picked: tuple = (), rerolled: tuple = (), computers: tuple = (),
+                 computer_level: Optional[str] = None) -> None:
         self._store = store
         self._code = code
         self._token = token
@@ -1180,6 +1196,7 @@ class RoomEngine:
         self.picked = picked        # the dice the player whose turn it is has picked (online)
         self.rerolled = rerolled    # the dice the latest move rolled again
         self.computers = computers  # the seats the computer plays: nobody else moves for them
+        self.computer_level = computer_level  # how well it plays (COMPUTER_LEVELS)
 
     def __getattr__(self, name: str):
         return getattr(self._engine, name)

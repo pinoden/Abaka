@@ -34,9 +34,9 @@ if "server" not in code_version.PACKAGES:  # a code_version loaded before server
 code_version.load_current()
 
 from abaka.rooms import (  # noqa: E402
-    MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, full_code, normalize_code, split_code,
-    within_limit)
-from abaka.bot import computer_names  # noqa: E402
+    COMPUTER_LEVELS, MAX_PLAYERS, MIN_PLAYERS, RoomEngine, RoomError, RoomStore, full_code, normalize_code,
+    split_code, within_limit)
+from abaka.bot import SUGGESTED_LEVEL, computer_names, level_name  # noqa: E402
 from abaka.clubs import ClubError, ClubStore, is_club_code, member_key  # noqa: E402
 from ui_components.actions import forget_action_error  # noqa: E402
 from ui_components.chat import render_chat  # noqa: E402
@@ -187,6 +187,7 @@ def _render_home(store: RoomStore) -> None:
             count = _player_count("local_count")
             # The computer plays the last seats (abaka/bot.py, Backlog item 33).
             computers = _computer_count(count)
+            level = _computer_level() if computers else None
             people = count - computers
             with st.form("local_game", border=False):
                 typed = [st.text_input(t("Player {i}", i=i), placeholder=t("Name"), max_chars=20, key=f"local_p{i}")
@@ -200,7 +201,7 @@ def _render_home(store: RoomStore) -> None:
                                          use_container_width=True):
                     # Saved like an online game: it gets a code and can be continued from its link.
                     names = [name.strip() or t("Player {i}", i=i) for i, name in enumerate(typed, 1)] + names[people:]
-                    _start_game(lambda: store.create_local(names, computers=seats))
+                    _start_game(lambda: store.create_local(names, computers=seats, level=level))
 
     with online_col:
         with st.container(border=True, key="card-online"):
@@ -452,6 +453,14 @@ def _computer_count(players: int) -> int:
     return value or 0
 
 
+def _computer_level() -> str:
+    """How well the computer plays in the game being set up (Backlog item 34): Medium unless chosen."""
+    value = st.segmented_control(t("Level"), list(COMPUTER_LEVELS), default=SUGGESTED_LEVEL, key="local_level",
+                                 format_func=level_name,
+                                 help=t("How well the computer plays. Easy makes mistakes, Hard works out every roll."))
+    return value or SUGGESTED_LEVEL
+
+
 def _show_lobby_notice() -> None:
     """Say once why this browser left its game (on the home or the invite page, wherever it lands)."""
     ss = st.session_state
@@ -597,7 +606,7 @@ def _render_local_game(store: RoomStore, view, token: str) -> None:
                            "{full}.", code=code, full=full_code(code, view.key)) if unfinished else None)
 
     render_game(RoomEngine(get_store, code, token, view.engine, view.version, view.picked, view.rerolled,
-                           view.computers),
+                           view.computers, getattr(view, "computer_level", None)),
                 me=None,
                 status_html=chip(t("Same device · {code}", code=code)), on_play_again=rematch,
                 on_leave=leave, leave_label=t("Leave game"), board_note_html=_series_html(view),

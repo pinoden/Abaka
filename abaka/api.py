@@ -28,7 +28,7 @@ import time
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, List, Optional
 
-from .bot import computer_names
+from .bot import SUGGESTED_LEVEL, computer_names, level_name
 from .clubs import MAX_CLUB_NAME_LENGTH, ClubStore, is_club_code, member_key
 from .effects import REACTION_LOOKS, effect_words, reaction_words
 from .i18n import LANGUAGES, error, get_language, set_language, t
@@ -36,7 +36,7 @@ from .models import Category
 from .moves import ROW_ORDER, cross_options, free_slot, is_school, most_points, row_hint, row_name, score_options
 from .races import bonus_races
 from .standings import row_differences, score_history
-from .rooms import (MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, REACTIONS, OutdatedPage,
+from .rooms import (COMPUTER_LEVELS, MAX_MESSAGE_LENGTH, MAX_NAME_LENGTH, MAX_PLAYERS, MIN_PLAYERS, REACTIONS, OutdatedPage,
                     RoomError, RoomStore, RoomView, TooFast, normalize_code, split_code)
 from .rules import rules_blocks
 
@@ -204,6 +204,9 @@ def _info(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -> dict:
                           for key in REACTIONS if key in REACTION_LOOKS],
         "rows": [{"row": c.name, "name": row_name(c), "hint": row_hint(c), "school": is_school(c)}
                  for c in ROW_ORDER],
+        # How well the computer can play (create_local's `level`), weakest first, and the one to offer first.
+        "computer_levels": [{"id": level, "label": level_name(level)} for level in COMPUTER_LEVELS],
+        "computer_level_suggested": SUGGESTED_LEVEL,
     }
 
 
@@ -229,12 +232,15 @@ def _create_local(req: _Request, store: RoomStore, clubs: Optional[ClubStore]) -
     if (not isinstance(computers, list)
             or any(isinstance(i, bool) or not isinstance(i, int) or not 0 <= i < len(names) for i in computers)):
         raise ApiError("bad_request", "'computers' must be a list of seats, positions in 'names'.")
+    level = req.get("level")
+    if level is not None and level not in COMPUTER_LEVELS:
+        raise ApiError("bad_request", "'level' must be one of: %s." % ", ".join(COMPUTER_LEVELS))
     names = computer_names(names, computers)  # the computer's blank names: "Computer", "Computer 2"...
     names = [n.strip() or t("Player {i}", i=i) for i, n in enumerate(names, 1)]
     club = _club_code(req, clubs)
     if club is not None and len({member_key(n) for n in names}) < len(names):
         raise ApiError("refused", t("Each player needs a different name."))  # they would count as one member
-    code, token = store.create_local(names, club=club, computers=computers)
+    code, token = store.create_local(names, club=club, computers=computers, level=level)
     return _entered(store, clubs, code, token)
 
 
@@ -415,6 +421,7 @@ def _state(store: RoomStore, clubs: Optional[ClubStore], code: str, token: Optio
         "club": view.club,
         "names": list(view.names),
         "computers": list(view.computers),
+        "computer_level": view.computer_level,  # how well it plays (null without computers)
         "seated": seat is not None,
         "you": seat if seat is not None and not view.local else None,
         "phase": phase,

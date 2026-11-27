@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 import streamlit as st
 
+from abaka.bot import level_name
 from abaka.engine import GameEngine
 from abaka.standings import row_differences
 from ui_components.actions import run_action, show_action_error
@@ -150,7 +151,7 @@ def _render_play_panel(engine: GameEngine, me: Optional[int]):
     if me is not None and can_act:
         title = f'<div class="ab-turn-title mine">{t("Your turn")}</div>'
     elif computer:
-        badge = chip(ROBOT + " " + t("computer"), "accent")
+        badge = chip(ROBOT + " " + t("computer") + _level_text(engine), "accent")
         title = f'<div class="ab-turn-title">{t("{name}’s turn", name=name)} {badge}</div>'
     else:
         title = f'<div class="ab-turn-title">{t("{name}’s turn", name=name)}</div>'
@@ -207,6 +208,12 @@ def _render_starting_throw(engine: GameEngine, me: Optional[int]) -> None:
     label = t("Throw the dice") if me is not None else t("Throw for {name}", name=md(thrower.name))
     st.button(label, key="start-throw", type="primary", icon=":material/casino:", use_container_width=True,
               on_click=run_action, args=(engine.throw_for_start,))
+
+
+def _level_text(engine) -> str:
+    """ " · easy": how well this game's computer plays (Backlog item 34), for its mark on the turn."""
+    level = getattr(engine, "computer_level", None)
+    return " · " + level_name(level).lower() if level else ""
 
 
 def _computer_plays(engine) -> bool:

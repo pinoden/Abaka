@@ -31,7 +31,8 @@ python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
 python -m unittest tests.test_rooms -v                # one test module
 python tools/simulate.py 200 40                       # random complete games with rule checks (2-3 min)
-python tools/bot_match.py 200                         # the computer player against simpler players (about 10 min)
+python tools/bot_match.py 200                         # the computer player against simpler players, and its levels (about 25 min)
+python tools/bot_match.py 200 --pair medium hard      # one pairing (run a few at once)
 python tools/loadtest.py --clients 100 --interval 1   # simulated pages polling every second: CPU, latency
 python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a Streamlit option
 python tools/loadtest.py --baseline --record docs/LOADTEST.md   # the release baseline (about 1 min): adds a row, flags a slowdown
@@ -180,8 +181,8 @@ Python + Streamlit.
 | `abaka/rules.py` | The rules players read, in English and Russian: Markdown for the web page, blocks for apps (`rules_blocks`). No Streamlit |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
 | `abaka/standings.py`, `ui_components/chart.py` | How the players stand, for one viewer: each row's difference from the opponent (the board's column behind the "Row differences" switch) and every total after each move (`engine.score_history`, the chart under the board). For the web page and apps |
-| `abaka/bot.py` | The computer player: what it does next in its turn (`next_step`), choosing among the moves the rules offer. No Streamlit |
-| `tools/bot_match.py` | The computer player against a random, a greedy and a careful player, over many simulated games |
+| `abaka/bot.py` | The computer player: what it does next in its turn (`next_step`), choosing among the moves the rules offer, at one of three levels (`SKILL`). No Streamlit |
+| `tools/bot_match.py` | The computer player against a random, a greedy and a careful player, and its levels against each other, over many simulated games |
 | `abaka/races.py`, `ui_components/races.py` | The races for the shared bonuses (cells left in column I and II, rows two players are one cell from), for the web page and apps; and their box under the dice |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, the rules dialog (its text is `abaka/rules.py`) |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
@@ -490,6 +491,25 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   race), and the School balance's expected end (a negative one costs 100 a point). Which
   dice to keep is an exact expectation over every outcome of the rolls left (756 hands:
   four normal dice and the joker). See the Decision log, 2026-11-26.
+- Three levels (Backlog item 34): `create_local(..., level=)`, one of
+  `rooms.COMPUTER_LEVELS` ("easy", "medium", "hard"), saved with the room
+  (`room.computer_level`) and kept across "Play again". One level serves every computer
+  seat of a game.
+  - Hard is the bot as above. `bot.SKILL` says how the others differ:
+    - `noise`: each option is misjudged by a normal error of that many points (Medium 7,
+      Easy 18);
+    - `deep`: Easy looks only one roll ahead when two are left;
+    - `foresight`: Easy gives the bonuses still to win and the worth of empty cells 0.3
+      of their weight. School always counts in full.
+  - A level that misjudges chooses among its best four moves, and among writing now and
+    its best three ways to keep dice (`CONSIDERED`), so it never makes a senseless move.
+    It is careful with School: a row with three or more of its number is never thought
+    worse than it is, a payment from the balance never better.
+  - A game made without a level, or saved before levels, plays Hard
+    (`rooms.COMPUTER_LEVEL`): what the computer was. The pages and the app offer Medium
+    first (`bot.SUGGESTED_LEVEL`).
+  - The page shows the level on the computer's turn ("🤖 computer · easy"); the API
+    sends it (`computer_level`) and the list to choose from (`info.computer_levels`).
 
 ### Clubs and the running score (Backlog item 17)
 
@@ -761,7 +781,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1570,7 +1590,91 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       100%, 100% and 88% of those games. A decision takes 6.2 ms (median;
       11.6 ms at the 95th percentile).
 
-## Status (2026-11-26)
+34. **Three levels for the computer: Easy, Medium and Hard.** Done in PR #76.
+    > "How smart is the bot? Can me put 3 levels? Easy, medium and hard?"
+    - With a computer player chosen, the same-device card on the website and
+      the app's home screen ask for a "Level": Easy, Medium (offered first) or
+      Hard. The level shows next to the computer's mark on its turn
+      ("🤖 computer · easy").
+    - Hard is the computer of item 33, unchanged. Medium thinks the same way
+      but misjudges its options a little. Easy misjudges them more, looks one
+      roll ahead instead of two, and gives the bonuses little weight. Neither
+      makes a senseless move: each chooses among its best few options.
+    - How they compare (two players, 200 games each, `tools/bot_match.py`;
+      "careful" is a player of simple habits: keeps its most common number,
+      fills School rows when it has three, never pays from the balance):
+
+      | | Average score | Wins against the careful player | Wins against the level above |
+      |---|---|---|---|
+      | Easy | about 525 | 34% | 9% (against Medium) |
+      | Medium | about 840 | 66% | 24% (against Hard) |
+      | Hard | about 1010 | 88% | |
+
+    - Not measured against people: nobody's real games were compared. If a
+      level proves too strong or too weak for its name, its numbers are in
+      `bot.SKILL`.
+    - One level for every computer seat of a game. Games started before
+      levels play on as Hard, which is what they were playing.
+
+## Status (2026-11-27)
+
+- **The computer's three levels (owner: "Easy, medium and hard", Backlog
+  item 34):** PR #76.
+  - `bot.next_step(engine, level)`; the room keeps its game's level; the
+    website's same-device card and the app's home screen offer the choice
+    once a computer plays, Medium first. The API: `create_local`'s `level`,
+    the state's `computer_level`, `info`'s `computer_levels` and
+    `computer_level_suggested`. Protocol 1: fields added; without `level`
+    the computer plays Hard, as before.
+  - Two-player games, 200 each (Easy against Hard: 100):
+
+    | Pairing | Averages | Won by the first |
+    |---|---|---|
+    | Medium against Hard | 838 and 1012 | 24% |
+    | Easy against Medium | 527 and 852 | 9% |
+    | Easy against Hard | 566 and 1043 | 2% |
+    | Hard against the careful player | 994 and 413 | 88% |
+    | Medium against the careful player | 829 and 421 | 66% |
+    | Easy against the careful player | 524 and 351 | 34% |
+
+    The careful player wins more often against Easy than its average
+    suggests: a few of its games end far below zero in School.
+  - How the levels were found: twelve settings played Hard, 60 games each.
+    How far an option is misjudged decides the strength (an error of 6
+    points: about 860 a game against Hard's 1000; 12: about 650; 20: about
+    470). Looking one roll ahead or weighing the bonuses less changes little
+    by itself (about 920 with both).
+  - Misjudging also ended more games below zero in School (about 1 in 7,
+    against Hard's 1 in 40), which loses a game by hundreds of points at
+    once. The weaker levels are now careful with School; Medium ends about
+    1 game in 20 below zero, Easy about 1 in 10.
+  - A decision takes 5 to 7 ms at every level (median; Easy is the quickest,
+    it looks one roll ahead).
+  - Checked:
+    - 9 new tests (`tests/test_bot.py`): each level stronger than the one
+      before over whole games; every level plays only offered moves; Hard is
+      the computer as it was, move for move; a level that misjudges wildly
+      still picks among its best four moves and its best few ways to keep
+      dice; every level writes Abaka on the first roll at once; the names; the
+      room keeps its level, saves it and hands it to the bot; a game saved
+      before levels plays Hard; the API. The page test now chooses Easy and
+      finds it on the computer's turn.
+    - The website check and the app's browser check choose Easy and look for
+      "computer · easy" on the computer's turn. With the level left off the
+      page's mark, the website check failed; with the app not sending the
+      level, the app's check failed.
+    - Headless Chromium, the website's card at 1300px (English), 390px and
+      360px (Russian), and the app's at 360px (Russian) and 390px: the three
+      levels on one line, Medium picked, no sideways scrolling.
+    - Every Python test on 3.13 (374; the 8 database tests skipped, no
+      Postgres here), 3.9 (372) and 3.8 (372); the app's 48 tests, typecheck,
+      lint and all eight browser flows; the website check on both local
+      servers.
+  - Load-test row: no slowdown (31% CPU, 8.6 ms median poll, page run 98 ms
+    against 84).
+  - Not done: a comparison with people's real scores (Decision log); the
+    levels on a real phone or the emulator (the web build runs the same code).
+
 
 - **A computer player (owner: "build a bot so you could play abaka against
   computer", Backlog item 33):** PR #75.
@@ -2328,16 +2432,18 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 363 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 372 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  363 run and 66 are skipped (9 need a database or psycopg; the others need
+  372 run and 66 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  365 run and none is skipped. 20 computer-player tests (`test_bot.py`: only
+  374 run and none is skipped. 29 computer-player tests (`test_bot.py`: only
   offered moves, whole games for 2 to 5 players, better than a random and a greedy
   player, decision time, the pace, one step however many pages poll, people refused on
-  its turn, saved and loaded, clubs refused, a bot fault, the API, the page). 13 standings tests (`test_standings.py`: row
+  its turn, saved and loaded, clubs refused, a bot fault, the API, the page; and its three
+  levels: each stronger than the one before, Hard unchanged, no poor option however a level
+  misjudges, a level kept by its room and through the API). 13 standings tests (`test_standings.py`: row
   differences with two and three players, on one device, adding up to the
   totals over whole games; the score history after every move, saved, cloned,
   and for games saved before it; the API; the board's HTML and the chart; the
@@ -2582,6 +2688,46 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-27: the computer's three levels (Claude Code, PR #76)**
+
+- The owner asked how smart the bot is, and for three levels: Easy, Medium and Hard.
+- Hard is the computer as it was. A weaker level is the same player misjudging its
+  options, rather than a different, simpler player:
+  - one way of thinking to keep right, and the rules for it stay in one place;
+  - its mistakes are a person's: close calls go wrong often, clear ones almost never (a
+    normal error on each option's worth). A player who picks at random some of the
+    time makes moves nobody would;
+  - one number sets the strength, so a level can be moved if it proves too strong or
+    too weak for its name.
+- A weaker level chooses among its best four moves, and among writing now and its best
+  three ways to keep dice. An error on each of the 60 ways to keep dice would let chance
+  pick among them; and a person weighs a few plans, not sixty.
+- Careful with School at every level. A level that misjudged School like everything
+  else ended one game in seven below zero, at 100 a point: the person then wins because
+  the computer threw the game away, not by playing better. So a School row with three or
+  more of its number is never thought worse than it is, and a payment from the balance
+  never better.
+- Easy also looks one roll ahead and gives the bonuses little weight. Measured, these
+  matter less than the misjudging; they are how a beginner plays, so its games look like
+  one's: it writes what the dice give now.
+- The levels are placed by games against each other and against the careful player of
+  tools/bot_match.py, a stand-in for a person of simple habits: it beats Easy two games
+  in three, loses to Medium two in three and to Hard seven in eight. Nobody's real games
+  were compared, so whether "Medium" is medium for the owner's friends is for them to
+  say.
+- Medium is offered first: most people meeting the computer for the first time would
+  lose every game to Hard.
+- Without `level` the API plays Hard, and so does a game saved before levels: that is
+  what `computers` meant in protocol 1 (PR #75), and what those games were playing.
+- One level for a game, not one per seat: a table with an easy and a hard computer is
+  a second choice per seat on the home page, for a case nobody asked for.
+- The level's names come from the server (`info.computer_levels`), as the reactions do,
+  so an app shows a level the server adds later.
+- The row of real scores was not read: comparing with people's finished games in the
+  database was tried and refused by this session's permissions (a read of production
+  data). The owner can say whether to allow it.
+
 
 **2026-11-26: a computer player (Claude Code, PR #75)**
 

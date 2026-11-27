@@ -28,6 +28,9 @@ value is worked out for each hand, then the expected value of each way to keep d
 rolls deep, with the first roll's doubling for standing at once. A decision takes about
 6 ms (median; under 15 ms at the 95th percentile, on an M1).
 
+Three levels (owner, Backlog item 34): all of the above is Hard. Medium and Easy think the
+same way and misjudge what they see (SKILL, below); `next_step(engine, level)`.
+
 No Streamlit here, and Python 3.8 like the rest of the package.
 """
 
@@ -69,6 +72,35 @@ P_PAR = 0.75                         # a School cell later gets three of its num
 # empty combination cells per empty School cell, all of them when none are left.
 CHOSEN = ((0, 0.70), (1, 0.25), (2, 0.05))
 FORCED = 0.5
+
+# How well it plays (owner, Backlog item 34: "Easy, medium and hard"). Hard is everything
+# above. The other two think as a person of that strength does, and stay sensible: they
+# choose among their few best options, never a poor one.
+# - foresight: how much of the board's potential (the bonuses still to win, what an empty
+#   cell is worth later) counts next to the points a move brings now. School is always
+#   counted in full: nobody lets the balance fall below zero for lack of foresight.
+# - deep: with two rolls left, whether it works out the second one too, or only the next.
+# - noise: how far it misjudges an option, in points (the spread of a normal error).
+LEVELS = ("easy", "medium", "hard")  # rooms.COMPUTER_LEVELS: a room keeps its game's level
+DEFAULT_LEVEL = "hard"               # a game without a level: those saved before there were levels
+SUGGESTED_LEVEL = "medium"           # the level a page or an app offers first
+SKILL = {
+    "easy": {"foresight": 0.3, "deep": False, "noise": 18.0},
+    "medium": {"foresight": 1.0, "deep": True, "noise": 7.0},
+    "hard": {"foresight": 1.0, "deep": True, "noise": 0.0},
+}
+CONSIDERED = 4                       # the options a level that misjudges chooses among: its best few
+
+
+def clean_level(level) -> str:
+    """A level by its name, or the default for anything else (a game saved before levels)."""
+    return level if level in SKILL else DEFAULT_LEVEL
+
+
+def level_name(level) -> str:
+    """A level as players read it, in the language of the page or request."""
+    return {"easy": t("Easy"), "medium": t("Medium"), "hard": t("Hard")}[clean_level(level)]
+
 
 NORMALS: List[Tuple[int, ...]] = list(combinations_with_replacement(range(1, 7), 4))
 _NORMAL_INDEX = {n: i for i, n in enumerate(NORMALS)}
@@ -145,9 +177,10 @@ def tables() -> _Tables:
 class _Board:
     """The computer's board as it stands this turn: what each kind of move would be worth."""
 
-    def __init__(self, engine, me: int) -> None:
+    def __init__(self, engine, me: int, foresight: float = 1.0) -> None:
         self.engine = engine
         self.me = me
+        self.foresight = foresight
         self.p = engine.players[me]
         self.others = [q for i, q in enumerate(engine.players) if i != me]
         table = self.p.table
@@ -259,16 +292,17 @@ class _Board:
         if found is None:
             column = self.slot[category]
             points = score + self._completes(category, column, score)
-            change = (-CELL[category] + self.school_after_combo
-                      + self._row_potential(category, score) - self._row_potential(category)
-                      + self._column_potential(column, category, score) - self._column_potential(column))
+            change = (self.school_after_combo + self.foresight * (
+                -CELL[category]
+                + self._row_potential(category, score) - self._row_potential(category)
+                + self._column_potential(column, category, score) - self._column_potential(column)))
             found = self._combo_cache[key] = (points, change)
         return found
 
     def _cross(self, category: Category) -> float:
         column = self.slot[category]
-        return (-CELL[category] + self.school_after_combo
-                - self._row_potential(category) - self._column_potential(column))
+        return self.school_after_combo + self.foresight * (
+            -CELL[category] - self._row_potential(category) - self._column_potential(column))
 
     def _school(self, category: Category, k: int) -> Optional[Tuple[float, float]]:
         """Writing School n with k dice of n: None if the rules refuse it (school.py)."""
@@ -291,8 +325,9 @@ class _Board:
         balance = self.balance + change_of_balance
         cells = list(self.school_cells)
         cells.remove(n)
-        change = (row_after - self._row_potential(category)
-                  + self._column_potential(column, category, written) - self._column_potential(column)
+        change = (self.foresight * (
+            row_after - self._row_potential(category)
+            + self._column_potential(column, category, written) - self._column_potential(column))
                   + self._school_future(balance, cells, self.combo_empty) - self.school_now)
         # A negative balance costs 100 a point at the end (player.py), and the total counts it at once.
         points += _end_points(balance) - _end_points(self.balance) - change_of_balance
@@ -375,10 +410,12 @@ def _hand_of(dice) -> int:
     return hand_index([d.value for d in dice if not d.is_joker], joker)
 
 
-def choose_keep(engine, board: Optional[_Board] = None) -> Optional[List[int]]:
+def choose_keep(engine, board: Optional[_Board] = None, deep: bool = True, noise: float = 0.0,
+                rng: Optional[random.Random] = None) -> Optional[List[int]]:
     """
     The dice to roll again (their positions), or None to write a cell now. Exact expected
-    values over the rolls left (one or two), the board's potential included.
+    values over the rolls left (one or two; only the next one unless `deep`), the board's
+    potential included. With `noise`, it misjudges its best few ways to keep dice.
     """
     g = plain_engine(engine)
     if not g.dice or g.rolls_left <= 0:
@@ -392,7 +429,7 @@ def choose_keep(engine, board: Optional[_Board] = None) -> Optional[List[int]]:
         hands, chances = t.outcomes[keep]
         return sum(values[h] * p for h, p in zip(hands, chances))
 
-    if g.rolls_left >= 2:
+    if g.rolls_left >= 2 and deep:
         # One more roll after this one: what each hand is worth with that roll still to come.
         after = list(final)
         cache: Dict[int, float] = {}
@@ -407,11 +444,18 @@ def choose_keep(engine, board: Optional[_Board] = None) -> Optional[List[int]]:
     else:
         values = final
     stand = _best_move_value(g, board)
-    best_keep, best = None, stand
-    for keep in t.hand_keeps[hand]:
-        v = expected(keep, values)
-        if v > best + 1e-9:
-            best_keep, best = keep, v
+    if noise:
+        # Its best few ways to keep, and writing now, each misjudged a little.
+        rng = rng or random
+        keeps = sorted(((expected(keep, values), keep) for keep in t.hand_keeps[hand]), reverse=True)
+        judged = [(v + rng.gauss(0, noise), keep) for v, keep in keeps[:CONSIDERED - 1]]
+        best, best_keep = max(judged + [(stand + rng.gauss(0, noise), None)], key=lambda o: o[0])
+    else:
+        best_keep, best = None, stand
+        for keep in t.hand_keeps[hand]:
+            v = expected(keep, values)
+            if v > best + 1e-9:
+                best_keep, best = keep, v
     if best_keep is None:
         return None
     return _positions_to_roll(g.dice, t.kept[best_keep])
@@ -448,34 +492,53 @@ def _scored(board: _Board, g, move) -> float:
     return float(move.points) + change
 
 
-def choose_move(engine, board: Optional[_Board] = None):
-    """The cell to write now: one of the moves the rules offer (score_options, cross_options)."""
+def choose_move(engine, board: Optional[_Board] = None, noise: float = 0.0,
+                rng: Optional[random.Random] = None):
+    """The cell to write now: one of the moves the rules offer (score_options, cross_options).
+    With `noise`, it misjudges its best few."""
     g = plain_engine(engine)
     board = board or _Board(g, g.current)
     options = score_options(g) + cross_options(g)
-    return max(options, key=lambda m: _scored(board, g, m))
+    if not noise:
+        return max(options, key=lambda m: _scored(board, g, m))
+    rng = rng or random
+    best = sorted(((_scored(board, g, m), i) for i, m in enumerate(options)), reverse=True)[:CONSIDERED]
+
+    def judged(option) -> float:
+        value, i = option
+        error = rng.gauss(0, noise)
+        move = options[i]
+        if move.category in SCHOOL_NUMBERS and not move.cross:
+            # Careful with School, as every player learns to be: a row with three or more of
+            # its number is never thought worse than it is, a payment from the balance never better.
+            error = -abs(error) if (move.balance_change or 0) < 0 else abs(error)
+        return value + error
+
+    return options[max(best, key=judged)[1]]
 
 
 def _best_move_value(g, board: _Board) -> float:
     return max(_scored(board, g, m) for m in score_options(g) + cross_options(g))
 
 
-def next_step(engine) -> Tuple:
+def next_step(engine, level: str = DEFAULT_LEVEL, rng: Optional[random.Random] = None) -> Tuple:
     """
     What the computer does next in its turn (the current player must be the computer):
     ("throw",), ("roll",), ("reroll", [positions]), ("score", row, slot) or ("cross", row, slot).
+    `level`: one of LEVELS (SKILL says how each plays).
     """
     g = plain_engine(engine)
     if g.choosing_first_player:
         return ("throw",)
     if not g.dice:
         return ("roll",)
-    board = _Board(g, g.current)
+    skill = SKILL[clean_level(level)]
+    board = _Board(g, g.current, skill["foresight"])
     if g.rolls_left > 0:
-        roll = choose_keep(g, board)
+        roll = choose_keep(g, board, skill["deep"], skill["noise"], rng)
         if roll:
             return ("reroll", roll)
-    move = choose_move(g, board)
+    move = choose_move(g, board, skill["noise"], rng)
     return ("cross" if move.cross else "score", move.category, move.slot)
 
 

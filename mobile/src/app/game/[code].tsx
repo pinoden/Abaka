@@ -350,9 +350,11 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
   busy: boolean;
   openedAt: number;
 }) {
-  const { t, rowName } = useApp();
+  const { t, rowName, info } = useApp();
   // The computer's seats are played by the server (Backlog item 33): nobody here moves for them.
   const computer = (state.computers ?? []).includes(game.current);
+  // How well it plays (Backlog item 34), in the server's words: "easy".
+  const level = info?.computer_levels?.find((l) => l.id === state.computer_level)?.label.toLowerCase();
   const myTurn = (state.local || game.current === state.you) && !computer;
   // The move being chosen is kept only for this throw: a new roll or turn starts afresh.
   const turn = `${game.number}.${game.current}.${game.rolls_left}.${game.dice.map((d) => d.value).join('')}`;
@@ -372,7 +374,7 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
           <StarterSummary state={state} game={game} />
           <Text testID="turn" style={[styles.turn, myTurn && !state.local && styles.turnMine]}>
             {myTurn && !state.local ? t('Your turn') : t('{name}’s turn', { name: state.names[game.current] })}
-            {computer ? ` · 🤖 ${t('computer')}` : ''}
+            {computer ? ` · 🤖 ${t('computer')}${level ? ` · ${level}` : ''}` : ''}
           </Text>
           <TurnLine state={state} game={game} myTurn={myTurn} />
           <DiceArea state={state} game={game} act={act} pick={pick} busy={busy} myTurn={myTurn}

@@ -28,6 +28,11 @@ export default function Home() {
   // The computer plays the last seats (Backlog item 33): none to all but one.
   const [computers, setComputers] = useState(0);
   const people = count - Math.min(computers, count - 1);
+  // How well the computer plays (Backlog item 34). The server names the levels; these are for an older one.
+  const levels = info?.computer_levels
+    ?? [{ id: 'easy', label: t('Easy') }, { id: 'medium', label: t('Medium') }, { id: 'hard', label: t('Hard') }];
+  const [chosenLevel, setLevel] = useState<string | null>(null);
+  const level = chosenLevel ?? info?.computer_level_suggested ?? 'medium';
   const [names, setNames] = useState(['', '', '', '', '']);
   const [myName, setMyName] = useState('');
   const [capacity, setCapacity] = useState(2);
@@ -165,6 +170,17 @@ export default function Home() {
           onChange={setComputers}
           options={Array.from({ length: count }, (_, n) => ({ value: n, label: String(n) }))}
         />
+        {count > people ? (
+          <>
+            <Text style={styles.label}>{t('Level')}</Text>
+            <Choice
+              testID="local-level"
+              value={level}
+              onChange={setLevel}
+              options={levels.map((l) => ({ value: l.id, label: l.label }))}
+            />
+          </>
+        ) : null}
         {names.slice(0, people).map((name, i) => (
           <Field
             key={i}
@@ -182,6 +198,7 @@ export default function Home() {
           onPress={() => start('create_local', {
             names: [...names.slice(0, people), ...Array(count - people).fill('')],
             computers: Array.from({ length: count - people }, (_, n) => people + n),
+            ...(count > people ? { level } : {}),
           })}
         />
       </Card>

@@ -13,7 +13,8 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 
 import {
-  ApiError, type Club, Connection, gamesToContinue, type GameEvent, type Move, type Rules, type Seat, type State,
+  ApiError, type Club, Connection, gamesToContinue, type GameEvent, type Info, type Move, type Rules, type Seat,
+  type State,
 } from '../src/lib/api.ts';
 import { offered, tableRows } from '../src/lib/clubs.ts';
 
@@ -116,9 +117,13 @@ describe('the API client against a real server', { skip }, () => {
 
   test('a game against the computer: the server plays its seat while the game is watched', async () => {
     const connection = connect();
-    const seat = await connection.request<Seat>('create_local', { names: ['Test Ann', ''], computers: [1] });
+    const info = await connection.request<Info>('info', {});
+    assert.deepEqual(info.computer_levels?.map((level) => level.id), ['easy', 'medium', 'hard']);
+    assert.equal(info.computer_level_suggested, 'medium');
+    const seat = await connection.request<Seat>('create_local', { names: ['Test Ann', ''], computers: [1], level: 'easy' });
     assert.deepEqual(seat.state.names, ['Test Ann', 'Computer']);
     assert.deepEqual(seat.state.computers, [1]);
+    assert.equal(seat.state.computer_level, 'easy');
     let seen: State | null = null;
     const stop = connection.startWatching(seat.code, seat.token, (s) => { seen = s; }, (e) => assert.fail(e.message));
     const end = Date.now() + 60000;

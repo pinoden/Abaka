@@ -2,14 +2,17 @@
 The computer player (abaka/bot.py) against simpler players, over many simulated games.
 
   python tools/bot_match.py [GAMES] [--seed N]
-  python tools/bot_match.py 200            # about 10 minutes
+  python tools/bot_match.py 200            # about 25 minutes
+  python tools/bot_match.py 200 --pair medium hard    # one pairing (run several at once)
 
 Plays two-player games on GameEngine, with the starting throw, seats alternating:
 the computer against a random player, against a greedy one (the most points now, on the
 first roll), against a careful one (keeps its most common number and rolls the rest, fills
 School rows whenever it has three of a number, never pays from the balance while anything
 else is offered), and the greedy player against itself for scale. Prints each side's average
-score, its win rate, and the computer's time per decision.
+score, its win rate, and the computer's time per decision. Then its three levels (Backlog
+item 34) against each other and against the careful player: "easy", "medium" and "hard"
+("computer" is hard).
 """
 import os
 import random
@@ -53,6 +56,9 @@ def careful_step(engine, rng):
 
 PLAYERS = {
     "computer": lambda engine, rng: bot.next_step(engine),
+    "easy": lambda engine, rng: bot.next_step(engine, "easy", rng),
+    "medium": lambda engine, rng: bot.next_step(engine, "medium", rng),
+    "hard": lambda engine, rng: bot.next_step(engine, "hard", rng),
     "greedy": bot.greedy_step,
     "random": bot.random_step,
     "careful": careful_step,
@@ -68,7 +74,7 @@ def play(first: str, second: str, rng: random.Random, timings: list) -> list:
         seat = engine.current
         started = time.perf_counter()
         step = policies[seat](engine, rng)
-        if names[seat] == "computer" and step[0] not in ("throw", "roll"):
+        if names[seat] in ("computer", "easy", "medium", "hard") and step[0] not in ("throw", "roll"):
             timings.append(time.perf_counter() - started)
         bot.apply_step(engine, step)
     return [p.calculate_score() for p in engine.players]
@@ -94,6 +100,13 @@ def match(a: str, b: str, games: int, rng: random.Random, timings: list) -> dict
 
 
 def main() -> None:
+    pair = None
+    if "--pair" in sys.argv:
+        at = sys.argv.index("--pair")
+        pair = tuple(sys.argv[at + 1:at + 3])
+        del sys.argv[at:at + 3]
+        if len(pair) != 2 or any(p not in PLAYERS for p in pair):
+            sys.exit("--pair takes two of: " + ", ".join(PLAYERS))
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     games = int(args[0]) if args else 100
     seed = int(sys.argv[sys.argv.index("--seed") + 1]) if "--seed" in sys.argv else 1
@@ -102,8 +115,11 @@ def main() -> None:
     bot.tables()
     timings: list = []
     started = time.time()
-    for a, b in (("computer", "random"), ("computer", "greedy"), ("computer", "careful"), ("greedy", "greedy"),
-                 ("careful", "careful")):
+    pairs = [pair] if pair else [("computer", "random"), ("computer", "greedy"), ("computer", "careful"),
+                                 ("greedy", "greedy"), ("careful", "careful"),
+                                 ("medium", "hard"), ("easy", "medium"), ("easy", "hard"),
+                                 ("medium", "careful"), ("easy", "careful")]
+    for a, b in pairs:
         result, draws = match(a, b, games, rng, timings)
         line = " vs ".join("%s: average %.0f, wins %.0f%%" % (k, avg, 100 * w) for k, (avg, w) in result.items())
         print("%d games, %s (draws %d)" % (games, line, draws), flush=True)
