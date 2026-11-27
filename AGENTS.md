@@ -68,7 +68,8 @@ phones are built (Backlog item 25). So:
   (`tests/test_website.py`, running `tools/website_check.py`):
   - the home page in English and Russian;
   - a game on one device;
-  - an online game between a desktop and a phone.
+  - an online game between a desktop and a phone;
+  - a game against the computer on a phone.
   A change that breaks them cannot be merged. Never skip, loosen or delete
   these checks to get a change in: fix the change. Extend them when the
   website gains something people rely on.

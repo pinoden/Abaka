@@ -31,6 +31,7 @@ python -m abaka                                       # CLI version
 python -m unittest discover -s tests -p "test_*.py"   # all tests
 python -m unittest tests.test_rooms -v                # one test module
 python tools/simulate.py 200 40                       # random complete games with rule checks (2-3 min)
+python tools/bot_match.py 200                         # the computer player against simpler players (about 10 min)
 python tools/loadtest.py --clients 100 --interval 1   # simulated pages polling every second: CPU, latency
 python tools/loadtest.py --clients 100 --interval 1 --set runner.postScriptGC=true   # compare a Streamlit option
 python tools/loadtest.py --baseline --record docs/LOADTEST.md   # the release baseline (about 1 min): adds a row, flags a slowdown
@@ -179,6 +180,8 @@ Python + Streamlit.
 | `abaka/rules.py` | The rules players read, in English and Russian: Markdown for the web page, blocks for apps (`rules_blocks`). No Streamlit |
 | `ui_components/effects.py` | Reactions (buttons, bubbles) and celebrations (fireworks, sparkles), drawn from the room's recent events |
 | `abaka/standings.py`, `ui_components/chart.py` | How the players stand, for one viewer: each row's difference from the opponent (the board's column behind the "Row differences" switch) and every total after each move (`engine.score_history`, the chart under the board). For the web page and apps |
+| `abaka/bot.py` | The computer player: what it does next in its turn (`next_step`), choosing among the moves the rules offer. No Streamlit |
+| `tools/bot_match.py` | The computer player against a random, a greedy and a careful player, over many simulated games |
 | `abaka/races.py`, `ui_components/races.py` | The races for the shared bonuses (cells left in column I and II, rows two players are one cell from), for the web page and apps; and their box under the dice |
 | `ui_components/dice.py`, `move_selection.py`, `scoreboard.py`, `rules.py` | Dice, move picker, score table, the rules dialog (its text is `abaka/rules.py`) |
 | `ui_components/style.py`, `.streamlit/config.toml` | CSS and dice SVGs; theme colours |
@@ -456,6 +459,38 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
   closed. The others see "<name> left." (`_announce_departures`). Once the
   game has started, leaving keeps the seat so the player can rejoin.
 
+### The computer player (Backlog item 33)
+
+- A same-device game can give seats to the computer: `store.create_local(names,
+  computers=[seats])`, saved with the room (`room.computers`). At least one seat is a
+  person's, and a game with the computer cannot be a club game (`RoomError`).
+- The store plays those seats itself, through its own moves (`throw_for_start`, `roll`,
+  `reroll`, `score`, `cross`) with the token `_COMPUTER`, a private object no page or app
+  can send. So the turn check, the lock, the version, effects and saving work as for
+  people. `_check_turn` refuses everyone else on the computer's turn ("It is the
+  computer's turn.").
+- Its steps are made by polls: `store.seen(code)`, which every page's check and the API's
+  live connection already call. A poll makes the next step once the room's last change
+  (or the computer's last shown pick) is `COMPUTER_PACE_SECONDS` (1 s) old.
+  - The step is worked out outside the lock, on the installed engine (never changed),
+    and made with the version it was worked out on: if anything changed meanwhile, it is
+    refused (`OutdatedPage`) and nothing happens. `room.computer_busy` keeps other polls
+    from working out the same step at once.
+  - Before a reroll it first shows the dice it will roll again (`room.picked`, not a
+    move), and the next step rolls exactly those (`room.computer_plan`, for that version).
+  - A fault in the bot is logged and a plain legal move made instead
+    (`bot.fallback_step`): the game never stops.
+  - With no page open, nothing happens; the next look carries on.
+- The web page polls every 0.5 s while the computer plays (`POLL_COMPUTER`), and shows its
+  turn like another player's on one screen: no buttons, a 🤖 mark on the turn, the picked
+  dice, the rerolled dice spinning, the move in "Last move".
+- The bot (`abaka/bot.py`) values a move as its points now plus the change it makes to
+  what the board can still earn: each empty cell's usual worth, the row and column
+  bonuses still open (times the chance of their cells getting numbers and of winning the
+  race), and the School balance's expected end (a negative one costs 100 a point). Which
+  dice to keep is an exact expectation over every outcome of the rolls left (756 hands:
+  four normal dice and the joker). See the Decision log, 2026-11-26.
+
 ### Clubs and the running score (Backlog item 17)
 
 - Every room remembers its finished games (`room.results`, the last 100:
@@ -726,7 +761,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1511,7 +1546,76 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - [x] A chart of the scores by move under the board (PR #74): a line per
       player, from move 0 to the latest, on the website and in the app.
 
+33. **A computer player.** Done in PR #75.
+    > "Set up a separate agent who will build a bot so you could play abaka
+    > against computer"
+    - On the website's home page, the same-device card has "Computer players"
+      (0 to all but one seat). The computer plays the last seats, named
+      "Computer" ("Computer 1", "Computer 2" with several; "Компьютер" in
+      Russian).
+    - It plays by itself, a step about every second, so the player sees its
+      throw, the dice it keeps (lifted, "Computer picked 2 dice to roll
+      again."), its rerolls and its move.
+    - In the app too: the same choice on the home screen, and its turn shown
+      the same way. Apps already installed show a computer's turn as another
+      player's (their screen offers no move then); they cannot start such a
+      game until they update.
+    - Through the API: `create_local` takes `computers`, and every state lists
+      them (`computers`). Protocol 1: fields added.
+    - Not in online games or club games: a game with the computer does not
+      count for a club's table (refused), so ratings stay between people.
+    - How well it plays (two players, 200 games each, `tools/bot_match.py`):
+      average 1023 against a random player, 968 against a greedy one
+      (the most points now), 994 against a careful one; it won
+      100%, 100% and 88% of those games. A decision takes 6.2 ms (median;
+      11.6 ms at the 95th percentile).
+
 ## Status (2026-11-26)
+
+- **A computer player (owner: "build a bot so you could play abaka against
+  computer", Backlog item 33):** PR #75.
+  - `abaka/bot.py` chooses the computer's steps among the moves the rules
+    offer; the store plays its seats in same-device games, a step a second,
+    through its own moves (Architecture, "The computer player").
+  - The website's same-device card and the app's home screen have "Computer
+    players"; the API's `create_local` takes `computers`.
+  - Against simpler players, two-player games, 200 each (`tools/bot_match.py`):
+
+    | Opponent | Computer's average | Opponent's average | Computer won |
+    |---|---|---|---|
+    | random | 1023 | −9775 | 100% |
+    | greedy (most points now) | 968 | −5451 | 100% |
+    | careful (rolls for its most common number, School first, never pays) | 994 | 413 | 88% |
+
+    Greedy and random players leave School rows to the end and finish far
+    below zero (-100 a point); the careful player against itself averaged
+    about 320.
+  - A decision takes 6.2 ms (median), 11.6 ms at the 95th percentile, slowest
+    75 ms, over 67,099 decisions on this Mac, worked out outside the
+    store's lock.
+  - Checked:
+    - 20 new tests (`tests/test_bot.py`): only offered moves, whole games for 2
+      to 5 players on the engine and through the store, better than a random
+      and a greedy player, decisions under 100 ms, the pace (nothing before a
+      second; the pick shown, then exactly those dice rolled), eight pages
+      polling at once making one step, people refused on its turn, a saved game
+      loaded by a new store and played on, clubs refused, a bot fault logged
+      and the game going on, the API (a whole game against it), the page (no
+      buttons on its turn, its mark, the quick checks).
+    - The website check plays a game against the computer on a phone until the
+      computer has moved and the player's turn is back; with the computer's
+      steps switched off it failed. The app's browser check does the same
+      (eight flows now); with the app not sending `computers` it failed. The
+      app's client test plays one against a real server.
+    - Headless Chromium, the website at 390px and 1300px, English and Russian,
+      three players with two computers: no sideways scrolling, each step
+      visible about a second apart.
+    - Every Python test on 3.13 (365; the 8 database tests skipped, no
+      Postgres here), 3.9 (363) and 3.8 (363); the app's 48 tests, typecheck,
+      lint and all eight browser flows; `tools/simulate.py 60 20`; the website
+      check on both local servers.
+  - Load-test row: no slowdown (31% CPU, 7.8 ms median poll, page run 84 ms against 97).
+
 
 - **A tester's second round, second part (Backlog item 32):** PR #74.
   - The board's column of row differences, behind a switch, on the website
@@ -2224,13 +2328,16 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
 - **Starting throw (owner request 5):** merged in PR #18. On the live app
   it crashed "Start game" until PR #19, which reloads modules left stale by
   the update (Decision log).
-- **Tests:** on Python 3.9 with Streamlit 1.48, 343 run and 20 are skipped:
+- **Tests:** on Python 3.9 with Streamlit 1.48, 363 run and 20 are skipped:
   the 9 database tests, which need a test database (CI has one), the 10
   network tests, which need Streamlit 1.67's packages, and the website
   checks, which need Streamlit 1.67 and Chromium (CI has them all). On 3.8,
-  343 run and 65 are skipped (9 need a database or psycopg; the others need
+  363 run and 66 are skipped (9 need a database or psycopg; the others need
   Streamlit). On 3.13 with Streamlit 1.67, Chromium and a test database, all
-  345 run and none is skipped. 13 standings tests (`test_standings.py`: row
+  365 run and none is skipped. 20 computer-player tests (`test_bot.py`: only
+  offered moves, whole games for 2 to 5 players, better than a random and a greedy
+  player, decision time, the pace, one step however many pages poll, people refused on
+  its turn, saved and loaded, clubs refused, a bot fault, the API, the page). 13 standings tests (`test_standings.py`: row
   differences with two and three players, on one device, adding up to the
   totals over whole games; the score history after every move, saved, cloned,
   and for games saved before it; the API; the board's HTML and the chart; the
@@ -2240,10 +2347,10 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   any way, or as a pasted link; the pages for a code alone, a wrong key and
   the full link; the home page's full code; the waiting room's key). 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 47 tests (`node --test`),
+  scan reads both quotes). The phone app has its own 48 tests (`node --test`),
   1 of them of the full code (`mobile/tests/codes.test.ts`: typed, pasted as a
   link, or a code alone, read as the server reads them).
-  8 against a real server (`mobile/tests/api.test.ts`: complete games on one
+  9 against a real server (`mobile/tests/api.test.ts`: a game against the computer, complete games on one
   device and online through its API client, pushes, reactions and chat with
   their words, a club game and its table, the rules in a request's own
   language, refusals, a seat taken back, the games to continue, an
@@ -2475,6 +2582,49 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-26: a computer player (Claude Code, PR #75)**
+
+- The owner asked for a bot to play against. It plays seats of same-device games,
+  rather than joining online games: one person and the computer share one screen, which
+  is what "play against computer" needs, and online play would bring questions with no
+  answer yet (who invites the computer, whether it may take a seat a friend would).
+- The store plays it, not the page: through the same moves as people (turn check, lock,
+  version, effects, saving), so the website, the app and any API client see it play
+  without code of their own, and a game left half way carries on when it is opened again.
+- Polls make its steps, rather than a timer thread: every page and live connection
+  already polls the room, a server nobody watches does nothing, and nothing new runs on
+  Streamlit Cloud. One step per second gives a person time to see each one; the page
+  checks twice a second during its turn. A turn takes 2 to 6 s.
+- No double play: the step is made with the room version it was worked out on, as a
+  page's move is, so of two polls at once only one can make it; a busy mark saves the
+  second poll the work.
+- It shows the dice it keeps before rolling the others, a step of its own: that is the
+  part of a turn a person cannot guess from the result.
+- The strategy, in abaka/bot.py: points now plus the change of what the board can still
+  earn. Chosen over a whole-game search, which Python cannot run in time; and over
+  "most points now", which leaves the School rows to the end and pays 100 a point for a
+  negative balance.
+  - Dice to keep: exact expected values over every outcome of the rolls left, with the
+    first roll's doubling for standing at once. Hands are the four normal dice as a
+    multiset and the joker's value (756), so this takes milliseconds.
+  - The School balance: its expected end, the empty School cells written either by
+    choice (three or more of their number) or by force when the combination cells run
+    out (aiming every roll at the number). The share of forced ones grows as the
+    combination cells run out. A first version that took a fixed reserve per School cell
+    ended about one game in nine below zero; this one about one in forty. A version
+    that counted every School cell as possibly forced valued the balance so highly it
+    wrote School 5 instead of Abaka on the first roll (a test keeps it).
+  - Its constants were tuned by playing variants against each other, 100 to 200 games
+    each; the defaults were best or within the noise.
+- Games with the computer do not count for a club: a club's rating is between friends,
+  and a computer member would move everyone's. Refused, rather than counted silently.
+- At least one seat is a person's: a game of computers only would play itself on the
+  server while someone watched.
+- Names: "Computer", or "Computer 1", "Computer 2" with several, in the language of the
+  page or request that makes the game, like "Player 2" for a blank name. A name, not a
+  flag in the name: the seat list (`computers`) says which seats are the computer's.
+
 
 **2026-11-26: a tester's second round, second part (Claude Code, PR #74)**
 
