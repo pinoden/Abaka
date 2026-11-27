@@ -296,9 +296,7 @@ class _Live:
 
 def _changed_state(request: dict, seen: Optional[str], address: str) -> Optional[Tuple[int, dict]]:
     """The watched game's (status, state) if it changed since `seen`, else None. Runs in a worker thread."""
-    # With the seat's token, so the server knows this seat's device is here (rooms.py, SEAT_HERE_SECONDS).
-    status, response = answer({k: v for k, v in (("op", "seen"), ("code", request["code"]), ("key", request["key"]),
-                                                 ("token", request.get("token"))) if v is not None}, address)
+    status, response = answer({"op": "seen", "code": request["code"], "key": request["key"]}, address)
     if status == 200 and response["seen"] == seen:
         return None
     return (status, response) if status != 200 else answer(request, address)

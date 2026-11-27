@@ -47,8 +47,7 @@ class TestLobby(unittest.TestCase):
 
     def test_reclaim_moves_the_seat_to_the_new_token(self):
         store, code, host, _ = started_room()
-        store.own(code, host, "anns-own-device-0001")
-        new_host = store.reclaim(code, 0, store.view(code).key, "anns-own-device-0001")
+        new_host = store.reclaim(code, 0, store.view(code).key)
         self.assertIsNone(store.seat_of(code, host))
         self.assertEqual(store.seat_of(code, new_host), 0)
         with self.assertRaises(RoomError):

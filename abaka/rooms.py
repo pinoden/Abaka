@@ -21,7 +21,6 @@ with `report_every`, a stats line per period (the app: once a minute).
 from __future__ import annotations
 
 import gc
-import hashlib
 import hmac
 import logging
 import os
@@ -33,7 +32,7 @@ import time
 import unicodedata
 from pathlib import Path
 from urllib.parse import unquote
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 from .engine import GameEngine
 from .models import Category
@@ -97,12 +96,6 @@ _COMPUTER = object()                  # the "token" the store plays a computer s
 # A game made without a level, or saved before there were levels, plays the last one.
 COMPUTER_LEVELS = ("easy", "medium", "hard")
 COMPUTER_LEVEL = "hard"
-# A seat belongs to the device that took it (owner, Backlog item 37). Another device gets it only
-# when it is let in: by the seat's own device while that is here, by another player once it is not.
-SEAT_HERE_SECONDS = 20.0              # a seat's device is "here" this long after its page last checked the game
-ASK_KEPT_SECONDS = 30.0               # a request to be let in lives this long after its device last asked about it
-ASK_AGAIN_SECONDS = 60.0              # after a refusal, that seat takes no new request this long
-_DEVICE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 log = logging.getLogger("abaka")
 
@@ -113,10 +106,6 @@ class RoomError(ValueError):
 
 class TooFast(RoomError):
     """A reaction sent too soon after the last one from the same seat. Nothing was sent."""
-
-
-class NotYours(RoomError):
-    """The seat belongs to another device: this one has to ask to be let in (RoomStore.ask)."""
 
 
 class OutdatedPage(RoomError):
@@ -201,11 +190,8 @@ class RoomView:
                  club: Optional[str] = None, results: Optional[List[dict]] = None,
                  picked: tuple = (), rerolled: tuple = (), picks: int = 0, events: tuple = (),
                  chat: tuple = (), last_event_id: int = 0, key: str = "", computers: tuple = (),
-                 computer_level: Optional[str] = None, asks: tuple = ()) -> None:
+                 computer_level: Optional[str] = None) -> None:
         self.code = code
-        # Devices asking to be let in to a seat: {"seat", "open"}. The seat's own page answers
-        # at any time; the other players only once it is `open` (the seat's device is not here).
-        self.asks = asks
         self.computers = computers    # seats the computer plays (abaka/bot.py)
         self.computer_level = computer_level  # how well it plays (bot.LEVELS); None without computers
         self.key = key                # the game's secret key: show it only to its players (full_code)
@@ -286,14 +272,6 @@ class _Room:
         self.computer_at = 0.0
         self.computer_plan: Optional[tuple] = None
         self.computer_busy = 0.0
-        # Whose seat is whose (Backlog item 37). Per seat, the hash of the secret its device keeps
-        # (saved; None: no device yet, as in a game saved before). Not saved: when each seat's
-        # page last checked the game, the requests to be let in (per seat: "ticket", "device",
-        # "polled", "open", "answer"), and when a seat last refused one.
-        self.devices: List[Optional[str]] = []
-        self.here: Dict[int, float] = {}
-        self.asks: Dict[int, dict] = {}
-        self.ask_refused: Dict[int, float] = {}
 
     def _next_id(self) -> "tuple[int, float]":
         now = time.time()
@@ -320,7 +298,6 @@ class _Room:
             "version": self.version, "games_played": self.games_played, "updated_at": self.updated_at,
             "club": self.club, "results": [dict(r, scores=list(r["scores"])) for r in self.results],
             "computers": list(self.computers), "computer_level": self.computer_level,
-            "devices": list(self.devices),
         }
 
     @classmethod
@@ -341,8 +318,6 @@ class _Room:
         # A game saved before the computer had levels goes on as it played: at its best.
         level = d.get("computer_level")
         room.computer_level = level if level in COMPUTER_LEVELS else COMPUTER_LEVEL
-        devices = [x if isinstance(x, str) else None for x in d.get("devices") or []]
-        room.devices = (devices + [None] * len(room.names))[:len(room.names)]
         room.last_seen = time.time()
         return room
 
@@ -429,12 +404,10 @@ class RoomStore:
         return "database" if state == "connected" else f"database:{state}"
 
     # ----- lobby -----
-    def create(self, host_name: str, players: int = 2, club: Optional[str] = None,
-               device: Optional[str] = None) -> "tuple[str, str]":
+    def create(self, host_name: str, players: int = 2, club: Optional[str] = None) -> "tuple[str, str]":
         """
         Open a new room for `players` players. Returns (room_code, seat_token) for the host.
-        With `club`, its games count for that club's table. `device`: the secret the host's
-        device keeps, which brings it back to its seat later (reclaim).
+        With `club`, its games count for that club's table.
         """
         if not MIN_PLAYERS <= int(players) <= MAX_PLAYERS:
             raise RoomError(f"A game is for {MIN_PLAYERS} to {MAX_PLAYERS} players.")
@@ -445,7 +418,7 @@ class RoomStore:
             room.club = club
             self._rooms[code] = room
             self._count("created")
-            token = self._seat(room, clean_name(host_name, "Player 1"), device)
+            token = self._seat(room, clean_name(host_name, "Player 1"))
             pending = self._snapshot(room)
         self._write(pending)
         return code, token
@@ -478,7 +451,6 @@ class RoomStore:
             token = secrets.token_urlsafe(16)
             room.names = [clean_name(n, f"Player {i}") for i, n in enumerate(names, 1)]
             room.tokens = [token] * len(names)  # one browser holds every seat
-            room.devices = [None] * len(names)
             room.computers = computers
             room.computer_level = level or COMPUTER_LEVEL
             room.engine = _new_engine(room, self.starting_throw)
@@ -496,10 +468,10 @@ class RoomStore:
                 raise RoomError("This is an online game: join it or rejoin as one of its players.")
             return room.tokens[0]
 
-    def join(self, code: str, name: str, key: Optional[str], device: Optional[str] = None) -> str:
+    def join(self, code: str, name: str, key: Optional[str]) -> str:
         """
         Take a free seat in a room, with its key (from the link or the full code). The game
-        starts once every seat is taken. `device`: the secret this device keeps (see create). In a club game a name already at the table (ignoring
+        starts once every seat is taken. In a club game a name already at the table (ignoring
         capitals and spaces) is refused: the club counts it as one member, who would then play
         against themselves.
         """
@@ -512,7 +484,7 @@ class RoomStore:
             if room.club is not None and member_key(name) in {member_key(n) for n in room.names}:
                 raise RoomError("Each player needs a different name.")
             name = _distinct(name, room.names)
-            token = self._seat(room, name, device)
+            token = self._seat(room, name)
             if len(room.names) == room.capacity:
                 room.engine = _new_engine(room, self.starting_throw)
             room.touch()
@@ -552,10 +524,6 @@ class RoomStore:
             seat = room.tokens.index(token)
             del room.names[seat]
             del room.tokens[seat]
-            del room.devices[seat]
-            if room.asks:
-                room._next_id()
-            room.here, room.asks, room.ask_refused = {}, {}, {}  # the seats moved up
             if not room.names:
                 del self._rooms[room.code]
                 self._unsave(room.code)
@@ -564,13 +532,10 @@ class RoomStore:
             pending = self._snapshot(room)
         self._write(pending)
 
-    def reclaim(self, code: str, seat: int, key: Optional[str], device: Optional[str] = None) -> str:
+    def reclaim(self, code: str, seat: int, key: Optional[str]) -> str:
         """
-        Come back to a seat on the device that holds it (after a page refresh, a dropped
-        session), with the game's key and the device's secret. The seat gets a fresh token, so
-        whichever tab held it before stops controlling it. Any other device is refused
-        (NotYours) and has to be let in (ask): knowing a game's link is not enough to play as
-        one of its players (owner, Backlog item 37).
+        Take over an existing seat (after a page refresh or a device switch), with the game's
+        key. The seat gets a fresh token, so whichever tab held it before stops controlling it.
         """
         with self._lock:
             room = self._get(code, key)
@@ -578,148 +543,12 @@ class RoomStore:
                 raise RoomError("That seat does not exist.")
             if room.local:
                 return room.tokens[0]
-            if not _same_device(room.devices[seat], _device_hash(device)):
-                raise NotYours("This seat is held on another device. Ask to be let in.")
-            token = self._take(room, seat, room.devices[seat])
+            token = secrets.token_urlsafe(16)
+            room.tokens[seat] = token
+            room.touch()
             pending = self._snapshot(room)
         self._write(pending)
         return token
-
-    def device_seat(self, code: str, key: Optional[str], device: Optional[str]) -> Optional[int]:
-        """The seat of this game that this device holds (it may reclaim it), or None."""
-        with self._lock:
-            room = self._get(code, key)
-            mine = _device_hash(device)
-            if room.local or mine is None:
-                return None
-            return next((i for i, held in enumerate(room.devices) if _same_device(held, mine)), None)
-
-    def own(self, code: str, token: str, device: Optional[str]) -> None:
-        """
-        The device that holds this seat's token keeps this secret from now on. For seats taken
-        before devices were remembered (a game saved before), and for a browser whose secret
-        changed while its page stayed open. Not a move: the room's version stays as it is (a
-        change would refuse the next click of every page of the game as outdated), so it is
-        saved with the game's next change. Pages call it on every run; it costs a comparison.
-        """
-        with self._lock:
-            room = self._room(code)
-            mine = _device_hash(device)
-            if room is None or room.local or mine is None or token not in room.tokens:
-                return
-            seat = room.tokens.index(token)
-            if not _same_device(room.devices[seat], mine):
-                room.devices[seat] = mine
-
-    def ask(self, code: str, seat: int, key: Optional[str], device: Optional[str]) -> str:
-        """
-        Ask to be let in to a seat from a device that does not hold it (a new phone, a browser
-        that lost its secret), with the game's key. Returns a ticket to ask about the answer
-        with (asked). The seat's own page can answer at once; the other players can once the
-        seat's device is not here. One request per seat at a time, and none for
-        ASK_AGAIN_SECONDS after a refusal (TooFast).
-        """
-        with self._lock:
-            room = self._get(code, key)
-            mine = _device_hash(device)
-            if room.local or mine is None or not 0 <= seat < len(room.names):
-                raise RoomError("That seat does not exist.")
-            now = time.time()
-            self._tidy_asks(room, now)
-            if now - room.ask_refused.get(seat, 0.0) < ASK_AGAIN_SECONDS:
-                raise TooFast("This seat was just refused. Try again in a minute.")
-            current = room.asks.get(seat)
-            if current is not None and current["device"] != mine:
-                raise TooFast("Someone has just asked for this seat. Try again in a moment.")
-            for other in [s for s, a in room.asks.items() if a["device"] == mine]:
-                del room.asks[other]  # one request per device
-            ticket = secrets.token_urlsafe(16)
-            room.asks[seat] = {"ticket": ticket, "device": mine, "polled": now, "answer": None,
-                               "open": not self._is_here(room, seat, now)}
-            room._next_id()  # the players' pages notice
-            return ticket
-
-    def asked(self, code: str, seat: int, key: Optional[str], ticket: str,
-              device: Optional[str]) -> "tuple[str, Optional[str]]":
-        """
-        What became of a request (ask): ("waiting", None), ("refused", None), ("gone", None) if
-        it lapsed or the game changed, or ("in", token) once someone let this device in. The
-        seat changes hands at that moment, not before: its old device plays on until the new one
-        has come for it. Asking keeps the request alive (ASK_KEPT_SECONDS).
-        """
-        pending = None
-        with self._lock:
-            room = self._get(code, key)
-            now = time.time()
-            self._tidy_asks(room, now)
-            mine = _device_hash(device)
-            request = room.asks.get(seat) if not room.local else None
-            if (request is None or mine is None or request["device"] != mine
-                    or not hmac.compare_digest(str(ticket), request["ticket"])):
-                return "gone", None
-            request["polled"] = now
-            if request["answer"] is None:
-                return "waiting", None
-            del room.asks[seat]
-            if not request["answer"]:
-                return "refused", None
-            token = self._take(room, seat, mine)
-            pending = self._snapshot(room)
-        self._write(pending)
-        return "in", token
-
-    def answer(self, code: str, token: str, seat: int, let_in: bool) -> None:
-        """
-        A seated player answers a request to be let in to `seat`. The seat's own holder may
-        always answer (it is their other device, or it is not them). Another player may only
-        once the seat's device is not here: then the table decides who sits at it.
-        """
-        with self._lock:
-            room = self._get(code)
-            if token not in room.tokens:
-                raise RoomError("You are not seated in this game.")
-            me = room.tokens.index(token)
-            now = time.time()
-            room.here[me] = now
-            self._tidy_asks(room, now)
-            request = room.asks.get(seat)
-            if request is None or request["answer"] is not None:
-                raise RoomError("Nobody is asking for that seat any more.")
-            if me != seat and not request["open"]:
-                raise RoomError("That player is here and decides.")
-            request["answer"] = bool(let_in)
-            if not let_in:
-                room.ask_refused[seat] = now
-            room._next_id()
-
-    @staticmethod
-    def _take(room: _Room, seat: int, device: Optional[str]) -> str:
-        """The seat changes hands: a new token, held by this device. Call with the lock held."""
-        token = secrets.token_urlsafe(16)
-        room.tokens[seat] = token
-        room.devices[seat] = device
-        room.here.pop(seat, None)
-        room.touch()
-        return token
-
-    @staticmethod
-    def _is_here(room: _Room, seat: int, now: float) -> bool:
-        return now - room.here.get(seat, 0.0) < SEAT_HERE_SECONDS
-
-    def _tidy_asks(self, room: _Room, now: float) -> None:
-        """
-        Requests whose device stopped asking are dropped, and a request is open to the other
-        players while its seat's device is not here. Call with the lock held.
-        """
-        changed = False
-        for seat, request in list(room.asks.items()):
-            if now - request["polled"] > ASK_KEPT_SECONDS or seat >= len(room.names):
-                del room.asks[seat]
-                changed = True
-            elif request["open"] == self._is_here(room, seat, now):
-                request["open"], changed = not request["open"], True  # its device went, or is back
-        if changed:
-            room._next_id()
 
     # ----- reading -----
     def exists(self, code: str) -> bool:
@@ -760,26 +589,17 @@ class RoomStore:
                             room.capacity, room.local, room.club, list(room.results),
                             room.picked, room.rerolled, room.picks, tuple(room.events), tuple(room.chat),
                             room.last_event_id, room.key, tuple(room.computers),
-                            room.computer_level if room.computers else None,
-                            tuple({"seat": seat, "open": request["open"]}
-                                  for seat, request in sorted(room.asks.items()) if request["answer"] is None))
+                            room.computer_level if room.computers else None)
 
-    def seen(self, code: str, token: Optional[str] = None):
+    def seen(self, code: str):
         """
         (version, picks, latest event id): changes when the room changes, the player whose turn
         it is picks other dice, or a reaction, effect or chat message arrives. Pages poll it
-        (RoomView.seen is the value they were drawn from). Cheap. With a seat's `token`, the
-        poll also says that seat's device is here (SEAT_HERE_SECONDS).
+        (RoomView.seen is the value they were drawn from). Cheap.
         """
         with self._lock:
             self._count("polls")
             room = self._room(code)
-            if room is not None and not room.local:
-                now = time.time()
-                if token is not None and token in room.tokens:
-                    room.here[room.tokens.index(token)] = now
-                if room.asks:
-                    self._tidy_asks(room, now)
             seen = (room.version, room.picks, room.last_event_id) if room else (-1, 0, 0)
             due = self._computer_due(room) if room is not None and room.computers else None
         self._report_if_due()
@@ -1132,11 +952,10 @@ class RoomStore:
             self._lock.acquire()
 
     @staticmethod
-    def _seat(room: _Room, name: str, device: Optional[str] = None) -> str:
+    def _seat(room: _Room, name: str) -> str:
         token = secrets.token_urlsafe(16)
         room.names.append(name)
         room.tokens.append(token)
-        room.devices.append(_device_hash(device))
         return token
 
     def _new_code(self) -> str:
@@ -1295,26 +1114,6 @@ def _memory_mb() -> Optional[float]:
     except (ImportError, OSError, ValueError):
         return None
     return peak / 2 ** 20 if sys.platform == "darwin" else peak / 1024  # bytes on macOS, KB on Linux
-
-
-def _device_hash(device: Optional[str]) -> Optional[str]:
-    """What a room keeps of a device's secret: its hash, so saved games hold nothing to play with."""
-    if not isinstance(device, str) or not _DEVICE_PATTERN.match(device):
-        return None
-    return hashlib.sha256(device.encode("ascii")).hexdigest()
-
-
-def _same_device(held: Optional[str], mine: Optional[str]) -> bool:
-    return held is not None and mine is not None and hmac.compare_digest(held, mine)
-
-
-def new_device() -> str:
-    """A secret for a device to keep (a browser's cookie, an app's storage): it holds its seats."""
-    return secrets.token_urlsafe(18)
-
-
-def is_device(value: Any) -> bool:
-    return isinstance(value, str) and bool(_DEVICE_PATTERN.match(value))
 
 
 def _new_key() -> str:
