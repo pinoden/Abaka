@@ -381,7 +381,11 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
     every session (`ui_components/device.py`, `st.components.v2`): it reads
     the stored secret, or stores the one the server offers, and sends it as
     its value over the page's own connection. So the server knows the browser
-    from a session's second run, a moment after the first.
+    a moment after a session's first run.
+    - The component sits in a fragment (`_ask_the_browser`, PR #83), so its
+      answer runs only that again. Outside one, its answer started a new run
+      of the page, and Streamlit cuts the run in progress short for that: a
+      click being handled just then was lost.
     - Not a cookie: on Streamlit Cloud the app never receives a cookie the
       page sets (found on the live app, PR #80; Decision log).
     - A page that needs the answer waits for it (`device_wait`): the invite of
@@ -855,7 +859,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #82 (first in PR #80, reverted by PR #81). Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #82 and PR #83 (first in PR #80, reverted by PR #81). Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1801,7 +1805,14 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - Every Python test on 3.13 (411; the 8 database tests skipped, no
       Postgres here), 3.9 and 3.8; the app's 48 tests, typecheck, lint and
       all eight browser flows; the website check on both local servers.
-    - After the merge, the live website check, with its reload step.
+    - After the merge, the live website check, with its reload step: the
+      online game passed, reload and visitor included.
+  - One of three live checks after PR #82 failed elsewhere: a same-device game
+    on a phone did not start after "Start game". The browser's answer arrived
+    while that click was being handled, and the click was lost (above).
+    PR #83 moved the component into a fragment; a fragment's run waits for
+    the page's run to end (Streamlit's `script_requests.py`). A person would
+    have had to press within a fraction of a second of the page appearing.
   - Load-test rows, one for each try: no slowdown (28% CPU, 7.1 ms median
     poll, page run 93 ms against 92 before the change).
   - Not done: a real phone; Safari.
@@ -3018,7 +3029,7 @@ Other ideas, not planned:
 
 ## Decision log
 
-**2026-11-27: a seat belongs to its device (Claude Code, PR #80, PR #81, PR #82)**
+**2026-11-27: a seat belongs to its device (Claude Code, PR #80, PR #81, PR #82, PR #83)**
 
 - The owner: "Find a way to fix seat takeover. We can't go to google play
   having that. How do other apps resolve it?"
@@ -3070,6 +3081,9 @@ Other ideas, not planned:
     knows the browser one run later than with a cookie; the one page that
     cannot wait a run (the invite of a started game) shows "Opening the
     game…" for that moment.
+  - PR #83: the component in a fragment. Any element whose value changes by
+    itself (not by a person's action) belongs in a fragment, or it can take
+    a click away from whoever is quick.
   - A rule from this: what depends on how the host passes requests on
     (cookies, headers, addresses) is not proven by a local server or CI. Say
     so before the merge, and let the live check test it at once, as it did.
