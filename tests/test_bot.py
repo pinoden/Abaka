@@ -1,6 +1,7 @@
 """
 The computer player (abaka/bot.py, Backlog item 33): it plays only moves the rules offer,
 finishes whole games, plays better than a random and a greedy player, and decides fast.
+It plays at three levels (Backlog item 34): Easy, Medium and Hard, each stronger than the last.
 In a room (abaka/rooms.py) it plays its seats through the store, a step at a time, paced so
 a person sees each one, never twice for one step, across saving and loading, and through the
 API. The web page draws its turn without buttons for anyone else.
@@ -168,6 +169,99 @@ class TestDecisions(unittest.TestCase):
             set_language("en")
 
 
+def at_level(level):
+    return lambda engine, rng: bot.next_step(engine, level, rng)
+
+
+class Wild:
+    """A source of chance whose errors are huge: a level that misjudged this badly."""
+
+    def __init__(self, seed):
+        self.rng = random.Random(seed)
+
+    def gauss(self, mean, spread):
+        return self.rng.choice((-1, 1)) * 1e6 * self.rng.random()
+
+
+class TestLevels(unittest.TestCase):
+    """Easy, Medium and Hard (owner, Backlog item 34)."""
+
+    def match(self, strong, weak, games, seed):
+        """Total points of each over `games` two-player games, seats alternating."""
+        totals = [0, 0]
+        for n in range(games):
+            seats = [at_level(strong), at_level(weak)] if n % 2 == 0 else [at_level(weak), at_level(strong)]
+            scores = [p.calculate_score() for p in play_game(seats, seed + n).players]
+            totals[0] += scores[n % 2]
+            totals[1] += scores[1 - n % 2]
+        return totals
+
+    def test_each_level_is_stronger_than_the_one_before(self):
+        for strong, weak, games in (("hard", "easy", 2), ("medium", "easy", 4), ("hard", "medium", 8)):
+            with self.subTest(strong=strong, weak=weak):
+                ours, theirs = self.match(strong, weak, games, seed=300)
+                self.assertGreater(ours, theirs + 50 * games, (ours, theirs))
+
+    def test_every_level_plays_only_what_the_rules_offer(self):
+        for level in bot.LEVELS:
+            with self.subTest(level=level):
+                engine = play_game([at_level(level)] * 3, seed=40)  # apply_step refuses anything else
+                self.assertTrue(engine.is_game_over())
+                self.assertGreater(sum(p.calculate_score() for p in engine.players), 0)
+
+    def test_hard_is_the_computer_as_it_was_and_the_default(self):
+        self.assertEqual(bot.DEFAULT_LEVEL, "hard")
+        self.assertEqual(bot.SKILL["hard"], {"foresight": 1.0, "deep": True, "noise": 0.0})
+        random.seed(9)
+        engine = GameEngine(["A", "B"])
+        for _ in range(40):
+            self.assertEqual(bot.next_step(engine), bot.next_step(engine, "hard"))
+            self.assertEqual(bot.next_step(engine), bot.next_step(engine, "no such level"))
+            bot.apply_step(engine, bot.next_step(engine))
+
+    def test_a_weaker_level_never_picks_a_poor_option(self):
+        """However badly it misjudges, a level chooses among its best few moves and its best few
+        ways to keep dice, and writing now is always one of them."""
+        random.seed(12)
+        engine = GameEngine(["A", "B"])
+        wild = Wild(12)
+        checked = 0
+        while not engine.is_game_over() and checked < 60:
+            if not engine.dice:
+                engine.start_turn()
+            board = bot._Board(engine, engine.current)
+            options = score_options(engine) + cross_options(engine)
+            best = sorted((bot._scored(board, engine, m) for m in options), reverse=True)[:bot.CONSIDERED]
+            for _ in range(5):
+                move = bot.choose_move(engine, noise=1.0, rng=wild)
+                self.assertGreaterEqual(bot._scored(board, engine, move), best[-1] - 1e-9)
+            if engine.rolls_left:
+                rolls = {tuple(bot.choose_keep(engine, noise=1.0, rng=wild) or ()) for _ in range(40)}
+                self.assertLessEqual(len(rolls), bot.CONSIDERED)
+            checked += 1
+            bot.apply_step(engine, bot.next_step(engine, "easy", wild))
+
+    def test_every_level_writes_a_great_first_roll_at_once(self):
+        for level in bot.LEVELS:
+            rng = random.Random(3)
+            for _ in range(30):
+                engine = GameEngine(["A", "B"])
+                engine.start_turn()
+                set_dice(engine, [6, 6, 6, 6], 6)  # Abaka on the first roll: 160
+                self.assertEqual(bot.next_step(engine, level, rng), ("score", Category.ABAKA, 0), level)
+
+    def test_names_of_the_levels(self):
+        set_language("en")
+        self.assertEqual([bot.level_name(level) for level in bot.LEVELS], ["Easy", "Medium", "Hard"])
+        set_language("ru")
+        try:
+            self.assertEqual([bot.level_name(level) for level in bot.LEVELS], ["Лёгкий", "Средний", "Сложный"])
+        finally:
+            set_language("en")
+        self.assertEqual(tuple(bot.LEVELS), tuple(rooms.COMPUTER_LEVELS))
+        self.assertEqual(bot.DEFAULT_LEVEL, rooms.COMPUTER_LEVEL)
+
+
 class Clock:
     """time.time() for the store, moved on by hand."""
 
@@ -294,9 +388,9 @@ class TestInARoom(unittest.TestCase):
             code, token = store.create_local(["Hal", "Ann"], computers=[0])
             slow = bot.next_step
 
-            def thinking(engine):
+            def thinking(engine, *level):
                 time.sleep(0.05)  # while one page works out the step, the others poll
-                return slow(engine)
+                return slow(engine, *level)
 
             with mock.patch.object(bot, "next_step", thinking):
                 for _ in range(6):
@@ -339,6 +433,45 @@ class TestInARoom(unittest.TestCase):
             store.create_local(["Hal", "Eve"], computers=[0, 1])
         with self.assertRaisesRegex(RoomError, "does not exist"):
             store.create_local(["Ann", "Hal"], computers=[2])
+
+    def test_a_game_keeps_its_level(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = RoomStore(save_dir=folder, computer_pace=0)
+            code, token = store.create_local(["Ann", "Hal"], computers=[1], level="easy")
+            plain, _ = store.create_local(["Ann", "Hal"], computers=[1])
+            people, _ = store.create_local(["Ann", "Bob"])
+            self.assertEqual(store.view(code).computer_level, "easy")
+            self.assertEqual(store.view(plain).computer_level, "hard")  # as before there were levels
+            self.assertIsNone(store.view(people).computer_level)
+            with self.assertRaisesRegex(RoomError, "level does not exist"):
+                store.create_local(["Ann", "Hal"], computers=[1], level="grandmaster")
+            asked = []
+            choose = bot.next_step
+
+            def recording(engine, *level):
+                asked.append(level)
+                return choose(engine, *level)
+
+            with mock.patch.object(bot, "next_step", recording):
+                while not asked:
+                    if store.view(code).engine.current == 0:
+                        store.throw_for_start(code, token)
+                    store.seen(code)
+            self.assertEqual(asked[0], ("easy",))
+            store.retire()
+            again = RoomStore(save_dir=folder, computer_pace=0)
+            self.assertEqual(again.view(code).computer_level, "easy")
+            self.assertEqual(again.view(plain).computer_level, "hard")
+
+    def test_a_game_saved_before_levels_plays_on_at_its_best(self):
+        room = rooms._Room("ABCDE", 2, local=True)
+        room.names, room.tokens, room.computers = ["Ann", "Hal"], ["t", "t"], [1]
+        data = room.to_data()
+        self.assertEqual(data["computer_level"], "hard")
+        del data["computer_level"]
+        self.assertEqual(rooms._Room.from_data(data).computer_level, "hard")
+        self.assertEqual(rooms._Room.from_data(dict(data, computer_level="???")).computer_level, "hard")
+        self.assertEqual(rooms._Room.from_data(dict(data, computer_level="medium")).computer_level, "medium")
 
     def test_a_fault_in_the_bot_never_stops_the_game(self):
         store = self.store(computer_pace=0)
@@ -400,6 +533,24 @@ class TestApi(unittest.TestCase):
     def test_games_without_the_computer_say_so(self):
         state = self.call(op="create_local", names=["Ann", "Bob"])["state"]
         self.assertEqual(state["computers"], [])
+        self.assertIsNone(state["computer_level"])
+
+    def test_the_level(self):
+        info = self.call(op="info", lang="ru")
+        self.assertEqual(info["computer_levels"], [{"id": "easy", "label": "Лёгкий"},
+                                                   {"id": "medium", "label": "Средний"},
+                                                   {"id": "hard", "label": "Сложный"}])
+        self.assertEqual(info["computer_level_suggested"], "medium")
+        for level in ("easy", "medium", "hard"):
+            state = self.call(op="create_local", names=["Ann", ""], computers=[1], level=level)["state"]
+            self.assertEqual(state["computer_level"], level)
+        # Without a level, the computer plays as it did before there were levels.
+        state = self.call(op="create_local", names=["Ann", ""], computers=[1])["state"]
+        self.assertEqual(state["computer_level"], "hard")
+        for level in ("expert", 2, ["easy"], ""):
+            with self.assertRaises(ApiError) as e:
+                self.call(op="create_local", names=["Ann", ""], computers=[1], level=level)
+            self.assertEqual(e.exception.code, "bad_request", level)
 
 
 @unittest.skipIf(AppTest is None, "Streamlit is not installed")
@@ -458,7 +609,12 @@ class TestThePage(unittest.TestCase):
         store = self.stores[0]
         if hasattr(element_tree.ButtonGroup, "_is_single_select"):
             control = next(c for c in at.button_group if c.key == "local_computers_2")
+            self.assertFalse([c for c in at.button_group if c.key == "local_level"])  # no computer, no level
             control.set_value(1)
+            self.run_page(at)
+            level = next(c for c in at.button_group if c.key == "local_level")
+            self.assertEqual(level.value, "medium")  # the level offered first
+            level.set_value("easy")
             self.run_page(at)
             self.assertEqual([b.label for b in at.text_input if b.key.startswith("local_p")], ["Player 1"])
             at.text_input(key="local_p1").input("Ann")
@@ -466,7 +622,7 @@ class TestThePage(unittest.TestCase):
             self.run_page(at)
             code = at.session_state["room_code"]
         else:  # AppTest 1.48 cannot set a segmented control the page has not used yet: the game as the card makes it
-            code, token = store.create_local(["Ann", "Computer"], computers=[1])
+            code, token = store.create_local(["Ann", "Computer"], computers=[1], level="easy")
             at = AppTest.from_file(APP, default_timeout=30)
             at.query_params["room"] = code
             at.session_state["room_code"], at.session_state["seat_token"] = code, token
@@ -474,6 +630,7 @@ class TestThePage(unittest.TestCase):
         view = store.view(code)
         self.assertEqual(view.names, ["Ann", "Computer"])
         self.assertEqual(view.computers, (1,))
+        self.assertEqual(view.computer_level, "easy")
         store.computer_pace = 1e9  # the page's own checks make no step: the test makes them
 
         def computer_step():
@@ -501,7 +658,7 @@ class TestThePage(unittest.TestCase):
         self.assertEqual(store.view(code).engine.current, 1)
         # The computer's turn: no buttons to play it, a mark on the turn, quick checks of the room.
         self.assertFalse([b for b in at.button if b.key in ("roll", "start-throw", "confirm")])
-        self.assertIn("computer", " ".join(h.proto.body for h in at.get("html")))
+        self.assertIn("computer · easy", " ".join(h.proto.body for h in at.get("html")))
         self.assertEqual(self.polls[-1], 0.5)
         for _ in range(10):
             if store.view(code).engine.current == 0:

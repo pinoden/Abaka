@@ -152,6 +152,8 @@ export type State = {
   names: string[];
   /** The seats the computer plays (Backlog item 33): the server makes their moves. Older servers leave it out. */
   computers?: number[];
+  /** How well the computer plays in this game (Backlog item 34): an id of `info.computer_levels`. Null without computers. */
+  computer_level?: string | null;
   seated: boolean;
   you: number | null;
   phase: Phase;
@@ -196,6 +198,9 @@ export type Info = {
   reactions: string[];
   /** The reaction buttons in their order, with labels in the request's language. */
   reaction_list?: { id: string; emoji: string; label: string }[];
+  /** How well the computer can play, weakest first (Backlog item 34), and the level to offer first. */
+  computer_levels?: { id: string; label: string }[];
+  computer_level_suggested?: string;
   rows: RowInfo[];
 };
 

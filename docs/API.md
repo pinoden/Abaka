@@ -70,7 +70,7 @@ comes back in the state, not what was typed:
 #### `info`
 What an app needs once per language: `protocol`, `languages`, `players` (`min`,
 `max`), `limits` (name, chat message and club name lengths), `reactions` (their
-ids), `reaction_list` and `rows`.
+ids), `reaction_list`, `rows`, `computer_levels` and `computer_level_suggested`.
 - `rows` lists the board's 15 rows in board order, each
   `{"row": "SCHOOL_1", "name": "School 1", "hint": "...", "school": true}`, with the
   name and hint in the request's language.
@@ -78,6 +78,10 @@ ids), `reaction_list` and `rows`.
   `{"id": "lucky", "emoji": "🍀", "label": "Lucky!"}`, with the label in the
   request's language. Show these, and a reaction the server adds later appears by
   itself.
+- `computer_levels` lists how well the computer can play, weakest first, each
+  `{"id": "easy", "label": "Easy"}`, with the label in the request's language;
+  `computer_level_suggested` is the id to offer first (`"medium"`). They are
+  `create_local`'s `level`.
 
 #### `create`
 An online game. `name` (blank: "Player 1"), `players` (2 to 5, default 2), `club`
@@ -87,7 +91,7 @@ every seat is taken, or when the creator sends `start_now`.
 
 #### `create_local`
 A game on one device: `names` (2 to 5; blank names become "Player 2"...), `club`
-(optional), `computers` (optional). One token plays every seat. Answer:
+(optional), `computers` (optional), `level` (optional). One token plays every seat. Answer:
 `{"code", "token", "state"}`.
 In a club game every name must be different, ignoring capitals and spaces;
 otherwise the request is `refused`.
@@ -98,6 +102,12 @@ otherwise the request is `refused`.
 be a person's, and games against the computer do not count for a club: either is
 `refused`. The server plays the computer's turns by itself (see "The computer"
 below).
+
+`level` says how well the computer plays: one of the ids in `info`'s
+`computer_levels` (`"easy"`, `"medium"`, `"hard"`); anything else is a
+`bad_request`. Without it the computer plays `"hard"`, as it did before there
+were levels. An app offers `info`'s `computer_level_suggested` first. One level
+serves every computer seat of the game, and "Play again" keeps it.
 
 #### `join`
 Take the next free seat of an online game: `code`, `key`, `name`. Names are made distinct
@@ -134,6 +144,12 @@ with `seen`, which `watch` on the live connection does four times a second: watc
 the game (or ask `seen` every half second) while it is the computer's turn. Its
 moves are ordinary moves: they change `version`, and bring effects like anyone's.
 On the computer's turn `can` offers no move and `moves` is null.
+
+Its levels: Hard works out every way to keep dice exactly and weighs the bonuses
+and the School balance. Medium thinks the same way but misjudges its options a
+little; Easy misjudges them more, looks only one roll ahead and gives the bonuses
+little weight. Each chooses among its best few options, so none plays a senseless
+move. The state's `computer_level` names the game's level.
 
 ### Playing
 
@@ -231,6 +247,7 @@ them: ask for the rules again rather than keeping them in the app.
   "club": null,
   "names": ["Ann", "Bob", "Cy"],
   "computers": [],
+  "computer_level": null,
   "seated": true,
   "you": 1,
   "phase": "playing",
@@ -256,6 +273,7 @@ them: ask for the rules again rather than keeping them in the app.
 | `capacity` | How many players the game is for. |
 | `names` | The players in seat order. Seat 0 created the game. |
 | `computers` | The seats the computer plays (`create_local`'s `computers`), empty in other games. |
+| `computer_level` | How well the computer plays in this game: an id of `info`'s `computer_levels`. Null without computers. |
 | `seated`, `you` | Whether the token holds a seat, and which one (null on one device). |
 | `phase` | `waiting` (players joining), `starting_throw` (deciding who goes first), `playing`, `over`. |
 | `can` | What this player may do now: the operations to offer. |

@@ -140,6 +140,7 @@ _ERRORS_RU = {
     "Slow down a little: about one message a second.": "Чуть помедленнее: примерно одно сообщение в секунду.",
     "Each player needs a different name.": "У каждого игрока должно быть своё имя.",
     "At least one player must be a person.": "Хотя бы один игрок должен быть человеком.",
+    "That level does not exist.": "Такого уровня нет.",
     "Games against the computer do not count for a club.": "Игры с компьютером не идут в зачёт клуба.",
     "It is the computer's turn.": "Сейчас ходит компьютер.",
 }
@@ -240,6 +241,13 @@ RU = {
     "Computer {n}": "Компьютер {n}",
     "computer": "компьютер",
     "The computer is choosing its move.": "Компьютер выбирает ход.",
+    # ----- the computer's levels (Backlog item 34) -----
+    "Level": "Уровень",
+    "Easy": "Лёгкий",
+    "Medium": "Средний",
+    "Hard": "Сложный",
+    "How well the computer plays. Easy makes mistakes, Hard works out every roll.":
+        "Насколько сильно играет компьютер. Лёгкий ошибается, сложный просчитывает каждый бросок.",
     "Players": "Игроки",
     "Start game": "Начать игру",
     "Online": "Онлайн",

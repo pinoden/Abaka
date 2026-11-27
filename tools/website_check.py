@@ -218,17 +218,20 @@ def check_one_device(browser, url: str, size: Tuple[int, int], label: str, games
 
 
 def check_computer(browser, url: str, size: Tuple[int, int], label: str, games: List[str]) -> None:
-    """A game against the computer (Backlog item 33): it throws, rolls and writes by itself."""
+    """A game against the computer (Backlog item 33), at a chosen level (item 34): it throws, rolls
+    and writes by itself."""
     s = Screen(browser, url + "?lang=en", size, f"a game against the computer ({label})")
     s.see(s.app.locator(".st-key-local_computers_2 button", has_text="1"), 'the "Computer players" choice',
           START_MS).click()
     s.see(s.app.locator(".ab-computers", has_text=COMPUTER), "the computer's seat in the card")
     s.until(lambda: s.app.get_by_label("Player 2").count() == 0, "the second name box giving way to the computer")
+    # Its level (Backlog item 34): Easy, Medium or Hard, shown with its mark on its turn.
+    s.see(s.app.locator(".st-key-local_level button", has_text="Easy"), 'the "Level" choice').click()
     s.see(s.app.get_by_label("Player 1"), "the Player 1 box").fill(NAMES[0])
     s.see(s.app.get_by_role("button", name="Start game"), 'the "Start game" button').click()
     s.see(s.app.get_by_text("Who goes first?"), '"Who goes first?"')
     games.append(s.room().split("-")[0])
-    roll, mark = s.key("roll"), s.app.locator(".ab-chip", has_text="computer")
+    roll, mark = s.key("roll"), s.app.locator(".ab-chip", has_text="computer · easy")
     for _ in range(60):  # the player throws; the computer throws by itself; a tie throws again
         if roll.count() or (mark.count() and not s.app.get_by_text("Who goes first?").count()):
             break
@@ -239,7 +242,7 @@ def check_computer(browser, url: str, size: Tuple[int, int], label: str, games: 
     if roll.count():  # the player goes first
         roll.first.click()
         write_best(s)
-    s.see(mark, "the computer's mark on its turn")
+    s.see(mark, "the computer's mark and level on its turn")
     s.see(s.app.get_by_text(re.compile(f"Last move: {COMPUTER} ")), "the computer's move in the \"Last move\" line")
     s.see(roll, "the player's Roll dice button after the computer's turn")
     s.healthy()

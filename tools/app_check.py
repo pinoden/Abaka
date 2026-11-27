@@ -678,18 +678,26 @@ def check_computer(browser, url: str, games: List[str]) -> None:
         phone.see(phone.id("start-local"), "the home page")
         phone.id("local-computers").get_by_role("radio", name="1").click()
         phone.until(lambda: phone.id("local-name-1").count() == 0, "the second name box giving way to the computer")
+        # Its level (Backlog item 34), shown with its mark on its turn.
+        phone.see(phone.id("local-level"), "the level choice").get_by_role("radio", name="Easy").click()
+        marked = lambda: "computer · easy" in phone.id("turn").first.inner_text()  # noqa: E731
         phone.id("local-name-0").fill(NAMES[0])
         phone.id("start-local").click()
         phone.see(phone.id("start-throw"), "the starting throw")
         games.append(phone.page.url.rstrip("/").split("/")[-1].split("?")[0])
         phone.throw_until_decided()  # the computer throws by itself, and plays its turn if it goes first
-        if not phone.id("last-move").count():  # the player goes first
+        player_first = not phone.id("last-move").count()
+        if player_first:
             phone.id("roll").first.click()
             write_best(phone)
-            phone.until(lambda: "computer" in phone.id("turn").first.inner_text(), "the computer's mark on its turn")
+            phone.until(marked, "the computer's mark and level on its turn")
         phone.until(lambda: phone.id("last-move").count() and "Computer" in phone.id("last-move").first.inner_text(),
                     "the computer's move under the board")
         phone.see(phone.id("roll"), "the player's turn after the computer's")
+        if not player_first:  # the computer went first: its mark shows on its next turn
+            phone.id("roll").first.click()
+            write_best(phone)
+            phone.until(marked, "the computer's mark and level on its turn")
         phone.healthy()
     finally:
         phone.close()
