@@ -131,6 +131,44 @@ $ADB shell svc wifi disable; $ADB shell svc data disable      # no network (enab
 - The phone has the Mac's keyboard, so Android hides its own unless
   `adb shell settings put secure show_ime_with_hard_keyboard 1` (already set here).
 
+### Playing it from a script (the live tests of 2026-11-28, Backlog item 39)
+
+The live tests drove the app on the emulator through adb while the other players were
+browsers. What they taught:
+
+- **Run the app as players will:** `npx expo start --android --no-dev --minify` serves a
+  production bundle (no developer checks, no developer menu). It also loads the phone far
+  less. `adb shell pm clear host.exp.exponent` gives a phone that never ran the app (and
+  brings back Expo Go's one-time developer-menu sheet: its "Continue" closes it).
+- **Android's Back leaves the screen** when no keyboard is up: a game screen goes home. So
+  close the keyboard with Back only while it is showing, which `adb shell dumpsys window`
+  says (`InsetsSource ... type=ime ... visible=true`). `dumpsys input_method`'s
+  `mInputShown` is not reliable for this.
+- **Before typing into a box,** select and delete what is there: `adb shell input
+  keycombination 113 29`, then `input keyevent 67`. `input text` types ASCII only, so
+  Cyrillic can only be checked as text that arrives.
+- **One uiautomator at a time:** a second dump kills the first ("Killed"). A dump holds only
+  what is on the screen: read the "Connecting…" note at the top only after scrolling to the
+  top, and the chat only after scrolling to it.
+- **A bubble's words are in child views** without test ids: read the texts inside the
+  `bubble` element's bounds.
+- **The knock (haptics)** shows in `adb shell dumpsys vibrator_manager`, by package
+  (`host.exp.exponent`).
+- **A picked die** is `selected="true"` in the dump (its `accessibilityState`), which is
+  what TalkBack reads.
+- **Coming back from the background:** `input keyevent 3` (home), later
+  `input keyevent KEYCODE_APP_SWITCH` and a tap on the middle of the screen.
+  **No network:** `svc wifi disable` and `svc data disable`; `adb shell ping -c 1
+  <the Mac's address>` says when the phone's network is really back.
+- **Expo Go needs the development server for a cold start.** Started while the phone is
+  offline, it shows "Something went wrong" ("Failed to download remote update"). That is
+  Expo Go loading the bundle; an installed build carries its own.
+- **This Mac has 8 GB.** With other projects' browser tests running, the emulator's memory
+  goes to swap and Android stops answering ("System UI isn't responding", uiautomator
+  timing out, the app's typing taking seconds). Check `top -l 1 -n 0 | grep PhysMem` first;
+  `adb shell cat /proc/loadavg` over about 5 means wait. A script should tap "Wait" on such
+  a dialog rather than fail.
+
 ## Expo has changed: do not trust your training data
 
 Expo ships breaking changes every SDK release. Before writing code that touches an Expo,
@@ -181,8 +219,10 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
   with the widest text it can hold, on a 360px phone, not with today's text. So is the
   board with two players.
 - Anything to tap is at least 40px high and wide (`tools/app_check.py` fails otherwise), and
-  a choice says whether it is picked with `aria-checked` (a pressed button: `aria-pressed`),
-  not `accessibilityState`, which the web build does not write into the page.
+  a choice says whether it is picked with `aria-checked`, which both phones and the web
+  build read. A pressed button (a die, a club's player) needs two: `aria-pressed` for the
+  web build and `accessibilityState={{ selected }}` for phones, since React Native ignores
+  `aria-pressed` and the web build ignores `accessibilityState` (`tests/a11y.test.ts`).
 - Colours come from `colors` in `src/components/ui.tsx`, the website's (text at least 4.5:1
   on its background).
 - On a wide screen (`isWide`, `src/lib/board.ts`) a game's table is two columns. Only

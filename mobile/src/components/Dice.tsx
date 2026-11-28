@@ -79,6 +79,8 @@ export function DieFace({ die, size, picked, spinKey, onPress, label, testID }: 
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
+      // Picked, said twice: React Native reads accessibilityState on phones, the web build aria-pressed.
+      accessibilityState={{ selected: !!picked }}
       aria-pressed={!!picked}
       onPress={onPress}
       hitSlop={4}>
