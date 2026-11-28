@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
   done: { color: colors.green, fontWeight: '700' },
   crossed: { color: colors.faint },
   negative: { color: colors.red },
-  last: { backgroundColor: colors.lastSoft, color: '#9A4D00', fontWeight: '700' },
+  last: { backgroundColor: colors.lastSoft, color: '#A04A08', fontWeight: '700' },
   target: { backgroundColor: colors.accent, color: '#FFFFFF', fontWeight: '700' },
   total: { fontWeight: '700', fontSize: 15 },
   diffHead: { textAlign: 'right', fontSize: 15, fontWeight: '700', color: colors.muted, paddingRight: 2 },

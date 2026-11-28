@@ -859,7 +859,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #82 and PR #83 (first in PR #80, reverted by PR #81). Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #82 and PR #83 (first in PR #80, reverted by PR #81). Item 38 (2026-11-28, the app measured as the site was, and a wide screen) is in PR #84. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1468,9 +1468,13 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       - [x] The app on Android's emulator (Backlog item 27), PR #67: it
         plays there, and what only a phone showed is fixed (the gesture bar,
         the status bar, the keyboard, the board on a phone 360 wide).
-      - [ ] The app's own look on a phone: its icon and name (D1), the
-        status bar's colours, haptics on a roll, and a check on real phones
-        in Expo Go (an iPhone too: no iPhone simulator here).
+      - [x] The app measured as the site was (Backlog item 38), PR #84:
+        buttons a finger can hit, colours that can be read, choices a screen
+        reader can tell apart, a knock in the hand on a throw, and on a wide
+        screen the board next to the dice.
+      - [ ] The app's own look on a phone: its icon and name (D1), and a
+        check on real phones in Expo Go (an iPhone too: no iPhone simulator
+        here).
     - [ ] C3. Links: a game's link opens the app when it is installed
       (universal links and app links, served from the domain).
 
@@ -1764,7 +1768,68 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
     - What it costs: a private window, or a browser that keeps no site data,
       has to be let in again after every reload.
 
-## Status (2026-11-27)
+38. **The app measured as the site was; a wide screen; a knock on a throw.**
+    Done in PR #84 (Status has what was measured and found).
+    > "Keep developing app"
+    - The next open part of the app's plan that needs no decision from the
+      owner (item 25, C2): the app's feel on a phone, checked the way item 36
+      checked the site.
+    - Everything to tap is 40px or more; the app has the website's readable
+      colours; choices tell a screen reader whether they are picked; the web
+      build says which language it is in.
+    - On a wide screen a game is two columns, as on the website, so five
+      players' board fits a desktop browser.
+    - The phone knocks on a throw and on fireworks.
+
+## Status (2026-11-28)
+
+- **The app measured as the site was, and a wide screen (owner: "Keep
+  developing app", Backlog item 38):** PR #84.
+  - Every screen of the app's web build was measured at 360, 390, 768 and
+    1300px in Chromium (home, a game for two and for five, the results, the
+    invite, a club, the rules), with axe-core, as the site was in PR #79.
+    Found, and fixed:
+    - buttons too small to tap: "‹ Home" and "‹ Back" (18px high), the "?"
+      (34), the options to write a roll and the reaction buttons (35), a
+      club's players (33). All are 40px or more now; the words "Row
+      differences" switch it too (the switch itself is the system's, 20px);
+    - the pale grey, red and gold the website gave up in PR #79 (2.6:1 and
+      3.9:1 on white) were still the app's. It has the website's colours now;
+    - a choice (players, language, Score / Cross out, the options) did not
+      say whether it was picked: the web build ignored
+      `accessibilityState`. They say it with `aria-checked` now, on phones
+      too;
+    - the web build said `lang="en"` in Russian; it follows the language now;
+    - nothing on a screen was inside a landmark (`role="main"` now).
+    After the fixes axe-core reports one thing: the board's scrolling box
+    cannot be reached with the keyboard (as on the website; Known issues).
+  - A wide screen (900px or more: a desktop browser, a tablet on its side):
+    a game is two columns, the play card (400px) next to the board, as on
+    the website. Five players and the column of row differences fit at
+    1300px without scrolling. Before, the board sat in a 560px column and
+    cut off the fourth player. Home, a club and the rules stay one column.
+    This is the first step to the app's web build as the website (Backlog
+    item 25, B1).
+  - The phone knocks when dice are thrown (Throw, Roll dice, Reroll) and
+    when fireworks, sparkles or tears begin (`expo-haptics`, part of Expo
+    Go). Nothing on the web.
+  - The browser check has a ninth flow (a game for five at 1300px: the board
+    next to the play card, no scrolling; the same game on a phone in one
+    column), and every flow now fails on a button or choice under 40px and
+    on a choice that does not say whether it is picked. Its first run with
+    that failed four flows on the reaction buttons, which the measuring had
+    not reached (it had no online game in play).
+  - Checked: the app's 49 tests (1 new, of the wide screen's sizes),
+    typecheck, lint, all nine browser flows; the website check on both local
+    servers (the website's code did not change, so no load-test row).
+  - Not checked: the knock itself (a browser has none, and the emulator's
+    cannot be felt), so a real phone is the first to try it. The colour of
+    the status bar needed nothing: dark marks on the app's light page, seen
+    on the emulator in PR #67.
+  - `expo-doctor` now reports that Expo has newer releases (58.1; the app is
+    on 58.0.26). Left for a pull request of its own.
+
+## Earlier status (2026-11-27)
 
 - **A seat belongs to its device (owner: "We can't go to google play having
   that", Backlog item 37):** PR #82, after PR #80 and its revert, PR #81.
@@ -2767,7 +2832,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   any way, or as a pasted link; the pages for a code alone, a wrong key and
   the full link; the home page's full code; the waiting room's key). 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 48 tests (`node --test`),
+  scan reads both quotes). The phone app has its own 49 tests (`node --test`),
   1 of them of the full code (`mobile/tests/codes.test.ts`: typed, pasted as a
   link, or a code alone, read as the server reads them).
   9 against a real server (`mobile/tests/api.test.ts`: a game against the computer, complete games on one
@@ -3028,6 +3093,38 @@ Other ideas, not planned:
 - a dark theme (the scoreboard CSS colours would need to follow the theme);
 
 ## Decision log
+
+**2026-11-28: the app measured as the site was (Claude Code, PR #84)**
+
+- The owner said "Keep developing app". What is left of the app's plan mostly
+  waits for the owner (the host, the name and icon, the stores). What does
+  not: the app had never been measured as the site was in PR #79 ("the phone
+  app was not part of this round"), and its web build is the recommended
+  website after Streamlit (item 25, B1), which "needs a layout for wide
+  screens".
+- 40px for everything to tap, the website's number on phones (PR #79), not
+  Apple's 44: the options to write a roll wrap onto more lines as they grow.
+  A phone also gets a few points of `hitSlop` around the small ones.
+- `aria-checked` and `aria-pressed` instead of `accessibilityState`: React
+  Native takes both on phones, and react-native-web 0.21 writes only the
+  first into the page. Picked dice and a club's picked players are pressed
+  buttons, not selected ones (`aria-selected` is not allowed on a button).
+- The two columns start at 900px, so a tablet held upright (768 or 820) keeps
+  the phone's one column, and a tablet on its side or a desktop gets two. The
+  play card's column is 400px, the width a phone gives it; the board has the
+  rest, up to a page 1180px wide. Only a game's table is wide: an invite or a
+  waiting room stretched over 1180px would be a form with a yard of white
+  beside it.
+  - The sizes are in `src/lib/board.ts` with the board's other arithmetic,
+    tested in Node; the browser check measures the result.
+- Haptics only where something physical happens: dice leaving the hand, and
+  an effect starting. Not on every button: a phone that buzzes at each tap is
+  switched to silent. The knock comes at the press, not when the server
+  answers, as a real throw is felt before the dice land. A phone without a
+  motor, or with touch feedback off, stays still; nothing is reported.
+- The tap-size and picked-choice checks are in the browser check's `healthy`,
+  which every flow already ends with, rather than a flow of their own: a new
+  button on any screen is then measured without anyone remembering to.
 
 **2026-11-27: a seat belongs to its device (Claude Code, PR #80, PR #81, PR #82, PR #83)**
 

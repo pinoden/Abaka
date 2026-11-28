@@ -7,11 +7,11 @@
 
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Share, StyleSheet, Text, View } from 'react-native';
 
 import { ClubTable, LatestGames, PlayerChips } from '@/components/Club';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
-import { Button, Card, Choice, colors, Field, Muted, Notice, Screen, Title } from '@/components/ui';
+import { BackLink, Button, Card, Choice, colors, Field, Muted, Notice, Screen, Title } from '@/components/ui';
 import type { ApiError, Club } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { inBoxes, memberKey, togglePlayer } from '@/lib/clubs';
@@ -80,9 +80,7 @@ export default function ClubScreen() {
   return (
     <Screen>
       <View style={styles.bar}>
-        <Pressable accessibilityRole="button" testID="home" onPress={() => router.dismissTo('/')} hitSlop={8}>
-          <Text style={styles.barHome}>‹ {t('Home')}</Text>
-        </Pressable>
+        <BackLink testID="home" label={t('Home')} onPress={() => router.dismissTo('/')} />
         <Text style={styles.barTitle} numberOfLines={1}>🏆 {code}</Text>
         <LanguageSwitch />
       </View>
@@ -180,7 +178,6 @@ function ShareClub({ code }: { code: string }) {
 
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  barHome: { fontSize: 16, color: colors.accent, fontWeight: '600' },
   barTitle: { flex: 1, fontSize: 15, color: colors.muted, textAlign: 'center' },
   clubName: { fontSize: 22, fontWeight: '800', color: colors.text },
   label: { fontSize: 14, color: colors.muted },

@@ -47,7 +47,8 @@ the app. The plan is Backlog item 25 in ProjectLibrary.md.
 | `src/components/Races.tsx` | The races for the shared bonuses under the dice: cells left in column I and II (a row per player, so names fit), rows one cell from the bonus. The server sends the words (`state.races`) |
 | `src/components/Club.tsx` | A club's table, its latest games, the ratings after a club game, its players to tap as names |
 | `src/lib/clubs.ts` | The club's rows and numbers (rounded as Python rounds them), the names offered and tapped. Tested in Node |
-| `src/lib/board.ts` | The score table's sizes: two players' columns fit the screen down to 360 wide. Tested in Node |
+| `src/lib/board.ts` | The score table's sizes: two players' columns fit the screen down to 360 wide; and the wide screen's (900px or more: the play card and the board side by side, a page up to 1180 wide). Tested in Node |
+| `src/lib/feel.ts` | The phone's knock (`expo-haptics`): on a throw, and when an effect begins. Nothing on the web |
 | `src/lib/dice.ts` | Where a die's pips go: the website's grid, centred inside the die's border. Tested in Node |
 | `src/lib/start.ts` | Start a game from a screen (home, a club): the seat kept, the game opened |
 | `src/lib/shows.ts` | Which of them play, and when (the website's rules). No React Native imports: tested in Node |
@@ -179,6 +180,13 @@ Node's says `/// <reference types="node" />`); `expo-secure-store` has no web ve
 - What must always fit (the game's code at the top) is checked in `tools/app_check.py`
   with the widest text it can hold, on a 360px phone, not with today's text. So is the
   board with two players.
+- Anything to tap is at least 40px high and wide (`tools/app_check.py` fails otherwise), and
+  a choice says whether it is picked with `aria-checked` (a pressed button: `aria-pressed`),
+  not `accessibilityState`, which the web build does not write into the page.
+- Colours come from `colors` in `src/components/ui.tsx`, the website's (text at least 4.5:1
+  on its background).
+- On a wide screen (`isWide`, `src/lib/board.ts`) a game's table is two columns. Only
+  `Screen wide` pages are wider than 560; forms stay one column.
 - Every screen is a `Screen` (`src/components/ui.tsx`). It keeps the page clear of the
   status bar and the gesture bar, keeps bubbles and fireworks inside the safe area, and on
   Android shrinks the page above the keyboard. Nothing else positions itself against the

@@ -6,10 +6,10 @@
 
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { LanguageSwitch } from '@/components/LanguageSwitch';
-import { Card, colors, Muted, Notice, Rich, Screen } from '@/components/ui';
+import { BackLink, Card, colors, Muted, Notice, Rich, Screen } from '@/components/ui';
 import type { Rules, RulesBlock } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { errorText } from '@/lib/errors';
@@ -37,9 +37,7 @@ export default function RulesScreen() {
   return (
     <Screen>
       <View style={styles.bar}>
-        <Pressable accessibilityRole="button" testID="back" onPress={back} hitSlop={8}>
-          <Text style={styles.barBack}>‹ {t('Back')}</Text>
-        </Pressable>
+        <BackLink testID="back" label={t('Back')} onPress={back} />
         <View style={{ flex: 1 }} />
         <LanguageSwitch />
       </View>
@@ -84,7 +82,6 @@ const WIDTHS = [{ flex: 1 }, { flex: 1.5 }, { flex: 1.2 }];
 
 const styles = StyleSheet.create({
   bar: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  barBack: { fontSize: 16, color: colors.accent, fontWeight: '600' },
   title: { fontSize: 22, fontWeight: '800', color: colors.text },
   heading: { fontSize: 17, fontWeight: '700', color: colors.text, marginTop: 4 },
   table: { borderWidth: 1, borderColor: colors.line, borderRadius: 10, overflow: 'hidden' },
