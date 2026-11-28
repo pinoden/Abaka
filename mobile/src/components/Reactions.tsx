@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   button: {
     borderRadius: 999, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card,
-    paddingHorizontal: 10, paddingVertical: 6,
+    paddingHorizontal: 10, paddingVertical: 6, minHeight: 40, justifyContent: 'center',
   },
   pressed: { opacity: 0.6 },
   label: { fontSize: 13, color: colors.text },

@@ -7,7 +7,7 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, Share, StyleSheet, Switch, Text, View } from 'react-native';
+import { AccessibilityInfo, Pressable, Share, StyleSheet, Switch, Text, useWindowDimensions, View } from 'react-native';
 
 import { Board, lastMoveText } from '@/components/Board';
 import { Chart } from '@/components/Chart';
@@ -17,14 +17,19 @@ import { DieFace } from '@/components/Dice';
 import { Races } from '@/components/Races';
 import { ReactionBar } from '@/components/Reactions';
 import { Shows } from '@/components/Shows';
-import { Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
+import { BackLink, Button, Card, Choice, colors, Field, Muted, Notice, Rich, Screen, Title } from '@/components/ui';
 import { type ApiError, type Asked, type Club, type Game, type Move, type Seat, type State } from '@/lib/api';
 import { useApp } from '@/lib/app';
 import { memberKey, offered } from '@/lib/clubs';
+import { COLUMN_GAP, isWide, PLAY_W } from '@/lib/board';
 import { errorText } from '@/lib/errors';
+import { feelEffect, feelThrow } from '@/lib/feel';
 import { nothingShown, type Show, showsFor } from '@/lib/shows';
 import { fullCode, splitCode } from '@/lib/codes';
 import { forgetGame, keyFor, saveGame, tokenFor, updateGame } from '@/lib/storage';
+
+/** The moves that throw dice: the phone knocks as they leave the hand. */
+const THROWS = ['throw', 'roll', 'reroll'];
 
 type Act = (op: string, fields?: Record<string, unknown>, move?: boolean) => Promise<void>;
 type Pick = (dice: number[]) => void;
@@ -87,6 +92,7 @@ export default function GameScreen() {
         if (news.current.code !== code) news.current = { code, shown: nothingShown() };
         const fresh = showsFor(next, news.current.shown, Date.now());
         if (fresh.length) setShows((playing) => [...playing, ...fresh]);
+        if (fresh.some((show) => show.kind === 'effect')) feelEffect();
         // For a screen reader: what the bubble or the banner says (iOS reads no live regions).
         for (const show of fresh) {
           const words = show.kind === 'effect' ? [show.title, show.text] : [show.who, show.label];
@@ -130,6 +136,7 @@ export default function GameScreen() {
 
   const act: Act = useCallback(async (op, fields = {}, move = true) => {
     if (!state || !token) return;
+    if (THROWS.includes(op)) feelThrow();
     setBusy(true);
     try {
       await connection.act(op, { code, token, ...(move ? { version: state.version } : {}), ...fields });
@@ -181,6 +188,8 @@ export default function GameScreen() {
     }
   };
 
+  // The table (dice and board) is two columns on a wide screen; the invite and the waiting room stay one.
+  const atTable = !!state?.seated && state.phase !== 'waiting' && !!state.game && !incomplete && !gone;
   let body: ReactNode;
   if (incomplete) {
     body = (
@@ -214,11 +223,9 @@ export default function GameScreen() {
   }
 
   return (
-    <Screen over={<Shows shows={shows} onDone={showDone} />}>
+    <Screen wide={atTable} over={<Shows shows={shows} onDone={showDone} />}>
       <View style={styles.bar}>
-        <Pressable accessibilityRole="button" testID="home" onPress={goHome} hitSlop={8}>
-          <Text style={styles.barHome}>‹ {t('Home')}</Text>
-        </Pressable>
+        <BackLink testID="home" label={t('Home')} onPress={goHome} />
         {/* The kind of game as the website's icons for it, so the code always fits; the words for screen readers. */}
         <Text testID="bar-code" style={styles.barTitle} numberOfLines={1}
               accessibilityLabel={!state ? code : state.local ? t('Same device · {code}', { code })
@@ -451,8 +458,10 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
   const current = choice.turn === turn ? choice : { turn, mode: 'score' as const, move: null };
   const target = state.moves && current.move ? current.move : null;
   const last = lastMoveText(game, state.local ? null : state.you, t, rowName);
+  // A wide screen (a tablet on its side, a desktop browser): the board next to the play card, as on the website.
+  const wide = isWide(useWindowDimensions().width);
 
-  return (
+  const playing = (
     <>
       {state.phase === 'starting_throw' ? <StartingThrow state={state} game={game} act={act} busy={busy} /> : null}
       {state.phase === 'playing' ? (
@@ -477,11 +486,18 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
       {state.phase === 'over' ? <Results state={state} game={game} act={act} busy={busy} /> : null}
       {state.can.includes('react') ? <Card><ReactionBar state={state} react={talk.react} /></Card> : null}
       {state.can.includes('say') ? <Chat state={state} chat={state.chat} say={talk.say} /> : null}
+    </>
+  );
+  const board = (
       <Card testID="scoreboard" style={styles.boardCard}>
         {state.differences ? (
           <View style={styles.diffSwitch}>
-            <Text style={styles.diffLabel}>{t('Row differences')}</Text>
+            {/* The words are part of the switch: tall enough to tap, where the switch itself is small. */}
+            <Pressable focusable={false} accessible={false} onPress={() => setShowDiffs((on) => !on)} style={styles.diffTap}>
+              <Text style={styles.diffLabel}>{t('Row differences')}</Text>
+            </Pressable>
             <Switch testID="differences-switch" value={showDiffs} onValueChange={setShowDiffs}
+                    accessibilityLabel={t('Row differences')}
                     trackColor={{ true: colors.accent, false: colors.line }}
                     accessibilityHint={state.differences.hint} />
           </View>
@@ -492,7 +508,13 @@ function Table({ state, game, act, pick, talk, busy, openedAt }: {
         <TableScore state={state} />
         <Chart game={game} you={state.local ? null : state.you} />
       </Card>
-    </>
+  );
+  if (!wide) return <>{playing}{board}</>;
+  return (
+    <View style={styles.columns} testID="columns">
+      <View style={styles.playColumn}>{playing}</View>
+      <View style={styles.boardColumn}>{board}</View>
+    </View>
   );
 }
 
@@ -639,7 +661,7 @@ function Moves({ state, moves, mode, picked, busy, onMode, onPick, onConfirm }: 
                 key={`${move.row}.${move.slot}`}
                 testID={`option-${move.row}${best ? '-best' : ''}`}
                 accessibilityRole="radio"
-                accessibilityState={{ checked: on }}
+                aria-checked={on}
                 onPress={() => onPick(move)}
                 style={[styles.option, best && styles.optionBest, on && styles.optionPicked]}>
                 <Text style={[styles.optionText, best && styles.optionBestText, on && styles.optionPickedText]}>
@@ -787,14 +809,14 @@ function TableScore({ state }: { state: State }) {
 }
 
 const styles = StyleSheet.create({
-  diffSwitch: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 4 },
+  diffSwitch: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
+  diffTap: { minHeight: 40, justifyContent: 'center', paddingLeft: 12 },
   diffLabel: { fontSize: 13, color: colors.muted },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  barHome: { fontSize: 16, color: colors.accent, fontWeight: '600' },
   barTitle: { flex: 1, fontSize: 15, color: colors.muted, textAlign: 'center' },
   barCode: { fontWeight: '700', color: colors.text, letterSpacing: 1 },
   rulesButton: {
-    width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.line,
+    width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: colors.line,
     backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center',
   },
   rulesButtonText: { fontSize: 17, fontWeight: '700', color: colors.accent },
@@ -817,7 +839,7 @@ const styles = StyleSheet.create({
   options: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   option: {
     borderRadius: 999, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card,
-    paddingHorizontal: 12, paddingVertical: 8,
+    paddingHorizontal: 12, paddingVertical: 8, minHeight: 40, justifyContent: 'center',
   },
   optionBest: { backgroundColor: colors.goldSoft, borderColor: '#F0C36A' },
   optionPicked: { backgroundColor: colors.accent, borderColor: colors.accent },
@@ -837,7 +859,10 @@ const styles = StyleSheet.create({
   resultName: { fontSize: 16, color: colors.text },
   winner: { fontWeight: '800' },
   resultScore: { fontSize: 16, color: colors.muted },
-  lastMove: { fontSize: 13, color: '#9A4D00' },
+  lastMove: { fontSize: 13, color: '#A04A08' },
   tableScore: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   boardCard: { paddingHorizontal: 10 },
+  columns: { flexDirection: 'row', alignItems: 'flex-start', gap: COLUMN_GAP },
+  playColumn: { width: PLAY_W, gap: 16 },
+  boardColumn: { flex: 1, minWidth: 0 },
 });

@@ -34,11 +34,14 @@ The checks:
   the computer playing its turn by itself, its mark on the turn and then its move under
   the board, until the player's turn comes back, with the computer's final dice left on
   the table until the player rolls;
+- a wide screen (a desktop browser): the board next to the play card, five players and the
+  column of row differences without scrolling; the same game on a phone in one column;
 - with dice the check chooses (Steered):
   - a tie for the first turn among three players: the player who is out of the next
     round keeps their throw on the screen;
   - an Abaka on the first roll: bigger fireworks on both phones, each in its language.
-Any page error and any sideways scrolling is a problem too.
+Any page error and any sideways scrolling is a problem too, and so is a button or a choice
+smaller than 40px, or a choice that does not say whether it is picked.
 
 Needs Playwright and its Chromium (requirements-dev.txt), and Streamlit 1.67's packages
 (the steered server, and --serve).
@@ -69,7 +72,9 @@ NARROW = (360, 780)  # a common Android width
 NAMES = ("Test Ann", "Test Bob")
 LONG_NAME = "Александра"  # a long first name: it fits a player's row of the bonus race at 360px
 WAIT_MS = 20000
-FLOWS = ("home", "one device", "online", "website", "clubs", "a tie", "fireworks", "computer")
+FLOWS = ("home", "one device", "online", "website", "clubs", "a tie", "fireworks", "computer", "wide screen")
+DESKTOP = (1300, 900)
+TAP_MIN = 40  # the least height and width of anything to tap, as on the website's phone pages
 
 
 class Problem(Exception):
@@ -162,6 +167,21 @@ class Phone:
         sideways = self.page.evaluate("() => document.documentElement.scrollWidth - innerWidth")
         if sideways > 0:
             raise Problem(f"{self.name}: the page scrolls sideways by {sideways}px")
+        small = self.small_targets()
+        if small:
+            raise Problem(f"{self.name}: too small to tap (under {TAP_MIN}px): {small[:4]}")
+        unsaid = self.page.locator('[role="radio"]:not([aria-checked])').count()
+        if unsaid:
+            raise Problem(f"{self.name}: {unsaid} choices do not say whether they are picked (aria-checked)")
+
+    def small_targets(self) -> List[str]:
+        """Buttons and choices on the screen that are smaller than a finger needs."""
+        return self.page.evaluate("""(least) => [...document.querySelectorAll('[role=button], [role=radio], input[type=text], textarea')]
+            .map(e => [e, e.getBoundingClientRect()])
+            .filter(([e, r]) => r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'
+                    && (r.height < least || r.width < least))
+            .map(([e, r]) => `${e.getAttribute('data-testid') || e.innerText.trim().slice(0, 20)} ${Math.round(r.width)}x${Math.round(r.height)}`)""",
+                                  TAP_MIN)
 
     def throw_until_decided(self, other: "Phone" = None) -> "Phone":
         """Throw for who goes first (on whichever phone may) until someone rolls. Returns that phone."""
@@ -268,6 +288,10 @@ def check_home(browser, url: str) -> str:
             raise Problem("home: no 'Same device' card in English")
         phone.page.get_by_role("radio", name="RU").click()
         phone.until(lambda: "Одно устройство" in phone.text(), "the switch to Russian")
+        # For a screen reader: the page says it is Russian, and the choice says it is picked.
+        phone.until(lambda: phone.page.evaluate("() => document.documentElement.lang") == "ru", "the page's language (lang)")
+        if phone.page.get_by_role("radio", name="RU").first.get_attribute("aria-checked") != "true":
+            raise Problem("home: the picked language does not say it is picked (aria-checked)")
         # The rules, from the server, in Russian: the table names the combinations as the board does.
         phone.id("rules-home").click()
         rules = phone.see(phone.id("rules"), "the rules")
@@ -296,7 +320,7 @@ def write_best(phone: Phone) -> str:
 
 
 def board_fits(phone: Phone) -> None:
-    """Two players' columns fit the phone's width, without scrolling the table."""
+    """The players' columns fit the board's card, without scrolling the table."""
     overflow = phone.page.evaluate("""() => {
         const board = document.querySelector('[data-testid="board"]');
         const scroller = board && [...board.querySelectorAll('div')]
@@ -306,7 +330,7 @@ def board_fits(phone: Phone) -> None:
     if overflow is None:
         raise Problem(f"{phone.name}: the board's scrolling part was not found")
     if overflow > 0:
-        raise Problem(f"{phone.name}: two players' columns are {overflow}px wider than the screen")
+        raise Problem(f"{phone.name}: the players' columns are {overflow}px wider than the board's card")
 
 
 def check_one_device(browser, url: str, server: str, games: List[str]) -> None:
@@ -729,6 +753,45 @@ def check_computer(browser, url: str, games: List[str]) -> None:
         phone.close()
 
 
+def check_wide(browser, url: str, server: str, games: List[str]) -> str:
+    """A desktop browser (or a tablet on its side): the board next to the play card, five players without scrolling."""
+    made = api(server, op="create_local", names=["Test Ann", "Test Bob", "Test Cid", "Test Dee", LONG_NAME])
+    if "code" not in made:
+        raise Problem(f"wide screen: the game was not made ({made})")
+    games.append(made["code"])
+    base, query = url.split("?", 1)
+    address = f"{base.rstrip('/')}/game/{made['code']}-{made['state']['key']}?{query}"
+    desk = Phone(browser, address, "wide screen, desktop", size=DESKTOP)
+    phone = Phone(browser, address, "wide screen, the same game on a phone")
+    try:
+        desk.see(desk.id("start-throw"), "the starting throw")
+        desk.throw_until_decided()
+        desk.id("roll").first.click()
+        desk.see(desk.id("die-4"), "the dice")
+        desk.see(desk.id("columns"), "the two columns")
+        play, board = (desk.id(i).first.bounding_box() for i in ("play", "scoreboard"))
+        if not (play["x"] + play["width"] <= board["x"] and abs(play["y"] - board["y"]) < 4):
+            raise Problem(f"wide screen: the board is not next to the play card ({play}, {board})")
+        if board["x"] + board["width"] > DESKTOP[0]:
+            raise Problem("wide screen: the board runs off the screen")
+        desk.id("differences-switch").first.click()  # the widest the board gets: five players and the differences
+        desk.page.wait_for_timeout(500)
+        board_fits(desk)
+        desk.healthy()
+        # The same game on a phone stays one column: the play card above the board.
+        phone.see(phone.id("die-4"), "the dice on the phone")
+        if phone.id("columns").count():
+            raise Problem("wide screen: a phone got the two columns")
+        play, board = (phone.id(i).first.bounding_box() for i in ("play", "scoreboard"))
+        if board["y"] < play["y"] + play["height"]:
+            raise Problem("wide screen: on a phone the board is not under the play card")
+        phone.healthy()
+        return "five players' board next to the dice at 1300px, one column on a phone"
+    finally:
+        desk.close()
+        phone.close()
+
+
 def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[str], List[str]]:
     """Run the checks; returns (problems, codes of the games played)."""
     from playwright.sync_api import sync_playwright
@@ -750,7 +813,9 @@ def run(build_url: str, server: str, flows=FLOWS, report=print) -> Tuple[List[st
                      ("a tie", "a tie for the first turn, steered dice", lambda: check_tie(browser, build_url)),
                      ("fireworks", "an Abaka on the first roll, steered dice",
                       lambda: check_fireworks(browser, build_url)),
-                     ("computer", "a game against the computer, phone", lambda: check_computer(browser, url, games))]
+                     ("computer", "a game against the computer, phone", lambda: check_computer(browser, url, games)),
+                     ("wide screen", "a game for five in a desktop browser",
+                      lambda: check_wide(browser, url, server, games))]
             for flow, label, step in steps:
                 if flow not in flows:
                     continue

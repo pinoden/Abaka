@@ -44,7 +44,7 @@ export function PlayerChips({ names, on, onPick, hint }: {
               key={name}
               testID="club-player"
               accessibilityRole="button"
-              accessibilityState={{ selected: picked }}
+              aria-pressed={picked}
               onPress={() => onPick(name)}
               style={({ pressed }) => [styles.chip, picked && styles.chipPicked, pressed && styles.pressed]}>
               <Text style={[styles.chipText, picked && styles.chipTextPicked]} numberOfLines={1}>{name}</Text>
@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     borderRadius: 999, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card,
-    paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%',
+    paddingHorizontal: 12, paddingVertical: 7, maxWidth: '100%', minHeight: 40, justifyContent: 'center',
   },
   chipPicked: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
   chipText: { fontSize: 14, color: colors.text },

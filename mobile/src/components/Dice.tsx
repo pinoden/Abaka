@@ -79,7 +79,7 @@ export function DieFace({ die, size, picked, spinKey, onPress, label, testID }: 
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: !!picked }}
+      aria-pressed={!!picked}
       onPress={onPress}
       hitSlop={4}>
       {face}

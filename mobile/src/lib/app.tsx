@@ -71,6 +71,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // The web build: the page says which language it is in, so a screen reader reads Russian as Russian.
+    if (typeof document !== 'undefined') document.documentElement.lang = lang;
     connection.setLanguage(lang);
     connection.rewatch(); // the watched game's texts in the new language
     loadInfo();

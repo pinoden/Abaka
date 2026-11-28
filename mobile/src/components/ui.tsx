@@ -5,9 +5,12 @@
 
 import type { ReactNode } from 'react';
 import {
-  KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle,
+  KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View,
+  type StyleProp, type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { pageWidth } from '@/lib/board';
 
 export const colors = {
   accent: '#4F46E5',     // indigo: the current player, picked choices, main buttons
@@ -18,12 +21,12 @@ export const colors = {
   line: '#E3E6EF',
   text: '#1C2033',
   muted: '#6B7089',
-  faint: '#9AA0B5',
-  gold: '#B7791F',       // the option with the most points
+  faint: '#666C88',      // small grey text: 5.2:1 on white, as the website's (PR #79)
+  gold: '#8A5B00',       // the option with the most points, bonuses
   goldSoft: '#FFF4DB',
   last: '#F59E0B',       // the cell of the latest move
   lastSoft: '#FFE8D1',
-  red: '#E5484D',
+  red: '#CF2F36',
   green: '#1F7A4A',
   joker: '#262B45',
   jokerPip: '#FBBF24',
@@ -31,7 +34,8 @@ export const colors = {
 
 /**
  * A screen: safe area, scrolling, at most 560 wide (tablets and the web build). `over` is
- * drawn above everything and never takes a touch (bubbles, fireworks).
+ * drawn above everything and never takes a touch (bubbles, fireworks). `wide`: a screen
+ * that lays itself out in two columns on a wide screen (a game), so its page is wider there.
  *
  * On a phone the system draws over the edges of the app: the status bar (and a camera
  * cut-out) at the top, the gesture bar or home indicator at the bottom.
@@ -43,14 +47,15 @@ export const colors = {
  *   shrinks for the keyboard, so the page does: Android then scrolls the field being
  *   typed in into view.
  */
-export function Screen({ children, over }: { children: ReactNode; over?: ReactNode }) {
+export function Screen({ children, over, wide }: { children: ReactNode; over?: ReactNode; wide?: boolean }) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'android' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={[styles.scroll, { paddingBottom: 16 + insets.bottom }]}
                     keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
-          <View style={styles.column}>{children}</View>
+          <View role="main" style={[styles.column, { maxWidth: pageWidth(width, !!wide) }]}>{children}</View>
         </ScrollView>
       </KeyboardAvoidingView>
       {over ? (
@@ -68,6 +73,15 @@ export function Card({ children, style, testID }: { children: ReactNode; style?:
 
 export function Title({ children }: { children: ReactNode }) {
   return <Text style={styles.title}>{children}</Text>;
+}
+
+/** "‹ Home", "‹ Back": the way out at the top of a screen, tall enough to tap. */
+export function BackLink({ label, onPress, testID }: { label: string; onPress: () => void; testID: string }) {
+  return (
+    <Pressable accessibilityRole="button" testID={testID} onPress={onPress} hitSlop={4} style={styles.backLink}>
+      <Text style={styles.backLinkText}>‹ {label}</Text>
+    </Pressable>
+  );
 }
 
 export function Muted({ children }: { children: ReactNode }) {
@@ -129,7 +143,7 @@ export function Choice<T extends string | number>({ options, value, onChange, te
           <Pressable
             key={String(option.value)}
             accessibilityRole="radio"
-            accessibilityState={{ checked: picked }}
+            aria-checked={picked}
             onPress={() => onChange(option.value)}
             style={[styles.choiceItem, picked && styles.choicePicked]}>
             <Text style={[styles.choiceText, picked && styles.choiceTextPicked]}>{option.label}</Text>
@@ -190,7 +204,7 @@ export const styles = StyleSheet.create({
   fill: { flex: 1 },
   over: { position: 'absolute', pointerEvents: 'none', overflow: 'hidden' },
   scroll: { paddingHorizontal: 16, paddingVertical: 16 },
-  column: { width: '100%', maxWidth: 560, alignSelf: 'center', gap: 16 },
+  column: { width: '100%', alignSelf: 'center', gap: 16 },
   card: {
     backgroundColor: colors.card,
     borderRadius: 14,
@@ -203,6 +217,8 @@ export const styles = StyleSheet.create({
   body: { fontSize: 15, color: colors.text, lineHeight: 21 },
   bold: { fontWeight: '700' },
   muted: { fontSize: 14, color: colors.muted, lineHeight: 20 },
+  backLink: { minHeight: 40, minWidth: 40, justifyContent: 'center' },
+  backLinkText: { fontSize: 16, color: colors.accent, fontWeight: '600' },
   button: {
     minHeight: 46,
     borderRadius: 12,
