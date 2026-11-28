@@ -859,7 +859,7 @@ then. The default `starting_throw=False` exists for tests; `RoomStore` uses
 ## Backlog
 
 Item 11 (the scale-up plan) is in progress. Items 12–15 (2026-11-17) were
-merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #82 and PR #83 (first in PR #80, reverted by PR #81). Item 38 (2026-11-28, the app measured as the site was, and a wide screen) is in PR #84. Requests 1-4 came from the
+merged in PR #37. Item 16 (2026-11-18) is in PR #39. Item 17 (2026-11-19) is in PR #45. Item 18 (2026-11-19) is in PR #48. Item 19 (2026-11-19) is in PR #49. Item 20 (2026-11-19) is in PR #50. Item 21 (2026-11-19) is in PR #51. Item 22 (2026-11-19) is in PR #52 and PR #53. Item 23 (2026-11-19) is in PR #55. Item 24 (2026-11-19) is in PR #56 and PR #57. Item 25 (2026-11-20, apps for Android and iOS) is in progress: steps A1 and A2 are in PR #58 and PR #59, where the app's code lives in PR #60, the app's technology and first screens in PR #61, its reactions, effects and chat in PR #64, its clubs in PR #65, and its rules screen in PR #66. Item 26 (2026-11-21, a full test round) is in PR #62 and PR #63. Item 27 (2026-11-21, a phone simulator on this Mac) is in PR #67. Item 28 (2026-11-21, the app's dice) is in PR #68. Item 29 (2026-11-23, a "Mr. Lucky" reaction) is in PR #69. Item 30 (2026-11-23, the races for the shared bonuses, from a tester) is in PR #70 and PR #71. Item 31 (2026-11-25, a game opens only with its key) is in PR #72. Item 32 (2026-11-26, a tester's second round) is in PR #73 and PR #74. Item 33 (2026-11-26, a computer player) is in PR #75. Item 34 (2026-11-27, the computer's three levels) is in PR #76. Item 35 (2026-11-27, the computer's dice stay on the table) is in PR #77. Item 36 (2026-11-27, a full test of the site) is in PR #79. Item 37 (2026-11-27, a seat belongs to its device) is in PR #82 and PR #83 (first in PR #80, reverted by PR #81). Item 38 (2026-11-28, the app measured as the site was, and a wide screen) is in PR #84. Item 39 (2026-11-28, live tests: the app against the app and against the website) is in PR #85. Requests 1-4 came from the
 owner after deploying (2026-11-15) and were merged in PR #13; request 5
 (2026-11-16) was merged in PR #18 and went live with PR #19; request 6
 (2026-11-16, reversing request 3) was merged in PR #20; requests 7 and 8
@@ -1781,7 +1781,113 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
       players' board fits a desktop browser.
     - The phone knocks on a throw and on fireworks.
 
+39. **Live tests: the app against the app, and the app against the website.**
+    Done in PR #85 (Status has every step and its time).
+    > "Now run the real live tests on app vs app and app vs web"
+    - The live site cannot be one end of it: Streamlit Cloud does not serve
+      the API the app speaks (item 25, B1). So the test ran the real app, in
+      Expo Go on Android's emulator, against `abaka_server.py` on this Mac,
+      which serves the website and the API together; the other player was the
+      app's web build, or the website, in Chromium.
+    - Two whole online games, each played to its results and "Play again":
+      Android against the app's web build, and Android (in Russian) against
+      the website.
+    - Everything a player does online worked across the two: joining by the
+      full code, the starting throws, dice, picked dice, rerolls, moves,
+      reactions, chat, the app in the background, the network lost and back,
+      the app killed and started again, a seat moved from the phone to a
+      laptop and back, a stranger refused, a player whose device died let
+      back in by the other.
+    - Found and fixed: since PR #84, a picked die and a picked club player
+      said nothing to TalkBack and VoiceOver.
+
 ## Status (2026-11-28)
+
+- **Live tests: the app against the app, and against the website (owner:
+  "Now run the real live tests on app vs app and app vs web", Backlog
+  item 39):** PR #85.
+  - Set-up: the app in Expo Go on Android's emulator (Android 16, 411 wide),
+    served as a production bundle (`expo start --no-dev --minify`), driven
+    through adb; `abaka_server.py` on this Mac, the emulator reaching it over
+    the network as a phone on the Wi-Fi would; the other players in
+    Chromium. The live site does not serve the API, so it could not be one
+    end (Backlog item 25, B1). The scripts were scratch tools; what they
+    taught is in mobile/AGENTS.md ("Playing it from a script").
+  - **Android against the app's web build** (Russian, 360 wide), game
+    MXNTE, played to the end:
+    - the game made on Android, joined from the web by its full code;
+      Android left its waiting room by itself;
+    - starting throws on each screen; a turn each way with two dice picked
+      and rolled again: the roll, the picks and the reroll on the other
+      screen (under 0.5 s web-bound; Android-bound times are the script's
+      own looks, 2 to 15 s);
+    - the knock: Android's vibration log has the app's throws;
+    - the last move in words on both, each in its language;
+    - reactions and chat both ways, Cyrillic arriving on Android;
+    - the app in the background for 30 s while the other wrote: caught up
+      on return;
+    - Wi-Fi and data off: "Connecting…" after 3 s; network back after
+      0.6 s; reconnected within 7 s; the message sent meanwhile there;
+    - a third device asked for Android's seat: the request on Android in
+      2.6 s, refused, the asker told;
+    - the app killed and started again: back in its seat from "Continue a
+      game" in 3.9 s;
+    - the web app's browser closed for good: a new one asked for Bob's seat,
+      the request went to Ann's Android ("Web Bob asks to come back…") in
+      3.9 s, and Bob was seated 2.1 s after "Let in";
+    - 63 more turns to the end; "You win!" on Android, "Победа: Droid Ann!"
+      on the web app; "Play again" on Android put the web app in the new
+      game in 0.5 s.
+  - **Android (Russian) against the website**, game Y4EKR, played to the end:
+    - the game made on the website, opened on Android by the website's full
+      code and joined in Russian; the website left its waiting room 1.2 s
+      later;
+    - a turn each way with dice picked and rolled again, and a single pick:
+      the website's pick lifted the die on Android 2.6 s after the click;
+      the phone's accessibility state named exactly the dice picked;
+    - reactions and chat both ways;
+    - Bob moved his seat from the Android app to a website laptop (the
+      request on the phone in 3 s, the laptop seated 1.1 s after "Let in",
+      the phone back on the invite) and back again (asked from the phone,
+      let in from the laptop, seated in 4 s);
+    - the phone killed for 25 s: a stranger with the link asked for its
+      seat, the website player was asked instead, refused, and the stranger
+      was told;
+    - the phone started again: back in its seat in 4.3 s;
+    - the website's page closed for good: a new browser asked for Ann's
+      seat, Bob's Android showed the request in Russian and let it in;
+    - 76 more turns to the end; "Вы победили!" on Android, "Droid Bob wins!"
+      on the website; "Play again" on the website put Android in the new
+      game in 2.7 s.
+  - The choices on the phone (players, language, Score / Cross out) are
+    radio buttons with the picked one checked, as TalkBack reads them.
+  - **Found and fixed:** since PR #84 a picked die (and a picked player of a
+    club) told TalkBack nothing. PR #84 replaced `accessibilityState` with
+    `aria-pressed`, which react-native-web writes into the page but React
+    Native on a phone ignores (its `Pressable` takes `aria-checked` and
+    `aria-selected`, not `aria-pressed`). The dump showed it: with dice 1 and
+    3 picked, no die was `selected`. Both are set now; with the fix the same
+    step showed exactly the picked dice. A new test
+    (`mobile/tests/a11y.test.ts`) fails on an element with `aria-pressed` and
+    no `accessibilityState`, and on one with only `accessibilityState`.
+  - Not the app's, and left as they are:
+    - Expo Go's own error when it started while the phone was offline
+      ("Failed to download remote update"): Expo Go loads the bundle from the
+      development server; an installed build carries its own.
+    - This Mac's memory: with another project's browser tests running, the
+      emulator was swapped out and Android stopped answering ("System UI
+      isn't responding", typing taking seconds). The runs were made once
+      that had passed.
+  - The script's own mistakes, each found and fixed before the run that
+    counts: Back pressed with no keyboard up (it left the game), the
+    "Connecting…" note read while scrolled down, a bubble's words read from
+    the wrong view, "nothing to score" known only in English. Each first
+    showed as a failure; none was the app's.
+  - Checked: the app's 51 tests (2 new), typecheck, lint, the nine browser
+    flows; the website check on both local servers. Nothing the website runs
+    changed, so no load-test row.
+  - Not done: a real phone, and an iPhone (no simulator here).
+
 
 - **The app measured as the site was, and a wide screen (owner: "Keep
   developing app", Backlog item 38):** PR #84.
@@ -2832,7 +2938,7 @@ PR #22; request 10 (2026-11-16) was merged in PR #24.
   any way, or as a pasted link; the pages for a code alone, a wrong key and
   the full link; the home page's full code; the waiting room's key). 3 tests of the phone app's texts (`test_mobile_texts.py`: the export
   is current, every `t()` text in `mobile/src` has a Russian version, the
-  scan reads both quotes). The phone app has its own 49 tests (`node --test`),
+  scan reads both quotes). The phone app has its own 51 tests (`node --test`; 2 of them, `mobile/tests/a11y.test.ts`, check that a picked element says so on phones and on the web),
   1 of them of the full code (`mobile/tests/codes.test.ts`: typed, pasted as a
   link, or a code alone, read as the server reads them).
   9 against a real server (`mobile/tests/api.test.ts`: a game against the computer, complete games on one
@@ -3069,7 +3175,8 @@ From the architecture review (details and file:line in
     since the server started (about 100 bytes each); a restart clears it.
 - The phone app has not run on a real phone yet, nor on an iPhone at all.
   It runs on Android's emulator here (Backlog item 27), where coming back from
-  the background and a network switched off and on worked; a real phone's
+  the background and a network switched off and on worked, and two whole
+  online games were played against the web (Backlog item 39); a real phone's
   network that changes (Wi-Fi to mobile data) has not been tried.
   - In the emulator the bigger fireworks ran at about 30 frames a second
     (median 32 ms a frame, 18 ms of it drawing), while scrolling ran at 60.
@@ -3094,6 +3201,31 @@ Other ideas, not planned:
 
 ## Decision log
 
+**2026-11-28: live tests, the app against the app and against the website (Claude Code, PR #85)**
+
+- The owner asked for "real live tests on app vs app and app vs web". The
+  live site cannot take part: Streamlit Cloud runs only `abaka_ui.py` and
+  serves no API, and an app cannot talk to its pages. So "live" meant the
+  realest ends there are here: the app as a phone runs it (Expo Go on
+  Android, production bundle, over the network), and the website as players
+  get it (`abaka_ui`'s pages, served with the API by `abaka_server.py`), on
+  one server, as stage B will run them.
+- The emulator, not the app's web build, for the app's side: the web build is
+  what CI already plays (`tools/app_check.py`); the point was what only a
+  phone has (its accessibility state, the vibration, the background, the
+  network going away, the process killed). And it found a fault the web
+  build could not.
+- Whole games to their results, not a few turns: the end of a game (results
+  on both, "Play again" reaching the other player) is where the CI checks
+  stop.
+- A game was carried on twice after the script's own failure, by asking for
+  the lost seat from a new browser and letting it in from the phone. That
+  path (a player's device dies, the table lets them back) is one the owner's
+  players will meet, so it counts as tested, not as a workaround.
+- The scripts stay out of the repository: they need the emulator, take about
+  40 minutes a game on this Mac, and depend on its memory. What they taught
+  is in mobile/AGENTS.md, so the next live test starts from there.
+
 **2026-11-28: the app measured as the site was (Claude Code, PR #84)**
 
 - The owner said "Keep developing app". What is left of the app's plan mostly
@@ -3109,6 +3241,10 @@ Other ideas, not planned:
   Native takes both on phones, and react-native-web 0.21 writes only the
   first into the page. Picked dice and a club's picked players are pressed
   buttons, not selected ones (`aria-selected` is not allowed on a button).
+  - (Corrected 2026-11-28, PR #85: React Native on a phone takes
+    `aria-checked` but not `aria-pressed`, so picked dice and players said
+    nothing to TalkBack after this change. They carry `accessibilityState`
+    too now; the live test on Android found it.)
 - The two columns start at 900px, so a tablet held upright (768 or 820) keeps
   the phone's one column, and a tablet on its side or a desktop gets two. The
   play card's column is 400px, the width a phone gives it; the board has the

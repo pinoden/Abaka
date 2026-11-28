@@ -44,6 +44,7 @@ export function PlayerChips({ names, on, onPick, hint }: {
               key={name}
               testID="club-player"
               accessibilityRole="button"
+              accessibilityState={{ selected: picked }}
               aria-pressed={picked}
               onPress={() => onPick(name)}
               style={({ pressed }) => [styles.chip, picked && styles.chipPicked, pressed && styles.pressed]}>
